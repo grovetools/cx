@@ -1,0 +1,5 @@
+name: grove-context
+description: LLM context management
+binary:
+  name: cx
+  path: ./bin/cx
