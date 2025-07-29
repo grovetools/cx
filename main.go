@@ -2,8 +2,8 @@ package main
 
 import (
     "os"
-    "github.com/yourorg/grove-core/cli"
-    "github.com/yourorg/grove-context/cmd"
+    "github.com/mattsolo1/grove-core/cli"
+    "github.com/mattsolo1/grove-context/cmd"
 )
 
 func main() {

@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/yourorg/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-context/pkg/context"
 )
 
 func NewDiffCmd() *cobra.Command {
