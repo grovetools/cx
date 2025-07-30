@@ -250,14 +250,144 @@ func (m *Manager) UpdateFromRules() error {
 	// This map will store the final list of files to include.
 	uniqueFiles := make(map[string]bool)
 
-	// Walk the directory tree from the manager's working directory.
-	err = filepath.WalkDir(m.workDir, func(path string, d os.DirEntry, err error) error {
+	// Separate patterns into relative and absolute paths
+	var relativePatterns []string
+	absolutePaths := make(map[string][]string) // map[absolutePath]patterns
+	var deferredExclusions []string // Store exclusion patterns to process after inclusions
+	
+	// First pass: process inclusion patterns
+	for _, pattern := range patterns {
+		cleanPattern := pattern
+		isExclude := strings.HasPrefix(pattern, "!")
+		if isExclude {
+			cleanPattern = strings.TrimPrefix(pattern, "!")
+			// Defer exclusion patterns for second pass
+			if filepath.IsAbs(cleanPattern) {
+				deferredExclusions = append(deferredExclusions, pattern)
+			} else {
+				relativePatterns = append(relativePatterns, pattern)
+			}
+			continue
+		}
+		
+		// Check if this is an absolute path
+		if filepath.IsAbs(cleanPattern) {
+			// For absolute paths, we'll walk them separately
+			// Store the patterns that apply to this absolute path
+			basePath := cleanPattern
+			
+			// For inclusion patterns, determine the base path
+			if strings.Contains(cleanPattern, "*") || strings.Contains(cleanPattern, "?") {
+				// Pattern contains wildcards - use the directory part as base
+				basePath = filepath.Dir(cleanPattern)
+				// Keep going up until we find a path without wildcards
+				for strings.Contains(basePath, "*") || strings.Contains(basePath, "?") {
+					basePath = filepath.Dir(basePath)
+				}
+			} else if strings.HasSuffix(cleanPattern, "/") {
+				// Directory pattern - remove trailing slash
+				basePath = strings.TrimSuffix(cleanPattern, "/")
+			} else {
+				// Could be a file or directory - check what it is
+				if info, err := os.Stat(cleanPattern); err == nil && info.IsDir() {
+					basePath = cleanPattern
+				} else {
+					// File pattern or non-existent path - use directory part
+					basePath = filepath.Dir(cleanPattern)
+				}
+			}
+			
+			if _, exists := absolutePaths[basePath]; !exists {
+				absolutePaths[basePath] = []string{}
+			}
+			absolutePaths[basePath] = append(absolutePaths[basePath], pattern)
+		} else {
+			// Relative pattern for current working directory
+			relativePatterns = append(relativePatterns, pattern)
+		}
+	}
+	
+	// Second pass: add exclusion patterns to relevant base paths
+	for _, pattern := range deferredExclusions {
+		cleanPattern := strings.TrimPrefix(pattern, "!")
+		// Add the exclusion pattern to all base paths it might affect
+		for basePath := range absolutePaths {
+			if strings.HasPrefix(cleanPattern, basePath) || strings.HasPrefix(basePath, cleanPattern) {
+				absolutePaths[basePath] = append(absolutePaths[basePath], pattern)
+			}
+		}
+	}
+
+	// Process relative patterns in the working directory
+	if len(relativePatterns) > 0 {
+		err = m.walkAndMatchPatterns(m.workDir, relativePatterns, gitIgnoredFiles, uniqueFiles, true)
+		if err != nil {
+			return fmt.Errorf("error walking working directory: %w", err)
+		}
+	}
+
+	// Process each absolute path
+	for absPath, pathPatterns := range absolutePaths {
+		err = m.walkAndMatchPatterns(absPath, pathPatterns, gitIgnoredFiles, uniqueFiles, false)
+		if err != nil {
+			fmt.Printf("Warning: error walking absolute path %s: %v\n", absPath, err)
+			// Continue with other paths
+		}
+	}
+
+	// Convert map to a sorted slice for consistent output.
+	filesToInclude := make([]string, 0, len(uniqueFiles))
+	for file := range uniqueFiles {
+		filesToInclude = append(filesToInclude, file)
+	}
+	sort.Strings(filesToInclude)
+
+	// Ensure .grove directory exists relative to workDir
+	groveDir := filepath.Join(m.workDir, GroveDir)
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
+	}
+
+	// Write the filtered file list to context-files
+	filesPath := filepath.Join(m.workDir, FilesListFile)
+	return m.WriteFilesList(filesPath, filesToInclude)
+}
+
+// walkAndMatchPatterns walks a directory and matches files against patterns
+func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIgnoredFiles map[string]bool, uniqueFiles map[string]bool, useRelativePaths bool) error {
+	// If this is an absolute path outside workDir, get gitignore for that path
+	localGitIgnored := gitIgnoredFiles
+	if !useRelativePaths {
+		// Check if this root path has its own git repository
+		gitRootCmd := exec.Command("git", "-C", rootPath, "rev-parse", "--show-toplevel")
+		if gitRoot, err := gitRootCmd.Output(); err == nil {
+			gitRootPath := strings.TrimSpace(string(gitRoot))
+			// Get gitignored files for this repository
+			localGitIgnored = make(map[string]bool)
+			cmd := exec.Command("git", "-C", gitRootPath, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory")
+			if output, err := cmd.Output(); err == nil {
+				scanner := bufio.NewScanner(strings.NewReader(string(output)))
+				for scanner.Scan() {
+					ignoredPath := scanner.Text()
+					if ignoredPath != "" {
+						// Store as absolute path
+						absIgnoredPath := filepath.Join(gitRootPath, ignoredPath)
+						localGitIgnored[absIgnoredPath] = true
+					}
+				}
+			}
+		}
+	}
+	
+	fileCount := 0
+	// Walk the directory tree from the specified root path.
+	err := filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
 		// Get path relative to the walk root for matching.
-		relPath, err := filepath.Rel(m.workDir, path)
+		relPath, err := filepath.Rel(rootPath, path)
 		if err != nil {
 			return err
 		}
@@ -290,23 +420,47 @@ func (m *Manager) UpdateFromRules() error {
 			// Gitignore-style matching logic
 			match := false
 			pattern = filepath.ToSlash(pattern) // Ensure pattern uses slashes
-
-			// Handle ** patterns
-			if strings.Contains(pattern, "**") {
-				match = matchDoubleStarPattern(pattern, relPath)
-			} else if strings.HasSuffix(pattern, "/") {
-				// Directory pattern: 'demos/' should match 'demos/main.go'
-				dirPattern := strings.TrimSuffix(pattern, "/")
-				if relPath == dirPattern || strings.HasPrefix(relPath, dirPattern+"/") {
+			
+			// For absolute path patterns, we need special handling
+			if filepath.IsAbs(pattern) {
+				// For absolute patterns, match against the full absolute path
+				absPath := filepath.ToSlash(path)
+				pattern = filepath.ToSlash(pattern)
+				
+				// Check if pattern matches the absolute path
+				if pattern == absPath {
+					// Exact match
+					match = true
+				} else if strings.HasSuffix(pattern, "/") {
+					// Directory pattern
+					dirPattern := strings.TrimSuffix(pattern, "/")
+					if absPath == dirPattern || strings.HasPrefix(absPath, dirPattern+"/") {
+						match = true
+					}
+				} else if matched, _ := filepath.Match(pattern, absPath); matched {
+					// Wildcard pattern match
 					match = true
 				}
-			} else if matched, _ := filepath.Match(pattern, relPath); matched {
-				// Full path pattern: 'internal/cli/agent.go'
-				match = true
-			} else if !strings.Contains(pattern, "/") {
-				// Basename pattern if no slashes: '*.go' should match 'a.go' and 'cli/a.go'
-				if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
+			}
+
+			if !match {
+				// Handle ** patterns
+				if strings.Contains(pattern, "**") {
+					match = matchDoubleStarPattern(pattern, relPath)
+				} else if strings.HasSuffix(pattern, "/") {
+					// Directory pattern: 'demos/' should match 'demos/main.go'
+					dirPattern := strings.TrimSuffix(pattern, "/")
+					if relPath == dirPattern || strings.HasPrefix(relPath, dirPattern+"/") {
+						match = true
+					}
+				} else if matched, _ := filepath.Match(pattern, relPath); matched {
+					// Full path pattern: 'internal/cli/agent.go'
 					match = true
+				} else if !strings.Contains(pattern, "/") {
+					// Basename pattern if no slashes: '*.go' should match 'a.go' and 'cli/a.go'
+					if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
+						match = true
+					}
 				}
 			}
 
@@ -317,54 +471,61 @@ func (m *Manager) UpdateFromRules() error {
 		}
 
 		if isIncluded {
-			// Use the original OS-specific path, not the slash-path.
-			originalRelPath, _ := filepath.Rel(m.workDir, path)
-			
-			// Check if file is gitignored using our pre-fetched map
-			if gitIgnoredFiles[originalRelPath] {
-				// File is gitignored, skip it
-				return nil
-			}
-			
-			// Also check if file is in an ignored directory
-			for ignoredPath := range gitIgnoredFiles {
-				if strings.HasSuffix(ignoredPath, "/") && strings.HasPrefix(originalRelPath, strings.TrimSuffix(ignoredPath, "/")) {
-					// File is in an ignored directory
-					return nil
+			// Determine the final path to store
+			var finalPath string
+			if useRelativePaths {
+				// For relative patterns, store path relative to workDir
+				finalPath, _ = filepath.Rel(m.workDir, path)
+			} else {
+				// For absolute patterns, check if the path is within workDir
+				if relPath, err := filepath.Rel(m.workDir, path); err == nil && !strings.HasPrefix(relPath, "..") {
+					// Path is within workDir, use relative path for consistency
+					finalPath = relPath
+				} else {
+					// Path is outside workDir, use absolute path
+					finalPath = path
 				}
 			}
 			
-			uniqueFiles[originalRelPath] = true
+			// Check if file is gitignored
+			if useRelativePaths {
+				// For relative paths, check against workDir gitignore
+				relToWorkDir, _ := filepath.Rel(m.workDir, path)
+				if localGitIgnored[relToWorkDir] {
+					// File is gitignored, skip it
+					return nil
+				}
+				
+				// Also check if file is in an ignored directory
+				for ignoredPath := range localGitIgnored {
+					if strings.HasSuffix(ignoredPath, "/") && strings.HasPrefix(relToWorkDir, strings.TrimSuffix(ignoredPath, "/")) {
+						// File is in an ignored directory
+						return nil
+					}
+				}
+			} else {
+				// For absolute paths, check against the absolute path
+				if localGitIgnored[path] {
+					// File is gitignored, skip it
+					return nil
+				}
+				
+				// Also check if file is in an ignored directory
+				for ignoredPath := range localGitIgnored {
+					if strings.HasSuffix(ignoredPath, "/") && strings.HasPrefix(path, strings.TrimSuffix(ignoredPath, "/")) {
+						// File is in an ignored directory
+						return nil
+					}
+				}
+			}
+			
+			uniqueFiles[finalPath] = true
+			fileCount++
 		}
 
 		return nil
 	})
-
-	if err != nil {
-		return fmt.Errorf("error walking files: %w", err)
-	}
-
-	// Convert map to a sorted slice for consistent output.
-	filesToInclude := make([]string, 0, len(uniqueFiles))
-	for file := range uniqueFiles {
-		filesToInclude = append(filesToInclude, file)
-	}
-	sort.Strings(filesToInclude)
-
-	// Ensure .grove directory exists relative to workDir
-	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
-		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
-	}
-
-	// Write the final list to .grove/context-files
-	filesListPath := filepath.Join(m.workDir, FilesListFile)
-	if err := m.WriteFilesList(filesListPath, filesToInclude); err != nil {
-		return err
-	}
-
-	fmt.Printf("Updated %s with %d files\n", FilesListFile, len(filesToInclude))
-	return nil
+	return err
 }
 
 // SaveSnapshot saves the current context files list as a snapshot
