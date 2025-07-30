@@ -1,3 +1,6 @@
 # Binary
 cx
 bin/
+
+.grove
+.grove-worktrees
