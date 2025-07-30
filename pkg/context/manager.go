@@ -42,9 +42,6 @@ func (m *Manager) ReadFilesList(filename string) ([]string, error) {
 	
 	file, err := os.Open(fullPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%s not found. Create it with file paths to include", filename)
-		}
 		return nil, err
 	}
 	defer file.Close()
@@ -232,7 +229,30 @@ func (m *Manager) UpdateFromRules() error {
 	rulesPath := filepath.Join(m.workDir, RulesFile)
 	patterns, err := m.ReadFilesList(rulesPath)
 	if err != nil {
-		return fmt.Errorf("error reading %s: %w", rulesPath, err)
+		if os.IsNotExist(err) {
+			// Prompt user to create .grovectx
+			fmt.Printf(".grovectx not found. Would you like to create one with '*' (include all files)? [Y/n]: ")
+			var response string
+			fmt.Scanln(&response)
+			
+			if response == "" || strings.ToLower(response) == "y" || strings.ToLower(response) == "yes" {
+				// Create .grovectx with "*"
+				if err := m.WriteFilesList(rulesPath, []string{"*"}); err != nil {
+					return fmt.Errorf("error creating %s: %w", RulesFile, err)
+				}
+				fmt.Printf("Created %s with '*' pattern\n", RulesFile)
+				
+				// Read the newly created file
+				patterns, err = m.ReadFilesList(rulesPath)
+				if err != nil {
+					return fmt.Errorf("error reading %s: %w", rulesPath, err)
+				}
+			} else {
+				return fmt.Errorf("%s not found. Create it with patterns to include", RulesFile)
+			}
+		} else {
+			return fmt.Errorf("error reading %s: %w", rulesPath, err)
+		}
 	}
 
 	if len(patterns) == 0 {
