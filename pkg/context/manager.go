@@ -173,53 +173,63 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	return nil
 }
 
-// getGitIgnoredFiles returns a set of all gitignored files for efficient lookup
-func (m *Manager) getGitIgnoredFiles() (map[string]bool, error) {
+// getGitIgnoredFiles returns a set of all gitignored files for the repository
+// containing the given directory. It returns a map of absolute paths for efficient lookup.
+func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 	ignoredFiles := make(map[string]bool)
-	
-	// First, get all tracked files to exclude them from the ignored list
+
+	// Ensure the provided path is absolute
+	absForDir, err := filepath.Abs(forDir)
+	if err != nil {
+		return ignoredFiles, err
+	}
+
+	// Find the root of the git repository for the given directory.
+	gitRootCmd := exec.Command("git", "-C", absForDir, "rev-parse", "--show-toplevel")
+	gitRootOutput, err := gitRootCmd.Output()
+	if err != nil {
+		// This directory is not in a git repository, so no files are gitignored.
+		return ignoredFiles, nil
+	}
+	gitRootPath := strings.TrimSpace(string(gitRootOutput))
+
+	// Get all tracked files to correctly handle cases where an ignored file is explicitly tracked.
 	trackedCmd := exec.Command("git", "ls-files")
-	trackedCmd.Dir = m.workDir
+	trackedCmd.Dir = gitRootPath
 	trackedOutput, _ := trackedCmd.Output()
-	
 	trackedFiles := make(map[string]bool)
 	for _, line := range strings.Split(string(trackedOutput), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
+			// Store relative to the git root for lookup.
 			trackedFiles[line] = true
 		}
 	}
-	
-	// Use git ls-files to get all files that would be ignored
-	// -o: Show other (untracked) files
-	// -i: Show only ignored files
-	// --exclude-standard: Use standard git exclusions (.gitignore, etc)
-	// --directory: Show directories that would be ignored
-	cmd := exec.Command("git", "ls-files", "-o", "-i", "--exclude-standard", "--directory")
-	cmd.Dir = m.workDir
-	
+
+	// Use `git ls-files` to get a list of all individual files that are ignored.
+	// We avoid the `--directory` flag to get a complete file list, which simplifies our logic.
+	cmd := exec.Command("git", "ls-files", "--others", "--ignored", "--exclude-standard")
+	cmd.Dir = gitRootPath
+
 	output, err := cmd.Output()
 	if err != nil {
-		// If git command fails, return empty map (no files ignored)
+		// If git command fails, return an empty map.
 		return ignoredFiles, nil
 	}
-	
-	// Parse the output - each line is an ignored file or directory
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if line = strings.TrimSpace(line); line != "" {
-			// Skip if it's a tracked file (tracked files override gitignore)
-			if !trackedFiles[line] {
-				ignoredFiles[line] = true
-				
-				// If it's a directory (ends with /), we need to mark all files under it
-				if strings.HasSuffix(line, "/") {
-					// This will be handled by the directory walking logic
-					// We'll check if a file starts with this directory prefix
-				}
+
+	// Process each ignored file path.
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		relativePath := scanner.Text()
+		if relativePath != "" {
+			// An ignored file is only truly ignored if it's not tracked.
+			if !trackedFiles[relativePath] {
+				// Store the full absolute path for consistent and easy lookup later.
+				absolutePath := filepath.Join(gitRootPath, relativePath)
+				ignoredFiles[absolutePath] = true
 			}
 		}
 	}
-	
+
 	return ignoredFiles, nil
 }
 
@@ -259,12 +269,11 @@ func (m *Manager) UpdateFromRules() error {
 		return fmt.Errorf("%s is empty or not found", RulesFile)
 	}
 	
-	// Get all gitignored files upfront for efficient lookup
-	gitIgnoredFiles, err := m.getGitIgnoredFiles()
+	// Get gitignored files for the current working directory for handling relative patterns.
+	gitIgnoredForCWD, err := m.getGitIgnoredFiles(m.workDir)
 	if err != nil {
-		fmt.Printf("Warning: could not get gitignored files: %v\n", err)
-		// Continue without gitignore support
-		gitIgnoredFiles = make(map[string]bool)
+		fmt.Printf("Warning: could not get gitignored files for current directory: %v\n", err)
+		gitIgnoredForCWD = make(map[string]bool)
 	}
 
 	// This map will store the final list of files to include.
@@ -338,20 +347,27 @@ func (m *Manager) UpdateFromRules() error {
 		}
 	}
 
-	// Process relative patterns in the working directory
+	// Process relative patterns using the CWD's gitignore rules.
 	if len(relativePatterns) > 0 {
-		err = m.walkAndMatchPatterns(m.workDir, relativePatterns, gitIgnoredFiles, uniqueFiles, true)
+		err = m.walkAndMatchPatterns(m.workDir, relativePatterns, gitIgnoredForCWD, uniqueFiles, true)
 		if err != nil {
 			return fmt.Errorf("error walking working directory: %w", err)
 		}
 	}
 
-	// Process each absolute path
+	// Process each absolute path with its own specific gitignore rules.
 	for absPath, pathPatterns := range absolutePaths {
-		err = m.walkAndMatchPatterns(absPath, pathPatterns, gitIgnoredFiles, uniqueFiles, false)
+		// Get gitignore rules for the repository containing this specific absolute path.
+		gitIgnoredForAbsPath, err := m.getGitIgnoredFiles(absPath)
+		if err != nil {
+			fmt.Printf("Warning: could not get gitignored files for %s: %v\n", absPath, err)
+			gitIgnoredForAbsPath = make(map[string]bool)
+		}
+
+		// Walk the path and apply its patterns and gitignore rules.
+		err = m.walkAndMatchPatterns(absPath, pathPatterns, gitIgnoredForAbsPath, uniqueFiles, false)
 		if err != nil {
 			fmt.Printf("Warning: error walking absolute path %s: %v\n", absPath, err)
-			// Continue with other paths
 		}
 	}
 
@@ -375,38 +391,30 @@ func (m *Manager) UpdateFromRules() error {
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
 func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIgnoredFiles map[string]bool, uniqueFiles map[string]bool, useRelativePaths bool) error {
-	// If this is an absolute path outside workDir, get gitignore for that path
-	localGitIgnored := gitIgnoredFiles
-	if !useRelativePaths {
-		// Check if this root path has its own git repository
-		gitRootCmd := exec.Command("git", "-C", rootPath, "rev-parse", "--show-toplevel")
-		if gitRoot, err := gitRootCmd.Output(); err == nil {
-			gitRootPath := strings.TrimSpace(string(gitRoot))
-			// Get gitignored files for this repository
-			localGitIgnored = make(map[string]bool)
-			cmd := exec.Command("git", "-C", gitRootPath, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory")
-			if output, err := cmd.Output(); err == nil {
-				scanner := bufio.NewScanner(strings.NewReader(string(output)))
-				for scanner.Scan() {
-					ignoredPath := scanner.Text()
-					if ignoredPath != "" {
-						// Store as absolute path
-						absIgnoredPath := filepath.Join(gitRootPath, ignoredPath)
-						localGitIgnored[absIgnoredPath] = true
-					}
-				}
-			}
-		}
-	}
-	
-	fileCount := 0
 	// Walk the directory tree from the specified root path.
-	err := filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+	return filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Get path relative to the walk root for matching.
+		// First, check if the file or directory is ignored by git. This is the most efficient check.
+		// The `path` from WalkDir is absolute if the root is absolute, which it always will be.
+		if gitIgnoredFiles[path] {
+			if d.IsDir() {
+				return filepath.SkipDir // Prune the walk for ignored directories.
+			}
+			return nil // Skip ignored files.
+		}
+
+		// Always prune .git and .grove directories from the walk.
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == ".grove" {
+				return filepath.SkipDir
+			}
+			return nil // Continue walking into subdirectories.
+		}
+
+		// Get path relative to the walk root for pattern matching.
 		relPath, err := filepath.Rel(rootPath, path)
 		if err != nil {
 			return err
@@ -417,15 +425,6 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 		// Skip the root directory itself.
 		if relPath == "." {
 			return nil
-		}
-
-		// For directories, we only need to check if they should be skipped.
-		if d.IsDir() {
-			// Always prune .git and .grove directories from the walk.
-			if d.Name() == ".git" || d.Name() == ".grove" {
-				return filepath.SkipDir
-			}
-			return nil // Continue walking.
 		}
 
 		// --- Gitignore-style matching logic ---
@@ -507,45 +506,11 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 				}
 			}
 			
-			// Check if file is gitignored
-			if useRelativePaths {
-				// For relative paths, check against workDir gitignore
-				relToWorkDir, _ := filepath.Rel(m.workDir, path)
-				if localGitIgnored[relToWorkDir] {
-					// File is gitignored, skip it
-					return nil
-				}
-				
-				// Also check if file is in an ignored directory
-				for ignoredPath := range localGitIgnored {
-					if strings.HasSuffix(ignoredPath, "/") && strings.HasPrefix(relToWorkDir, strings.TrimSuffix(ignoredPath, "/")) {
-						// File is in an ignored directory
-						return nil
-					}
-				}
-			} else {
-				// For absolute paths, check against the absolute path
-				if localGitIgnored[path] {
-					// File is gitignored, skip it
-					return nil
-				}
-				
-				// Also check if file is in an ignored directory
-				for ignoredPath := range localGitIgnored {
-					if strings.HasSuffix(ignoredPath, "/") && strings.HasPrefix(path, strings.TrimSuffix(ignoredPath, "/")) {
-						// File is in an ignored directory
-						return nil
-					}
-				}
-			}
-			
 			uniqueFiles[finalPath] = true
-			fileCount++
 		}
 
 		return nil
 	})
-	return err
 }
 
 // SaveSnapshot saves the current context files list as a snapshot
