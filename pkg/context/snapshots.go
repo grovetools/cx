@@ -22,12 +22,13 @@ type SnapshotInfo struct {
 // ListSnapshots returns information about all saved snapshots
 func (m *Manager) ListSnapshots() ([]SnapshotInfo, error) {
 	// Check if snapshots directory exists
-	if _, err := os.Stat(SnapshotsDir); os.IsNotExist(err) {
+	snapshotsDir := filepath.Join(m.workDir, SnapshotsDir)
+	if _, err := os.Stat(snapshotsDir); os.IsNotExist(err) {
 		return nil, nil // No snapshots
 	}
 
 	// Read all snapshots
-	entries, err := os.ReadDir(SnapshotsDir)
+	entries, err := os.ReadDir(snapshotsDir)
 	if err != nil {
 		return nil, fmt.Errorf("error reading snapshots directory: %w", err)
 	}
@@ -42,6 +43,11 @@ func (m *Manager) ListSnapshots() ([]SnapshotInfo, error) {
 		// Skip hidden files and description files
 		name := entry.Name()
 		if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".desc") {
+			continue
+		}
+		
+		// Only process .rules files or files without extension (backward compatibility)
+		if !strings.HasSuffix(name, ".rules") && strings.Contains(name, ".") {
 			continue
 		}
 
@@ -59,34 +65,60 @@ func (m *Manager) ListSnapshots() ([]SnapshotInfo, error) {
 
 // getSnapshotInfo returns information about a specific snapshot
 func (m *Manager) getSnapshotInfo(name string) (SnapshotInfo, error) {
-	info := SnapshotInfo{Name: name}
+	// Clean the display name
+	displayName := strings.TrimSuffix(name, ".rules")
+	info := SnapshotInfo{Name: displayName}
 	
 	// Get file info
-	snapshotPath := filepath.Join(SnapshotsDir, name)
+	snapshotPath := filepath.Join(m.workDir, SnapshotsDir, name)
 	stat, err := os.Stat(snapshotPath)
 	if err != nil {
 		return info, err
 	}
 	info.ModTime = stat.ModTime()
 
-	// Read snapshot content
-	files, err := m.ReadFilesList(snapshotPath)
-	if err != nil {
-		return info, err
-	}
-	info.FileCount = len(files)
+	// For .rules files, dynamically resolve the file list
+	if strings.HasSuffix(name, ".rules") {
+		// Resolve files from the snapshot rules
+		files, err := m.resolveFileListFromRules(snapshotPath)
+		if err != nil {
+			// If we can't resolve, just return minimal info
+			info.FileCount = 0
+			info.TotalTokens = 0
+			info.TotalSize = 0
+		} else {
+			info.FileCount = len(files)
+			
+			// Calculate total tokens and size
+			for _, file := range files {
+				filePath := filepath.Join(m.workDir, file)
+				if fileStat, err := os.Stat(filePath); err == nil {
+					info.TotalSize += fileStat.Size()
+					// Rough estimate: 4 characters per token
+					info.TotalTokens += int(fileStat.Size() / 4)
+				}
+			}
+		}
+	} else {
+		// Backward compatibility: old snapshot format
+		files, err := m.ReadFilesList(snapshotPath)
+		if err != nil {
+			return info, err
+		}
+		info.FileCount = len(files)
 
-	// Calculate total tokens and size
-	for _, file := range files {
-		if fileStat, err := os.Stat(file); err == nil {
-			info.TotalSize += fileStat.Size()
-			// Rough estimate: 4 characters per token
-			info.TotalTokens += int(fileStat.Size() / 4)
+		// Calculate total tokens and size
+		for _, file := range files {
+			if fileStat, err := os.Stat(file); err == nil {
+				info.TotalSize += fileStat.Size()
+				// Rough estimate: 4 characters per token
+				info.TotalTokens += int(fileStat.Size() / 4)
+			}
 		}
 	}
 
 	// Try to read description file if it exists
-	descPath := filepath.Join(SnapshotsDir, name+".desc")
+	descPath := filepath.Join(m.workDir, SnapshotsDir, name+".desc")
 	if descContent, err := os.ReadFile(descPath); err == nil {
 		info.Description = strings.TrimSpace(string(descContent))
 	}

@@ -14,13 +14,20 @@ func NewValidateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager("")
 			
-			result, err := mgr.ValidateContext()
+			// First resolve files from rules
+			files, err := mgr.ResolveFilesFromRules()
+			if err != nil {
+				return err
+			}
+			
+			// Then validate those files
+			result, err := mgr.ValidateContext(files)
 			if err != nil {
 				return err
 			}
 			
 			if result.TotalFiles == 0 {
-				fmt.Println("No files in context. Run 'cx update' to generate from rules.")
+				fmt.Println("No files in context. Check your rules file.")
 				return nil
 			}
 			

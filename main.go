@@ -13,10 +13,9 @@ func main() {
     )
     
     // Add subcommands
-    rootCmd.AddCommand(cmd.NewUpdateCmd())
+    rootCmd.AddCommand(cmd.NewEditCmd())
     rootCmd.AddCommand(cmd.NewGenerateCmd()) 
     rootCmd.AddCommand(cmd.NewShowCmd())
-    rootCmd.AddCommand(cmd.NewInfoCmd())
     rootCmd.AddCommand(cmd.NewListCmd())
     rootCmd.AddCommand(cmd.NewSaveCmd())
     rootCmd.AddCommand(cmd.NewLoadCmd())

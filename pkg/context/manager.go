@@ -16,6 +16,7 @@ const (
 	ContextFile     = ".grove/context"
 	FilesListFile   = ".grove/context-files"
 	RulesFile       = ".grovectx"
+	ActiveRulesFile = ".grove/rules"
 	SnapshotsDir    = ".grove/context-snapshots"
 )
 
@@ -78,32 +79,6 @@ func (m *Manager) WriteFilesList(filename string, files []string) error {
 	return nil
 }
 
-// GetContextInfo returns information about the context
-func (m *Manager) GetContextInfo() (fileCount int, tokenCount int, size int, err error) {
-	// Check if file exists
-	if _, err := os.Stat(ContextFile); os.IsNotExist(err) {
-		return 0, 0, 0, fmt.Errorf("%s file not found. Run 'grove cx generate' to create it", ContextFile)
-	}
-	
-	// Read file content for token count
-	content, err := os.ReadFile(ContextFile)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("error reading %s: %w", ContextFile, err)
-	}
-	
-	// Count files in .grove-ctx-files
-	files, err := m.ReadFilesList(FilesListFile)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("error reading %s: %w", FilesListFile, err)
-	}
-	
-	// Approximate token count (roughly 4 characters per token)
-	tokenCount = len(content) / 4
-	fileCount = len(files)
-	size = len(content)
-	
-	return fileCount, tokenCount, size, nil
-}
 
 // GenerateContext creates the context file from the files list
 func (m *Manager) GenerateContext(useXMLFormat bool) error {
@@ -113,15 +88,14 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 	
-	// Read file list
-	filesListPath := filepath.Join(m.workDir, FilesListFile)
-	filesToInclude, err := m.ReadFilesList(filesListPath)
+	// Dynamically resolve file list from rules
+	filesToInclude, err := m.ResolveFilesFromRules()
 	if err != nil {
-		return fmt.Errorf("error reading %s: %w", filesListPath, err)
+		return fmt.Errorf("error resolving files from rules: %w", err)
 	}
 	
 	if len(filesToInclude) == 0 {
-		return fmt.Errorf("%s is empty or not found", filesListPath)
+		return fmt.Errorf("no files found matching the rules")
 	}
 	
 	// Create context file
@@ -233,40 +207,79 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 	return ignoredFiles, nil
 }
 
-// UpdateFromRules updates the files list based on rules file patterns
+// UpdateFromRules updates the files list based on rules file patterns (deprecated - kept for compatibility)
 func (m *Manager) UpdateFromRules() error {
-	// Read rules from .grovectx
-	rulesPath := filepath.Join(m.workDir, RulesFile)
-	patterns, err := m.ReadFilesList(rulesPath)
+	// Get the resolved file list
+	filesToInclude, err := m.ResolveFilesFromRules()
 	if err != nil {
-		if os.IsNotExist(err) {
-			// Prompt user to create .grovectx
+		// Handle the special case where neither file exists
+		if strings.Contains(err.Error(), "no rules file found") {
+			// Prompt user to create .grovectx for backward compatibility
 			fmt.Printf(".grovectx not found. Would you like to create one with '*' (include all files)? [Y/n]: ")
 			var response string
 			fmt.Scanln(&response)
 			
 			if response == "" || strings.ToLower(response) == "y" || strings.ToLower(response) == "yes" {
 				// Create .grovectx with "*"
+				rulesPath := filepath.Join(m.workDir, RulesFile)
 				if err := m.WriteFilesList(rulesPath, []string{"*"}); err != nil {
 					return fmt.Errorf("error creating %s: %w", RulesFile, err)
 				}
 				fmt.Printf("Created %s with '*' pattern\n", RulesFile)
 				
-				// Read the newly created file
-				patterns, err = m.ReadFilesList(rulesPath)
+				// Try again
+				filesToInclude, err = m.ResolveFilesFromRules()
 				if err != nil {
-					return fmt.Errorf("error reading %s: %w", rulesPath, err)
+					return err
 				}
 			} else {
 				return fmt.Errorf("%s not found. Create it with patterns to include", RulesFile)
 			}
 		} else {
-			return fmt.Errorf("error reading %s: %w", rulesPath, err)
+			return err
 		}
+	}
+	
+	// Ensure .grove directory exists relative to workDir
+	groveDir := filepath.Join(m.workDir, GroveDir)
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
+	}
+	
+	// Write the filtered file list to context-files
+	filesPath := filepath.Join(m.workDir, FilesListFile)
+	return m.WriteFilesList(filesPath, filesToInclude)
+}
+
+// ResolveFilesFromRules dynamically resolves the list of files from the active rules file
+func (m *Manager) ResolveFilesFromRules() ([]string, error) {
+	// Check for new rules file location first
+	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if _, err := os.Stat(activeRulesPath); err == nil {
+		return m.resolveFileListFromRules(activeRulesPath)
+	}
+	
+	// Check for old .grovectx file for backward compatibility
+	oldRulesPath := filepath.Join(m.workDir, RulesFile)
+	if _, err := os.Stat(oldRulesPath); err == nil {
+		fmt.Fprintf(os.Stderr, "Warning: Using deprecated .grovectx file. Please move it to %s\n", ActiveRulesFile)
+		return m.resolveFileListFromRules(oldRulesPath)
+	}
+	
+	// Neither file exists
+	return nil, fmt.Errorf("no rules file found. Create %s with patterns to include", ActiveRulesFile)
+}
+
+// resolveFileListFromRules dynamically resolves the list of files from a rules file
+func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
+	// Read rules from the specified rules file
+	patterns, err := m.ReadFilesList(rulesPath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading rules file: %w", err)
 	}
 
 	if len(patterns) == 0 {
-		return fmt.Errorf("%s is empty or not found", RulesFile)
+		return nil, fmt.Errorf("rules file is empty")
 	}
 	
 	// Get gitignored files for the current working directory for handling relative patterns.
@@ -351,7 +364,7 @@ func (m *Manager) UpdateFromRules() error {
 	if len(relativePatterns) > 0 {
 		err = m.walkAndMatchPatterns(m.workDir, relativePatterns, gitIgnoredForCWD, uniqueFiles, true)
 		if err != nil {
-			return fmt.Errorf("error walking working directory: %w", err)
+			return nil, fmt.Errorf("error walking working directory: %w", err)
 		}
 	}
 
@@ -378,15 +391,8 @@ func (m *Manager) UpdateFromRules() error {
 	}
 	sort.Strings(filesToInclude)
 
-	// Ensure .grove directory exists relative to workDir
-	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
-		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
-	}
-
-	// Write the filtered file list to context-files
-	filesPath := filepath.Join(m.workDir, FilesListFile)
-	return m.WriteFilesList(filesPath, filesToInclude)
+	// Return the resolved file list
+	return filesToInclude, nil
 }
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
@@ -513,41 +519,61 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 	})
 }
 
-// SaveSnapshot saves the current context files list as a snapshot
+// SaveSnapshot saves the current rules as a snapshot
 func (m *Manager) SaveSnapshot(name, description string) error {
 	// Ensure .grove directory and snapshots subdirectory exist
-	if err := os.MkdirAll(SnapshotsDir, 0755); err != nil {
+	snapshotsDir := filepath.Join(m.workDir, SnapshotsDir)
+	if err := os.MkdirAll(snapshotsDir, 0755); err != nil {
 		return fmt.Errorf("error creating snapshots directory: %w", err)
 	}
 	
-	// Read current files list
-	content, err := os.ReadFile(FilesListFile)
-	if err != nil {
-		return fmt.Errorf("error reading %s: %w", FilesListFile, err)
+	// Read current rules file
+	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if _, err := os.Stat(activeRulesPath); os.IsNotExist(err) {
+		// Try old .grovectx file
+		activeRulesPath = filepath.Join(m.workDir, RulesFile)
+		if _, err := os.Stat(activeRulesPath); os.IsNotExist(err) {
+			return fmt.Errorf("no rules file found. Create %s with patterns to include", ActiveRulesFile)
+		}
 	}
 	
-	// Save to snapshot
-	snapshotPath := filepath.Join(SnapshotsDir, name)
+	content, err := os.ReadFile(activeRulesPath)
+	if err != nil {
+		return fmt.Errorf("error reading rules file: %w", err)
+	}
+	
+	// Save to snapshot with .rules extension
+	snapshotPath := filepath.Join(snapshotsDir, name+".rules")
 	if err := os.WriteFile(snapshotPath, content, 0644); err != nil {
 		return fmt.Errorf("error saving snapshot: %w", err)
 	}
 	
 	// Save description if provided
 	if description != "" {
-		descPath := filepath.Join(SnapshotsDir, name+".desc")
+		descPath := filepath.Join(snapshotsDir, name+".rules.desc")
 		if err := os.WriteFile(descPath, []byte(description), 0644); err != nil {
 			// Non-fatal error
 			fmt.Printf("Warning: could not save description: %v\n", err)
 		}
 	}
 	
-	fmt.Printf("Saved snapshot to %s\n", snapshotPath)
+	fmt.Printf("Saved rules snapshot to %s\n", snapshotPath)
 	return nil
 }
 
-// LoadSnapshot loads a snapshot into the current context files list
+// LoadSnapshot loads a snapshot into the current rules file
 func (m *Manager) LoadSnapshot(name string) error {
-	snapshotPath := filepath.Join(SnapshotsDir, name)
+	snapshotsDir := filepath.Join(m.workDir, SnapshotsDir)
+	
+	// Try with .rules extension first
+	snapshotPath := filepath.Join(snapshotsDir, name+".rules")
+	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
+		// Try without extension for backward compatibility
+		snapshotPath = filepath.Join(snapshotsDir, name)
+		if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
+			return fmt.Errorf("snapshot '%s' not found", name)
+		}
+	}
 	
 	// Read snapshot
 	content, err := os.ReadFile(snapshotPath)
@@ -555,12 +581,19 @@ func (m *Manager) LoadSnapshot(name string) error {
 		return fmt.Errorf("error reading snapshot: %w", err)
 	}
 	
-	// Write to current files list
-	if err := os.WriteFile(FilesListFile, content, 0644); err != nil {
-		return fmt.Errorf("error writing %s: %w", FilesListFile, err)
+	// Ensure .grove directory exists
+	groveDir := filepath.Join(m.workDir, GroveDir)
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 	
-	fmt.Printf("Loaded snapshot from %s\n", snapshotPath)
+	// Write to active rules file
+	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if err := os.WriteFile(activeRulesPath, content, 0644); err != nil {
+		return fmt.Errorf("error writing rules: %w", err)
+	}
+	
+	fmt.Printf("Loaded rules snapshot from %s\n", snapshotPath)
 	return nil
 }
 
@@ -580,9 +613,10 @@ func (m *Manager) ShowContext() error {
 
 // ListFiles returns the list of files in the context
 func (m *Manager) ListFiles() ([]string, error) {
-	files, err := m.ReadFilesList(FilesListFile)
+	// Dynamically resolve files from rules
+	files, err := m.ResolveFilesFromRules()
 	if err != nil {
-		return nil, fmt.Errorf("error reading %s: %w", FilesListFile, err)
+		return nil, fmt.Errorf("error resolving files from rules: %w", err)
 	}
 	
 	// Convert to absolute paths

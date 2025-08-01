@@ -29,10 +29,10 @@ type DiffResult struct {
 
 // DiffContext compares the current context with a snapshot or another context
 func (m *Manager) DiffContext(snapshotName string) (*DiffResult, error) {
-	// Get current context files
-	currentFiles, err := m.ReadFilesList(FilesListFile)
+	// Get current context files dynamically from rules
+	currentFiles, err := m.ResolveFilesFromRules()
 	if err != nil {
-		return nil, fmt.Errorf("error reading current context: %w", err)
+		return nil, fmt.Errorf("error resolving current context: %w", err)
 	}
 
 	var compareFiles []string
@@ -45,10 +45,27 @@ func (m *Manager) DiffContext(snapshotName string) (*DiffResult, error) {
 		compareFiles = currentFiles
 	} else {
 		// Compare with snapshot
-		snapshotPath := filepath.Join(SnapshotsDir, snapshotName)
-		compareFiles, err = m.ReadFilesList(snapshotPath)
-		if err != nil {
-			return nil, fmt.Errorf("error reading snapshot '%s': %w", snapshotName, err)
+		snapshotsDir := filepath.Join(m.workDir, SnapshotsDir)
+		
+		// Try with .rules extension first
+		snapshotPath := filepath.Join(snapshotsDir, snapshotName+".rules")
+		if _, err := os.Stat(snapshotPath); err == nil {
+			// Resolve files from the snapshot rules
+			compareFiles, err = m.resolveFileListFromRules(snapshotPath)
+			if err != nil {
+				return nil, fmt.Errorf("error resolving snapshot '%s': %w", snapshotName, err)
+			}
+		} else {
+			// Try without extension for backward compatibility
+			snapshotPath = filepath.Join(snapshotsDir, snapshotName)
+			if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
+				return nil, fmt.Errorf("snapshot '%s' not found", snapshotName)
+			}
+			// Old format - read file list directly
+			compareFiles, err = m.ReadFilesList(snapshotPath)
+			if err != nil {
+				return nil, fmt.Errorf("error reading snapshot '%s': %w", snapshotName, err)
+			}
 		}
 	}
 

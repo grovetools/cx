@@ -45,13 +45,7 @@ type ContextStats struct {
 }
 
 // GetStats analyzes the context and returns comprehensive statistics
-func (m *Manager) GetStats(topN int) (*ContextStats, error) {
-	// Read file list
-	files, err := m.ReadFilesList(FilesListFile)
-	if err != nil {
-		return nil, fmt.Errorf("error reading %s: %w", FilesListFile, err)
-	}
-
+func (m *Manager) GetStats(files []string, topN int) (*ContextStats, error) {
 	if len(files) == 0 {
 		return &ContextStats{}, nil
 	}
@@ -244,9 +238,26 @@ func calculateMedian(counts []int) int {
 	return sorted[mid]
 }
 
+// Color codes for terminal output
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorYellow = "\033[33m"
+	colorCyan   = "\033[36m"
+	colorBold   = "\033[1m"
+)
+
 // PrintStats displays context statistics in a formatted way
-func (s *ContextStats) Print(showDetailed bool) {
+func (s *ContextStats) Print() {
 	fmt.Println("Context Statistics:")
+	fmt.Println()
+	
+	// Summary box
+	fmt.Println("╭─ Summary ────────────────────────────────────────╮")
+	fmt.Printf("│ Total Files:    %-32d │\n", s.TotalFiles)
+	fmt.Printf("│ Total Tokens:   ~%-31s │\n", FormatTokenCount(s.TotalTokens))
+	fmt.Printf("│ Total Size:     %-32s │\n", FormatBytes(int(s.TotalSize)))
+	fmt.Println("╰──────────────────────────────────────────────────╯")
 	fmt.Println()
 	
 	// Language distribution
@@ -278,10 +289,21 @@ func (s *ContextStats) Print(showDetailed bool) {
 		if len(displayPath) > 50 {
 			displayPath = "..." + displayPath[len(displayPath)-47:]
 		}
-		fmt.Printf("  %2d. %-50s %s tokens (%4.1f%%)\n",
+		
+		// Color code based on token count
+		tokenColor := ""
+		if file.Tokens > 10000 {
+			tokenColor = colorRed
+		} else if file.Tokens > 5000 {
+			tokenColor = colorYellow
+		}
+		
+		fmt.Printf("  %2d. %-50s %s%s tokens%s (%4.1f%%)\n",
 			i+1,
 			displayPath,
+			tokenColor,
 			FormatTokenCount(file.Tokens),
+			colorReset,
 			file.Percentage,
 		)
 	}
@@ -301,10 +323,4 @@ func (s *ContextStats) Print(showDetailed bool) {
 	// Summary statistics
 	fmt.Printf("\nAverage tokens per file: %s\n", FormatTokenCount(s.AvgTokens))
 	fmt.Printf("Median tokens per file: %s\n", FormatTokenCount(s.MedianTokens))
-	
-	if showDetailed {
-		fmt.Printf("\nTotal files: %d\n", s.TotalFiles)
-		fmt.Printf("Total tokens: %s\n", FormatTokenCount(s.TotalTokens))
-		fmt.Printf("Total size: %s\n", FormatBytes(int(s.TotalSize)))
-	}
 }

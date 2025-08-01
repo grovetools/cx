@@ -17,12 +17,7 @@ type ValidationResult struct {
 }
 
 // ValidateContext checks the integrity of all files in the context
-func (m *Manager) ValidateContext() (*ValidationResult, error) {
-	// Read file list
-	files, err := m.ReadFilesList(FilesListFile)
-	if err != nil {
-		return nil, fmt.Errorf("error reading %s: %w", FilesListFile, err)
-	}
+func (m *Manager) ValidateContext(files []string) (*ValidationResult, error) {
 
 	result := &ValidationResult{
 		TotalFiles: len(files),
@@ -142,81 +137,15 @@ func (r *ValidationResult) Print() {
 	totalIssues := len(r.MissingFiles) + len(r.Duplicates) + len(r.PermissionIssues)
 	if totalIssues > 0 {
 		fmt.Printf("✗ Issues found: %d\n", totalIssues)
-		fmt.Println("\nRun 'grove cx update' to regenerate from rules.")
+		fmt.Println("\nCheck your rules file and ensure all referenced files exist.")
 	} else {
 		fmt.Printf("\n✓ All %d files are valid and accessible\n", r.TotalFiles)
 	}
 }
 
-// FixContext removes invalid files and duplicates from the context
+// FixContext removes invalid files and duplicates from the context (deprecated - no longer applicable with dynamic resolution)
 func (m *Manager) FixContext() error {
-	// Read file list
-	files, err := m.ReadFilesList(FilesListFile)
-	if err != nil {
-		return fmt.Errorf("error reading %s: %w", FilesListFile, err)
-	}
-
-	if len(files) == 0 {
-		fmt.Println("No files in context.")
-		return nil
-	}
-
-	// Validate and collect valid, unique files
-	validFiles := make(map[string]bool)
-	var fixedFiles []string
-	removedCount := 0
-	duplicatesRemoved := 0
-
-	for _, file := range files {
-		// Normalize path
-		absPath, err := filepath.Abs(file)
-		if err != nil {
-			removedCount++
-			continue
-		}
-		
-		// Skip if already added (duplicate)
-		if validFiles[absPath] {
-			duplicatesRemoved++
-			continue
-		}
-		
-		// Check if file exists and is accessible
-		info, err := os.Stat(absPath)
-		if err != nil {
-			removedCount++
-			continue
-		}
-		
-		// Skip directories
-		if info.IsDir() {
-			removedCount++
-			continue
-		}
-		
-		// Check read permission
-		testFile, err := os.Open(absPath)
-		if err != nil {
-			removedCount++
-			continue
-		}
-		testFile.Close()
-		
-		// Add to valid files
-		validFiles[absPath] = true
-		fixedFiles = append(fixedFiles, file)
-	}
-
-	// Write back the cleaned list
-	if err := m.WriteFilesList(FilesListFile, fixedFiles); err != nil {
-		return fmt.Errorf("error writing fixed file list: %w", err)
-	}
-
-	fmt.Printf("Fixed context file list:\n")
-	fmt.Printf("  Removed %d invalid/missing files\n", removedCount)
-	fmt.Printf("  Removed %d duplicate entries\n", duplicatesRemoved)
-	fmt.Printf("  %d valid files remain\n", len(fixedFiles))
-	fmt.Printf("Updated %s with %d files\n", FilesListFile, len(fixedFiles))
-	
+	fmt.Println("Note: 'fix' command is deprecated. Context is now dynamically resolved from rules.")
+	fmt.Println("To fix issues, edit your rules file directly.")
 	return nil
 }

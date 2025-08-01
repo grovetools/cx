@@ -71,16 +71,18 @@ func (m *Manager) UpdateFromGit(opts GitOptions) error {
 	}
 
 	// Ensure .grove directory exists
-	if err := os.MkdirAll(GroveDir, 0755); err != nil {
-		return fmt.Errorf("error creating %s directory: %w", GroveDir, err)
+	groveDir := filepath.Join(m.workDir, GroveDir)
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 
-	// Write to .grove/context-files
-	if err := m.WriteFilesList(FilesListFile, fileList); err != nil {
+	// Write to .grove/rules as explicit file paths
+	rulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if err := m.WriteFilesList(rulesPath, fileList); err != nil {
 		return err
 	}
 
-	fmt.Printf("Updated %s with %d files from git\n", FilesListFile, len(fileList))
+	fmt.Printf("Updated %s with %d explicit file paths from git\n", rulesPath, len(fileList))
 	return nil
 }
 

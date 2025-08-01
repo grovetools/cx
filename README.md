@@ -18,15 +18,16 @@ The binary will be installed as `cx` in your PATH.
 
 ## Overview
 
-The context system uses a top-level rules file and a `.grove` directory for generated content:
-- `.grovectx` - Rules file with glob patterns for selecting files (top level for easy access)
+The context system uses a rules-based approach where all operations dynamically resolve files from patterns:
+- `.grove/rules` - Rules file with glob patterns for selecting files
 - `.grove/context` - The generated context file containing all concatenated files
-- `.grove/context-files` - The generated list of files to include in the context
-- `.grove/context-snapshots/` - Saved context snapshots
+- `.grove/context-snapshots/` - Saved rule snapshots
+
+**Note:** The system now operates stateless - there's no intermediate file list. Every command resolves files dynamically from the rules.
 
 ## File Structure
 
-### .grovectx
+### .grove/rules
 Contains glob patterns to automatically select files. Supports recursive patterns with `**` and exclusions with `!`:
 ```
 # Include all Go files recursively
@@ -57,16 +58,6 @@ go.sum
 - `!*_test.go` - Exclude test files
 - `!vendor/**/*` - Exclude vendor directory
 
-### .grove/context-files
-Contains the actual list of files to include (one per line):
-```
-main.go
-internal/cli/context.go
-internal/cli/agent.go
-README.md
-docs/guide.md
-```
-
 ### .grove/context
 The generated context file with all files concatenated using XML-style delimiters:
 ```xml
@@ -86,23 +77,14 @@ package cli
 
 ## Commands
 
-### cx info
+### cx edit
 
-Display information about the current context:
+Open the rules file in your default editor:
 ```bash
-cx info
+cx edit
 ```
 
-Output:
-```
-Files in context: 12
-Approximate token count: 45.7k
-Context file size: 178.5 KB
-```
-
-List absolute paths of all files in context:
-```bash
-cx info --list-files
+This opens `.grove/rules` in your `$EDITOR` (defaults to vim on Unix, notepad on Windows).
 ```
 
 ### cx list
@@ -112,7 +94,7 @@ List absolute paths of all files in the context:
 cx list
 ```
 
-This is a shorthand for `cx info --list-files`.
+This dynamically resolves files from the current rules.
 
 ### cx show
 
@@ -122,18 +104,9 @@ cx show | pbcopy  # Copy to clipboard on macOS
 cx show > context.txt  # Save to file
 ```
 
-### cx update
-
-Update `.grove/context-files` based on patterns in `.grovectx`:
-```bash
-cx update
-```
-
-This reads the patterns from `.grovectx` and creates/updates `.grove/context-files` with all matching files.
-
 ### cx generate
 
-Generate the `.grove/context` file from the files listed in `.grove/context-files`:
+Generate the `.grove/context` file by dynamically resolving files from the rules:
 ```bash
 cx generate
 ```
@@ -144,12 +117,12 @@ Options:
 
 ### cx save
 
-Save the current file list as a snapshot with optional description:
+Save the current rules as a snapshot with optional description:
 ```bash
 cx save my-snapshot --desc "Minimal bug fix context"
 ```
 
-This saves `.grove/context-files` to `.grove/context-snapshots/my-snapshot`.
+This saves `.grove/rules` to `.grove/context-snapshots/my-snapshot.rules`.
 
 ### cx load
 
@@ -232,23 +205,12 @@ Validating context files...
 ✓ Accessible files: 40/42
 ✗ Issues found: 3
 
-Run 'cx update' to regenerate from rules.
+Check your rules file and ensure all referenced files exist.
 ```
 
 ### cx fix
 
-Automatically fix validation issues by removing missing files and duplicates:
-```bash
-cx fix
-```
-
-Output:
-```
-Fixed context file list:
-  Removed 2 invalid/missing files
-  Removed 1 duplicate entries
-  38 valid files remain
-```
+**Note:** This command is deprecated. Context is now dynamically resolved from rules, so there's no intermediate file list to fix. To fix issues, edit your rules file directly.
 
 ### cx stats
 
@@ -260,6 +222,12 @@ cx stats
 Output:
 ```
 Context Statistics:
+
+╭─ Summary ────────────────────────────────────────╮
+│ Total Files:    41                               │
+│ Total Tokens:   ~157.8k                          │
+│ Total Size:     631.2 KB                         │
+╰──────────────────────────────────────────────────╯
 
 Language Distribution:
   Go            78.2%  (123.5k tokens, 28 files)
@@ -284,8 +252,9 @@ Average tokens per file: 3.8k
 Median tokens per file: 2.9k
 ```
 
+**Note:** Files larger than 10k tokens are shown in red, files larger than 5k tokens in yellow.
+
 Options:
-- `--detailed` - Show additional statistics (total files, tokens, size)
 - `--top N` - Number of largest files to show (default: 5)
 
 ### cx from-git
@@ -295,7 +264,7 @@ Generate context based on git history:
 cx from-git [options]
 ```
 
-This command creates a context from files that have been modified in your git repository based on various criteria.
+This command creates rules from files that have been modified in your git repository based on various criteria. The generated rules will contain explicit file paths.
 
 Options:
 - `--since` - Include files changed since a date or commit
@@ -335,9 +304,15 @@ This is particularly useful for:
 
 ### Initial Setup
 
-1. Create `.grovectx` with your patterns:
+1. Create rules file:
 ```bash
-cat > .grovectx << EOF
+cx edit
+```
+
+Or create `.grove/rules` manually:
+```bash
+mkdir -p .grove
+cat > .grove/rules << EOF
 # Include all Go files recursively
 **/*.go
 
@@ -353,25 +328,21 @@ go.sum
 EOF
 ```
 
-2. Generate the file list:
-```bash
-cx update
-```
-
-3. Generate the context:
+2. Generate the context:
 ```bash
 cx generate
 ```
 
-### Manual File Management
+### Managing Rules
 
-You can manually edit `.grove/context-files` to add or remove specific files:
+Edit your rules to control which files are included:
 ```bash
-# Remove a file
-grep -v "internal/secret.go" .grove/context-files > tmp && mv tmp .grove/context-files
+# Open rules in editor
+cx edit
 
-# Add a file
-echo "internal/important.go" >> .grove/context-files
+# Or edit directly
+echo "!internal/secret.go" >> .grove/rules  # Exclude a file
+echo "internal/important.go" >> .grove/rules  # Include specific file
 
 # Regenerate context
 cx generate
@@ -379,16 +350,17 @@ cx generate
 
 ### Working with Snapshots
 
-Save different contexts for different purposes:
+Save different rule sets for different purposes:
 ```bash
-# Save current context for bug fixing
+# Save current rules for bug fixing
 cx save bug-fix-context
 
-# Switch to feature development files
-cx update  # Update from rules
+# Edit rules for feature development
+cx edit
+# ... modify patterns ...
 cx save feature-dev-context
 
-# Later, switch back to bug fix context
+# Later, switch back to bug fix rules
 cx load bug-fix-context
 cx generate
 ```
@@ -403,28 +375,24 @@ cx show | xclip -selection clipboard  # Linux
 
 Check token count before sending to LLM:
 ```bash
-cx info
+cx stats
 ```
 
 ## Best Practices
 
-1. **Use Rules for Common Patterns**: Define your common file patterns in `.grovectx`
+1. **Use Rules for Common Patterns**: Define your common file patterns in `.grove/rules`
 2. **Use Exclusions Wisely**: Exclude test files, generated code, and large assets with `!` patterns
-3. **Manual Adjustments**: Use `.grove/context-files` for fine-tuning what's included
-4. **Save Snapshots**: Save different contexts for different tasks
-5. **Monitor Size**: Use `cx info` to keep track of token counts
+3. **Watch Large Files**: Use `cx stats` to identify files with high token counts (shown in red/yellow)
+4. **Save Snapshots**: Save different rule sets for different tasks
+5. **Monitor Size**: Use `cx stats` to keep track of token counts and file distribution
 6. **Version Control**: 
-   - Add `.grove/context` to `.gitignore` (it's generated)
-   - Commit `.grovectx` (your rules file)
-   - Optionally commit `.grove/context-files` and `.grove/context-snapshots/`
+   - Add `.grove/` to `.gitignore` (contains generated files and local rules)
+   - Optionally version control specific snapshot files from `.grove/context-snapshots/`
    
 Example `.gitignore`:
 ```
-# Grove generated files
-.grove/context
-
-# Optionally ignore the generated file list
-# .grove/context-files
+# Grove directory (contains rules and generated files)
+.grove/
 ```
 
 ## Migration from grove cx
