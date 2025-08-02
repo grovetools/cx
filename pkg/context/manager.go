@@ -113,7 +113,10 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 			fmt.Fprintf(ctxFile, "<file path=\"%s\">\n", file)
 			
 			// Read and write file content
-			filePath := filepath.Join(m.workDir, file)
+			filePath := file
+			if !filepath.IsAbs(file) {
+				filePath = filepath.Join(m.workDir, file)
+			}
 			content, err := os.ReadFile(filePath)
 			if err != nil {
 				fmt.Fprintf(ctxFile, "<error>%v</error>\n", err)
@@ -128,7 +131,10 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 			fmt.Fprintf(ctxFile, "=== FILE: %s ===\n", file)
 			
 			// Read and write file content
-			filePath := filepath.Join(m.workDir, file)
+			filePath := file
+			if !filepath.IsAbs(file) {
+				filePath = filepath.Join(m.workDir, file)
+			}
 			content, err := os.ReadFile(filePath)
 			if err != nil {
 				fmt.Fprintf(ctxFile, "Error reading file: %v\n", err)
