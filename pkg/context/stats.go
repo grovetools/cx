@@ -11,37 +11,37 @@ import (
 
 // LanguageStats contains statistics for a programming language
 type LanguageStats struct {
-	Name       string
-	FileCount  int
-	TotalTokens int
-	Percentage float64
+	Name       string  `json:"name"`
+	FileCount  int     `json:"file_count"`
+	TotalTokens int    `json:"total_tokens"`
+	Percentage float64 `json:"percentage"`
 }
 
 // FileStats contains statistics for a single file
 type FileStats struct {
-	Path       string
-	Tokens     int
-	Size       int64
-	Percentage float64
+	Path       string  `json:"path"`
+	Tokens     int     `json:"tokens"`
+	Size       int64   `json:"size"`
+	Percentage float64 `json:"percentage"`
 }
 
 // TokenDistribution represents a range of token counts
 type TokenDistribution struct {
-	RangeLabel string
-	FileCount  int
-	Percentage float64
+	RangeLabel string  `json:"range_label"`
+	FileCount  int     `json:"file_count"`
+	Percentage float64 `json:"percentage"`
 }
 
 // ContextStats contains comprehensive statistics about the context
 type ContextStats struct {
-	TotalFiles   int
-	TotalTokens  int
-	TotalSize    int64
-	Languages    map[string]*LanguageStats
-	LargestFiles []FileStats
-	Distribution []TokenDistribution
-	AvgTokens    int
-	MedianTokens int
+	TotalFiles   int                       `json:"total_files"`
+	TotalTokens  int                       `json:"total_tokens"`
+	TotalSize    int64                     `json:"total_size"`
+	Languages    map[string]*LanguageStats `json:"languages"`
+	LargestFiles []FileStats               `json:"largest_files"`
+	Distribution []TokenDistribution       `json:"distribution"`
+	AvgTokens    int                       `json:"avg_tokens"`
+	MedianTokens int                       `json:"median_tokens"`
 }
 
 // GetStats analyzes the context and returns comprehensive statistics
