@@ -2,9 +2,6 @@ module github.com/mattsolo1/grove-context
 
 go 1.24
 
-
-replace github.com/mattsolo1/grove-core => ../grove-core
-
 require (
 	github.com/mattsolo1/grove-core v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.9.1
