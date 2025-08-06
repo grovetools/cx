@@ -21,6 +21,7 @@ jobs:
         run: |
           git config --global url."https://${{ secrets.GROVE_PAT }}@github.com/".insteadOf "https://github.com/"
           go env -w GOPRIVATE=github.com/mattsolo1/*
+          go env -w GOPROXY=direct
 
       - name: Create dist directory
         run: mkdir -p dist
