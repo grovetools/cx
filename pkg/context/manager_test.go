@@ -64,8 +64,8 @@ func TestManager_GenerateContext(t *testing.T) {
 	os.WriteFile("file1.go", []byte("package main\n// File 1"), 0644)
 	os.WriteFile("file2.go", []byte("package main\n// File 2"), 0644)
 
-	// Create files list
-	os.WriteFile(FilesListFile, []byte("file1.go\nfile2.go\n"), 0644)
+	// Create rules file
+	os.WriteFile(ActiveRulesFile, []byte("file1.go\nfile2.go\n"), 0644)
 
 	// Generate context with XML format
 	err := mgr.GenerateContext(true)
@@ -119,10 +119,10 @@ README.md`
 		t.Fatalf("Failed to update from rules: %v", err)
 	}
 
-	// Read generated files list
-	files, err := mgr.ReadFilesList(FilesListFile)
+	// Resolve files from rules
+	files, err := mgr.ResolveFilesFromRules()
 	if err != nil {
-		t.Fatalf("Failed to read files list: %v", err)
+		t.Fatalf("Failed to resolve files from rules: %v", err)
 	}
 
 	// Should include main.go and test.go but not test_test.go
@@ -159,9 +159,9 @@ func TestManager_Snapshots(t *testing.T) {
 	// Create .grove directory
 	os.MkdirAll(GroveDir, 0755)
 
-	// Create initial files list
+	// Create initial rules file
 	filesList := []string{"file1.go", "file2.go"}
-	mgr.WriteFilesList(FilesListFile, filesList)
+	mgr.WriteFilesList(ActiveRulesFile, filesList)
 
 	// Save snapshot
 	err := mgr.SaveSnapshot("test-snapshot", "Test snapshot description")
@@ -169,9 +169,9 @@ func TestManager_Snapshots(t *testing.T) {
 		t.Fatalf("Failed to save snapshot: %v", err)
 	}
 
-	// Modify files list
+	// Modify rules file
 	newFilesList := []string{"file3.go", "file4.go", "file5.go"}
-	mgr.WriteFilesList(FilesListFile, newFilesList)
+	mgr.WriteFilesList(ActiveRulesFile, newFilesList)
 
 	// Load snapshot
 	err = mgr.LoadSnapshot("test-snapshot")
@@ -179,10 +179,10 @@ func TestManager_Snapshots(t *testing.T) {
 		t.Fatalf("Failed to load snapshot: %v", err)
 	}
 
-	// Verify files list was restored
-	files, err := mgr.ReadFilesList(FilesListFile)
+	// Verify rules file was restored
+	files, err := mgr.ReadFilesList(ActiveRulesFile)
 	if err != nil {
-		t.Fatalf("Failed to read files list: %v", err)
+		t.Fatalf("Failed to read rules file: %v", err)
 	}
 
 	if len(files) != len(filesList) {

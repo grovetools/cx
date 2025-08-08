@@ -22,8 +22,8 @@ func TestManager_DiffContext(t *testing.T) {
 	os.WriteFile("file2.go", []byte("package main\n// Test file 2"), 0644)
 	os.WriteFile("file3.go", []byte("package main\n// Test file 3"), 0644)
 
-	// Create current context
-	os.WriteFile(FilesListFile, []byte("file1.go\nfile2.go\n"), 0644)
+	// Create current rules file
+	os.WriteFile(filepath.Join(GroveDir, "rules"), []byte("file1.go\nfile2.go\n"), 0644)
 
 	// Create a snapshot with different files
 	os.WriteFile(filepath.Join(SnapshotsDir, "test-snapshot"), []byte("file2.go\nfile3.go\n"), 0644)
@@ -69,8 +69,15 @@ func TestManager_ValidateContext(t *testing.T) {
 	// Create context with existing, missing, and duplicate files
 	os.WriteFile(FilesListFile, []byte("existing.go\nmissing.go\nexisting.go\n"), 0644)
 
+	// For this test, we'll read the files list directly instead of resolving from rules
+	// since we want to test validation of specific files including non-existent ones
+	files, err := mgr.ReadFilesList(FilesListFile)
+	if err != nil {
+		t.Fatalf("Failed to read files list: %v", err)
+	}
+
 	// Validate
-	result, err := mgr.ValidateContext()
+	result, err := mgr.ValidateContext(files)
 	if err != nil {
 		t.Fatalf("Failed to validate context: %v", err)
 	}
@@ -109,11 +116,17 @@ func TestManager_GetStats(t *testing.T) {
 	os.WriteFile("README.md", []byte("# Test Project\n\nThis is a test project."), 0644)
 	os.WriteFile("config.yaml", []byte("version: 1.0\nname: test"), 0644)
 
-	// Create context file list
-	os.WriteFile(FilesListFile, []byte("main.go\nREADME.md\nconfig.yaml\n"), 0644)
+	// Create rules file
+	os.WriteFile(filepath.Join(GroveDir, "rules"), []byte("main.go\nREADME.md\nconfig.yaml\n"), 0644)
+
+	// Resolve files from rules
+	files, err := mgr.ResolveFilesFromRules()
+	if err != nil {
+		t.Fatalf("Failed to resolve files from rules: %v", err)
+	}
 
 	// Get stats
-	stats, err := mgr.GetStats(5)
+	stats, err := mgr.GetStats(files, 5)
 	if err != nil {
 		t.Fatalf("Failed to get stats: %v", err)
 	}
@@ -160,38 +173,12 @@ func TestManager_FixContext(t *testing.T) {
 	// Create .grove directory
 	os.MkdirAll(GroveDir, 0755)
 
-	// Create test files
-	os.WriteFile("existing1.go", []byte("package main"), 0644)
-	os.WriteFile("existing2.go", []byte("package main"), 0644)
-	
-	// Create context with various issues
-	os.WriteFile(FilesListFile, []byte("existing1.go\nmissing.go\nexisting1.go\nexisting2.go\n"), 0644)
-
-	// Fix context
+	// FixContext is deprecated and just prints a message
 	err := mgr.FixContext()
 	if err != nil {
-		t.Fatalf("Failed to fix context: %v", err)
+		t.Fatalf("Failed to call FixContext: %v", err)
 	}
 
-	// Read fixed files list
-	files, err := mgr.ReadFilesList(FilesListFile)
-	if err != nil {
-		t.Fatalf("Failed to read fixed files list: %v", err)
-	}
-
-	// Should only have unique, existing files
-	if len(files) != 2 {
-		t.Errorf("Expected 2 files after fix, got %d", len(files))
-	}
-
-	expectedFiles := map[string]bool{
-		"existing1.go": true,
-		"existing2.go": true,
-	}
-
-	for _, file := range files {
-		if !expectedFiles[file] {
-			t.Errorf("Unexpected file in fixed list: %s", file)
-		}
-	}
+	// The function should succeed but not do anything
+	// Just verify it doesn't return an error
 }

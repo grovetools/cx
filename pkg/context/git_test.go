@@ -49,9 +49,9 @@ func TestGitIntegration(t *testing.T) {
 		}
 
 		// Check that only staged file is included
-		files, err := mgr.ReadFilesList(FilesListFile)
+		files, err := mgr.ResolveFilesFromRules()
 		if err != nil {
-			t.Fatalf("Failed to read files list: %v", err)
+			t.Fatalf("Failed to resolve files from rules: %v", err)
 		}
 
 		if len(files) != 1 || files[0] != "file3.go" {
@@ -70,9 +70,9 @@ func TestGitIntegration(t *testing.T) {
 		}
 
 		// Check that only file from last commit is included
-		files, err := mgr.ReadFilesList(FilesListFile)
+		files, err := mgr.ResolveFilesFromRules()
 		if err != nil {
-			t.Fatalf("Failed to read files list: %v", err)
+			t.Fatalf("Failed to resolve files from rules: %v", err)
 		}
 
 		if len(files) != 1 || files[0] != "file3.go" {
@@ -94,9 +94,9 @@ func TestGitIntegration(t *testing.T) {
 		}
 
 		// Check that only feature branch file is included
-		files, err := mgr.ReadFilesList(FilesListFile)
+		files, err := mgr.ResolveFilesFromRules()
 		if err != nil {
-			t.Fatalf("Failed to read files list: %v", err)
+			t.Fatalf("Failed to resolve files from rules: %v", err)
 		}
 
 		if len(files) != 1 || files[0] != "feature.go" {
