@@ -1,5 +1,25 @@
 ## v0.2.10 (2025-08-08)
 
+### Chores
+
+* **deps:** bump dependencies
+
+### Features
+
+* add comprehensive E2E test scenarios for grove-context
+* add grove-tend E2E testing framework integration
+
+### Documentation
+
+* **changelog:** update CHANGELOG.md for v0.2.10
+
+### Bug Fixes
+
+* resolve git branch comparison test failure in CI
+* update tests to match new rules-based API and add CI workflows
+
+## v0.2.10 (2025-08-08)
+
 ### Features
 
 * add comprehensive E2E test scenarios for grove-context
