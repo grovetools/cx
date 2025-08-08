@@ -3,6 +3,7 @@ package context
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -318,36 +319,43 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 			continue
 		}
 		
-		// Check if this is an absolute path
-		if filepath.IsAbs(cleanPattern) {
-			// For absolute paths, we'll walk them separately
-			// Store the patterns that apply to this absolute path
+		// Check if this is an absolute path or a relative path that goes outside current directory
+		if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
+			// For absolute paths and relative paths going up, we'll walk them separately
+			// Store the patterns that apply to this path
 			basePath := cleanPattern
 			
+			// For relative paths, resolve them relative to workDir
+			if !filepath.IsAbs(cleanPattern) {
+				basePath = filepath.Join(m.workDir, cleanPattern)
+				basePath = filepath.Clean(basePath)
+			}
+			
 			// For inclusion patterns, determine the base path
-			if strings.Contains(cleanPattern, "*") || strings.Contains(cleanPattern, "?") {
+			if strings.Contains(basePath, "*") || strings.Contains(basePath, "?") {
 				// Pattern contains wildcards - use the directory part as base
-				basePath = filepath.Dir(cleanPattern)
+				basePath = filepath.Dir(basePath)
 				// Keep going up until we find a path without wildcards
 				for strings.Contains(basePath, "*") || strings.Contains(basePath, "?") {
 					basePath = filepath.Dir(basePath)
 				}
-			} else if strings.HasSuffix(cleanPattern, "/") {
+			} else if strings.HasSuffix(basePath, "/") {
 				// Directory pattern - remove trailing slash
-				basePath = strings.TrimSuffix(cleanPattern, "/")
+				basePath = strings.TrimSuffix(basePath, "/")
 			} else {
 				// Could be a file or directory - check what it is
-				if info, err := os.Stat(cleanPattern); err == nil && info.IsDir() {
-					basePath = cleanPattern
+				if info, err := os.Stat(basePath); err == nil && info.IsDir() {
+					// It's a directory, use as is
 				} else {
 					// File pattern or non-existent path - use directory part
-					basePath = filepath.Dir(cleanPattern)
+					basePath = filepath.Dir(basePath)
 				}
 			}
 			
 			if _, exists := absolutePaths[basePath]; !exists {
 				absolutePaths[basePath] = []string{}
 			}
+			// Store the original pattern (not the resolved basePath)
 			absolutePaths[basePath] = append(absolutePaths[basePath], pattern)
 		} else {
 			// Relative pattern for current working directory
@@ -376,6 +384,12 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 
 	// Process each absolute path with its own specific gitignore rules.
 	for absPath, pathPatterns := range absolutePaths {
+		// Check if the path exists
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			// Path doesn't exist, skip it
+			continue
+		}
+		
 		// Get gitignore rules for the repository containing this specific absolute path.
 		gitIgnoredForAbsPath, err := m.getGitIgnoredFiles(absPath)
 		if err != nil {
@@ -403,6 +417,41 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
 func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIgnoredFiles map[string]bool, uniqueFiles map[string]bool, useRelativePaths bool) error {
+	// Pre-process patterns to identify directory exclusions and special flags
+	dirExclusions := make(map[string]bool)
+	includeBinary := false
+	
+	for _, pattern := range patterns {
+		// Check for special pattern to include binary files
+		if pattern == "!binary:exclude" || pattern == "binary:include" {
+			includeBinary = true
+			continue
+		}
+		
+		if strings.HasPrefix(pattern, "!") {
+			cleanPattern := strings.TrimPrefix(pattern, "!")
+			cleanPattern = filepath.ToSlash(cleanPattern)
+			
+			// Check if this is a directory exclusion pattern without trailing slash
+			// Patterns like !**/bin or !bin should exclude the directory and its contents
+			if !strings.HasSuffix(cleanPattern, "/") {
+				if strings.Contains(cleanPattern, "**") {
+					// Extract the directory name from patterns like !**/bin
+					parts := strings.Split(cleanPattern, "/")
+					if len(parts) > 0 {
+						dirName := parts[len(parts)-1]
+						if dirName != "" && !strings.Contains(dirName, "*") && !strings.Contains(dirName, "?") {
+							dirExclusions[dirName] = true
+						}
+					}
+				} else if !strings.Contains(cleanPattern, "*") && !strings.Contains(cleanPattern, "?") {
+					// Simple directory name like !bin
+					dirExclusions[cleanPattern] = true
+				}
+			}
+		}
+	}
+
 	// Walk the directory tree from the specified root path.
 	return filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -423,6 +472,35 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 			if d.Name() == ".git" || d.Name() == ".grove" {
 				return filepath.SkipDir
 			}
+			
+			// Check if this directory should be excluded based on pre-processed exclusions
+			if dirExclusions[d.Name()] {
+				// This directory matches an exclusion pattern, check if it should be skipped
+				relPath, _ := filepath.Rel(rootPath, path)
+				relPath = filepath.ToSlash(relPath)
+				
+				// Check all patterns to see if this directory is excluded
+				isExcluded := false
+				for _, pattern := range patterns {
+					if strings.HasPrefix(pattern, "!") {
+						cleanPattern := strings.TrimPrefix(pattern, "!")
+						cleanPattern = filepath.ToSlash(cleanPattern)
+						
+						// Check various exclusion pattern formats
+						if cleanPattern == d.Name() || // !bin matches bin directory
+						   cleanPattern == relPath || // !path/to/bin matches specific path
+						   (strings.Contains(cleanPattern, "**") && matchDoubleStarPattern(cleanPattern, relPath)) { // !**/bin matches any bin directory
+							isExcluded = true
+							break
+						}
+					}
+				}
+				
+				if isExcluded {
+					return filepath.SkipDir
+				}
+			}
+			
 			return nil // Continue walking into subdirectories.
 		}
 
@@ -439,10 +517,20 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 			return nil
 		}
 
+		// Skip binary files unless explicitly included
+		if !includeBinary && isBinaryFile(path) {
+			return nil
+		}
+
 		// --- Gitignore-style matching logic ---
 		// Default to not included. A file must match an include pattern.
 		isIncluded := false
 		for _, pattern := range patterns {
+			// Skip special patterns
+			if pattern == "!binary:exclude" || pattern == "binary:include" {
+				continue
+			}
+			
 			isExclude := strings.HasPrefix(pattern, "!")
 			if isExclude {
 				pattern = strings.TrimPrefix(pattern, "!")
@@ -452,11 +540,16 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 			match := false
 			pattern = filepath.ToSlash(pattern) // Ensure pattern uses slashes
 			
-			// For absolute path patterns, we need special handling
-			if filepath.IsAbs(pattern) {
+			// For absolute path patterns or relative patterns going up (../)
+			if filepath.IsAbs(pattern) || strings.HasPrefix(pattern, "../") {
 				// For absolute patterns, match against the full absolute path
 				absPath := filepath.ToSlash(path)
-				pattern = filepath.ToSlash(pattern)
+				
+				// If pattern is relative (../) resolve it relative to workDir
+				if !filepath.IsAbs(pattern) {
+					resolvedPattern := filepath.Join(m.workDir, pattern)
+					pattern = filepath.ToSlash(resolvedPattern)
+				}
 				
 				// Check if pattern matches the absolute path
 				if pattern == absPath {
@@ -471,6 +564,13 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 				} else if matched, _ := filepath.Match(pattern, absPath); matched {
 					// Wildcard pattern match
 					match = true
+				} else {
+					// Check if pattern without trailing slash should match directory contents
+					if info, err := os.Stat(pattern); err == nil && info.IsDir() {
+						if strings.HasPrefix(absPath, pattern+"/") {
+							match = true
+						}
+					}
 				}
 			}
 
@@ -478,6 +578,18 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 				// Handle ** patterns
 				if strings.Contains(pattern, "**") {
 					match = matchDoubleStarPattern(pattern, relPath)
+					// Also check if pattern matches parent directories for exclusion
+					if !match && isExclude {
+						// For patterns like !**/bin, also match files inside bin directories
+						parts := strings.Split(relPath, "/")
+						for i := range parts {
+							partialPath := strings.Join(parts[:i+1], "/")
+							if matchDoubleStarPattern(pattern, partialPath) {
+								match = true
+								break
+							}
+						}
+					}
 				} else if strings.HasSuffix(pattern, "/") {
 					// Directory pattern: 'demos/' should match 'demos/main.go'
 					dirPattern := strings.TrimSuffix(pattern, "/")
@@ -491,6 +603,29 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 					// Basename pattern if no slashes: '*.go' should match 'a.go' and 'cli/a.go'
 					if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
 						match = true
+					}
+					// Also check if this is a directory name that should match contents
+					if !match && isExclude && !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?") {
+						// For patterns like !bin, also match files inside bin directories
+						parts := strings.Split(relPath, "/")
+						for _, part := range parts {
+							if part == pattern {
+								match = true
+								break
+							}
+						}
+					}
+				} else {
+					// Check if pattern matches a parent directory (for exclusions)
+					if isExclude {
+						parts := strings.Split(relPath, "/")
+						for i := range parts {
+							partialPath := strings.Join(parts[:i+1], "/")
+							if matched, _ := filepath.Match(pattern, partialPath); matched {
+								match = true
+								break
+							}
+						}
 					}
 				}
 			}
@@ -675,6 +810,115 @@ func matchDoubleStarPattern(pattern, path string) bool {
 	// Fallback to simple match
 	matched, _ := filepath.Match(pattern, path)
 	return matched
+}
+
+// Common binary file extensions - defined at package level for performance
+var binaryExtensions = map[string]bool{
+	".exe": true, ".dll": true, ".so": true, ".dylib": true, ".a": true,
+	".o": true, ".obj": true, ".lib": true, ".bin": true, ".dat": true,
+	".db": true, ".sqlite": true, ".sqlite3": true,
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".bmp": true,
+	".ico": true, ".tiff": true, ".webp": true,
+	".mp3": true, ".mp4": true, ".avi": true, ".mov": true, ".wmv": true,
+	".flv": true, ".webm": true, ".m4a": true, ".flac": true, ".wav": true,
+	".zip": true, ".tar": true, ".gz": true, ".bz2": true, ".xz": true,
+	".7z": true, ".rar": true, ".deb": true, ".rpm": true,
+	".dmg": true, ".pkg": true, ".msi": true,
+	".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true,
+	".ppt": true, ".pptx": true, ".odt": true, ".ods": true, ".odp": true,
+	".pyc": true, ".pyo": true, ".class": true, ".jar": true, ".war": true,
+	".woff": true, ".woff2": true, ".ttf": true, ".otf": true, ".eot": true,
+	".wasm": true, ".node": true,
+}
+
+// isBinaryFile detects if a file is likely binary by checking the first 512 bytes
+func isBinaryFile(path string) bool {
+	// Check common binary file extensions first for performance
+	ext := strings.ToLower(filepath.Ext(path))
+	
+	// If it's a known binary extension, return true immediately
+	if binaryExtensions[ext] {
+		return true
+	}
+	
+	// If file has an extension, assume it's not binary (unless in binaryExtensions)
+	// This avoids checking content for most source code files
+	if ext != "" {
+		return false
+	}
+	
+	// Check for common text files without extensions
+	basename := filepath.Base(path)
+	commonTextFiles := map[string]bool{
+		"Makefile": true, "makefile": true, "GNUmakefile": true,
+		"Dockerfile": true, "dockerfile": true,
+		"README": true, "LICENSE": true, "CHANGELOG": true,
+		"AUTHORS": true, "CONTRIBUTORS": true, "PATENTS": true,
+		"VERSION": true, "TODO": true, "NOTICE": true,
+		"Jenkinsfile": true, "Rakefile": true, "Gemfile": true,
+		"Vagrantfile": true, "Brewfile": true, "Podfile": true,
+		"gradlew": true, "mvnw": true,
+	}
+	
+	if commonTextFiles[basename] {
+		return false
+	}
+	
+	// Only check content for files without extensions (like Go binaries)
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	
+	// Read first 512 bytes to check for binary content
+	buffer := make([]byte, 512)
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return false
+	}
+	
+	// Check for common binary file signatures
+	if n >= 4 {
+		// ELF header (Linux/Unix executables including Go binaries)
+		if buffer[0] == 0x7f && buffer[1] == 'E' && buffer[2] == 'L' && buffer[3] == 'F' {
+			return true
+		}
+		// Mach-O header (macOS executables including Go binaries)
+		if (buffer[0] == 0xfe && buffer[1] == 0xed && buffer[2] == 0xfa && (buffer[3] == 0xce || buffer[3] == 0xcf)) ||
+		   (buffer[0] == 0xce && buffer[1] == 0xfa && buffer[2] == 0xed && buffer[3] == 0xfe) ||
+		   (buffer[0] == 0xcf && buffer[1] == 0xfa && buffer[2] == 0xed && buffer[3] == 0xfe) {
+			return true
+		}
+		// PE header (Windows executables)
+		if buffer[0] == 'M' && buffer[1] == 'Z' {
+			return true
+		}
+	}
+	
+	// Quick check for null bytes (strong indicator of binary)
+	for i := 0; i < n; i++ {
+		if buffer[i] == 0 {
+			return true
+		}
+	}
+	
+	// Count non-text characters
+	nonTextCount := 0
+	for i := 0; i < n; i++ {
+		b := buffer[i]
+		// Count non-printable characters (excluding common whitespace)
+		if b < 32 && b != '\t' && b != '\n' && b != '\r' {
+			nonTextCount++
+		}
+	}
+	
+	// If more than 30% of characters are non-text, consider it binary
+	if n > 0 && float64(nonTextCount)/float64(n) > 0.3 {
+		return true
+	}
+	
+	return false
 }
 
 
