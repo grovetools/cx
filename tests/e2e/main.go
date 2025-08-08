@@ -15,7 +15,14 @@ import (
 func main() {
     // A list of all E2E scenarios for grove-context.
     scenarios := []*harness.Scenario{
+        // Basic Scenarios
         BasicContextGenerationScenario(),
+
+        // Advanced Scenarios
+        StatsAndValidateScenario(),
+        SnapshotWorkflowScenario(),
+        GitBasedContextScenario(),
+        ComplexPatternScenario(),
     }
 
     // Setup signal handling for graceful shutdown.
