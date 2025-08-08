@@ -87,7 +87,8 @@ func TestGitIntegration(t *testing.T) {
 	exec.Command("git", "commit", "-m", "Add feature").Run()
 
 	t.Run("branch comparison", func(t *testing.T) {
-		opts := GitOptions{Branch: "main..HEAD"}
+		// Use HEAD~1..HEAD to compare last commit instead of branch names
+		opts := GitOptions{Branch: "HEAD~1..HEAD"}
 		err := mgr.UpdateFromGit(opts)
 		if err != nil {
 			t.Fatalf("UpdateFromGit failed: %v", err)
