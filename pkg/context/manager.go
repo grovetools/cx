@@ -95,8 +95,12 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		return fmt.Errorf("error resolving files from rules: %w", err)
 	}
 	
+	// Handle case where no rules file exists
 	if len(filesToInclude) == 0 {
-		return fmt.Errorf("no files found matching the rules")
+		// Print visible warning to stderr
+		fmt.Fprintf(os.Stderr, "\n⚠️  WARNING: No rules file found!\n")
+		fmt.Fprintf(os.Stderr, "⚠️  Create %s with patterns to include files in the context.\n", ActiveRulesFile)
+		fmt.Fprintf(os.Stderr, "⚠️  Generating empty context file.\n\n")
 	}
 	
 	// Create context file
@@ -106,6 +110,15 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		return fmt.Errorf("error creating %s: %w", contextPath, err)
 	}
 	defer ctxFile.Close()
+	
+	// If no files to include, write a comment explaining why
+	if len(filesToInclude) == 0 {
+		if useXMLFormat {
+			fmt.Fprintf(ctxFile, "<!-- No rules file found. Create %s with patterns to include files. -->\n", ActiveRulesFile)
+		} else {
+			fmt.Fprintf(ctxFile, "# No rules file found. Create %s with patterns to include files.\n", ActiveRulesFile)
+		}
+	}
 	
 	// Write concatenated content
 	for _, file := range filesToInclude {
@@ -273,8 +286,9 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 		return m.resolveFileListFromRules(oldRulesPath)
 	}
 	
-	// Neither file exists
-	return nil, fmt.Errorf("no rules file found. Create %s with patterns to include", ActiveRulesFile)
+	// Neither file exists - return empty list instead of error
+	// The GenerateContext method will handle the warning
+	return []string{}, nil
 }
 
 // resolveFileListFromRules dynamically resolves the list of files from a rules file

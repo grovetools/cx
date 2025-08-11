@@ -3,7 +3,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,35 +12,6 @@ import (
 	"github.com/mattsolo1/grove-tend/pkg/harness"
 )
 
-// getCxBinary is a helper to find the `cx` binary path for tests.
-func getCxBinary() (string, error) {
-	cxBinary := os.Getenv("CX_BINARY")
-	if cxBinary != "" {
-		return cxBinary, nil
-	}
-
-	// Try to find the binary relative to the test execution directory
-	candidates := []string{
-		"./bin/cx",
-		"../bin/cx",
-		"../../bin/cx",
-	}
-
-	for _, candidate := range candidates {
-		if absPath, err := filepath.Abs(candidate); err == nil {
-			if _, err := os.Stat(absPath); err == nil {
-				return absPath, nil
-			}
-		}
-	}
-
-	// Fallback to assuming it's in the PATH
-	if _, err := command.RunSimple("which", "cx"); err == nil {
-		return "cx", nil
-	}
-
-	return "", fmt.Errorf("cx binary not found. Build it with 'make build' or set CX_BINARY env var")
-}
 
 // StatsAndValidateScenario tests the `cx stats` and `cx validate` commands.
 func StatsAndValidateScenario() *harness.Scenario {
@@ -63,7 +33,7 @@ func StatsAndValidateScenario() *harness.Scenario {
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
 			harness.NewStep("Run 'cx validate' and check for errors", func(ctx *harness.Context) error {
-				cx, err := getCxBinary()
+				cx, err := FindCxBinary()
 				if err != nil {
 					return err
 				}
@@ -80,7 +50,7 @@ func StatsAndValidateScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Run 'cx stats' and verify output", func(ctx *harness.Context) error {
-				cx, err := getCxBinary()
+				cx, err := FindCxBinary()
 				if err != nil {
 					return err
 				}
@@ -117,7 +87,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 				rules := "fileA.txt\nfileB.txt"
 				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 
-				cx, _ := getCxBinary()
+				cx, _ := FindCxBinary()
 				cmd := command.New(cx, "save", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -128,7 +98,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
 			harness.NewStep("Run 'cx diff snapshot-ab'", func(ctx *harness.Context) error {
-				cx, _ := getCxBinary()
+				cx, _ := FindCxBinary()
 				cmd := command.New(cx, "diff", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -142,7 +112,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Run 'cx load snapshot-ab'", func(ctx *harness.Context) error {
-				cx, _ := getCxBinary()
+				cx, _ := FindCxBinary()
 				cmd := command.New(cx, "load", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -184,7 +154,7 @@ func GitBasedContextScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Run 'cx from-git --staged'", func(ctx *harness.Context) error {
-				cx, _ := getCxBinary()
+				cx, _ := FindCxBinary()
 				cmd := command.New(cx, "from-git", "--staged").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -229,7 +199,7 @@ func ComplexPatternScenario() *harness.Scenario {
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
 			harness.NewStep("Run 'cx list' and verify results", func(ctx *harness.Context) error {
-				cx, _ := getCxBinary()
+				cx, _ := FindCxBinary()
 				cmd := command.New(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)

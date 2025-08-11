@@ -17,6 +17,7 @@ func main() {
     scenarios := []*harness.Scenario{
         // Basic Scenarios
         BasicContextGenerationScenario(),
+        MissingRulesScenario(),
 
         // Advanced Scenarios
         StatsAndValidateScenario(),
