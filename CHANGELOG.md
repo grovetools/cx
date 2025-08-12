@@ -1,3 +1,13 @@
+## v0.2.11 (2025-08-12)
+
+### Chores
+
+* **deps:** bump dependencies
+
+### Bug Fixes
+
+* handle missing rules files gracefully in the cx generate command and improved test code maintainability
+
 ## v0.2.10 (2025-08-08)
 
 ### Chores
