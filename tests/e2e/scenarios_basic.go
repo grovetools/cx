@@ -39,7 +39,7 @@ func BasicContextGenerationScenario() *harness.Scenario {
                 return fs.WriteString(rulesPath, rulesContent)
             }),
             harness.NewStep("Run 'cx generate'", func(ctx *harness.Context) error {
-                cxBinary, err := FindCxBinary()
+                cxBinary, err := FindProjectBinary()
                 if err != nil {
                     return err
                 }
@@ -92,7 +92,7 @@ func MissingRulesScenario() *harness.Scenario {
                 return nil
             }),
             harness.NewStep("Run 'cx generate' without rules file", func(ctx *harness.Context) error {
-                cxBinary, err := FindCxBinary()
+                cxBinary, err := FindProjectBinary()
                 if err != nil {
                     return err
                 }

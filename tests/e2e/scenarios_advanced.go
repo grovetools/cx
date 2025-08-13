@@ -33,7 +33,7 @@ func StatsAndValidateScenario() *harness.Scenario {
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
 			harness.NewStep("Run 'cx validate' and check for errors", func(ctx *harness.Context) error {
-				cx, err := FindCxBinary()
+				cx, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
@@ -50,7 +50,7 @@ func StatsAndValidateScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Run 'cx stats' and verify output", func(ctx *harness.Context) error {
-				cx, err := FindCxBinary()
+				cx, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
@@ -87,7 +87,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 				rules := "fileA.txt\nfileB.txt"
 				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 
-				cx, _ := FindCxBinary()
+				cx, _ := FindProjectBinary()
 				cmd := command.New(cx, "save", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -98,7 +98,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
 			harness.NewStep("Run 'cx diff snapshot-ab'", func(ctx *harness.Context) error {
-				cx, _ := FindCxBinary()
+				cx, _ := FindProjectBinary()
 				cmd := command.New(cx, "diff", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -112,7 +112,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Run 'cx load snapshot-ab'", func(ctx *harness.Context) error {
-				cx, _ := FindCxBinary()
+				cx, _ := FindProjectBinary()
 				cmd := command.New(cx, "load", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -154,7 +154,7 @@ func GitBasedContextScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Run 'cx from-git --staged'", func(ctx *harness.Context) error {
-				cx, _ := FindCxBinary()
+				cx, _ := FindProjectBinary()
 				cmd := command.New(cx, "from-git", "--staged").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -199,7 +199,7 @@ func ComplexPatternScenario() *harness.Scenario {
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
 			harness.NewStep("Run 'cx list' and verify results", func(ctx *harness.Context) error {
-				cx, _ := FindCxBinary()
+				cx, _ := FindProjectBinary()
 				cmd := command.New(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
