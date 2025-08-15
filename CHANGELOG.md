@@ -1,3 +1,10 @@
+## v0.2.13 (2025-08-15)
+
+### Chores
+
+* **deps:** bump dependencies
+* bump deps
+
 ## v0.2.12 (2025-08-13)
 
 ### Code Refactoring
