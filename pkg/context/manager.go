@@ -377,14 +377,20 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 		}
 	}
 	
-	// Second pass: add exclusion patterns to relevant base paths
-	for _, pattern := range deferredExclusions {
-		cleanPattern := strings.TrimPrefix(pattern, "!")
-		// Add the exclusion pattern to all base paths it might affect
-		for basePath := range absolutePaths {
-			if strings.HasPrefix(cleanPattern, basePath) || strings.HasPrefix(basePath, cleanPattern) {
-				absolutePaths[basePath] = append(absolutePaths[basePath], pattern)
-			}
+	// Second pass: add exclusion patterns to all base paths
+	// Collect all exclusion patterns (both from relativePatterns and deferredExclusions)
+	allExclusions := []string{}
+	for _, pattern := range relativePatterns {
+		if strings.HasPrefix(pattern, "!") {
+			allExclusions = append(allExclusions, pattern)
+		}
+	}
+	allExclusions = append(allExclusions, deferredExclusions...)
+	
+	// Add exclusion patterns to all absolute paths since they should apply globally
+	for basePath := range absolutePaths {
+		for _, exclusion := range allExclusions {
+			absolutePaths[basePath] = append(absolutePaths[basePath], exclusion)
 		}
 	}
 
@@ -568,9 +574,20 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 				match = matchDoubleStarPattern(cleanPattern, matchPath)
 			} else if matched, _ := filepath.Match(cleanPattern, matchPath); matched {
 				match = true
-			} else if !strings.Contains(cleanPattern, "/") { // Basename match (e.g., "*.go")
+			} else if !strings.Contains(cleanPattern, "/") { // Basename match (e.g., "*.go" or "tests")
+				// Gitignore behavior: patterns without slashes match against the basename at any level
 				if matched, _ := filepath.Match(cleanPattern, filepath.Base(matchPath)); matched {
 					match = true
+				}
+				// Also check if this matches any directory component in the path
+				if !match {
+					parts := strings.Split(matchPath, "/")
+					for _, part := range parts {
+						if matched, _ := filepath.Match(cleanPattern, part); matched {
+							match = true
+							break
+						}
+					}
 				}
 			}
 
@@ -720,6 +737,19 @@ func (m *Manager) ListFiles() ([]string, error) {
 
 // matchDoubleStarPattern handles patterns with ** for recursive matching
 func matchDoubleStarPattern(pattern, path string) bool {
+	// Special case: pattern like "**/something/**" means "something" appears anywhere in path
+	if strings.HasPrefix(pattern, "**/") && strings.HasSuffix(pattern, "/**") {
+		middle := pattern[3:len(pattern)-3]
+		// Check if middle appears as a complete path component
+		pathParts := strings.Split(path, "/")
+		for _, part := range pathParts {
+			if matched, _ := filepath.Match(middle, part); matched {
+				return true
+			}
+		}
+		return false
+	}
+	
 	// Split pattern at **
 	parts := strings.Split(pattern, "**")
 	

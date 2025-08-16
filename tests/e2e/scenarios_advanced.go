@@ -303,3 +303,136 @@ func RecursiveParentPatternScenario() *harness.Scenario {
 		},
 	}
 }
+
+// ExclusionPatternsScenario tests various exclusion patterns including gitignore-compatible ones
+func ExclusionPatternsScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-exclusion-patterns",
+		Description: "Tests exclusion patterns including gitignore-compatible patterns and cross-directory exclusions.",
+		Tags:        []string{"cx", "rules", "exclusion"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup project with test directories", func(ctx *harness.Context) error {
+				// Create main project structure
+				fs.CreateDir(filepath.Join(ctx.RootDir, "src"))
+				fs.CreateDir(filepath.Join(ctx.RootDir, "tests/unit"))
+				fs.CreateDir(filepath.Join(ctx.RootDir, "tests/integration"))
+				fs.CreateDir(filepath.Join(ctx.RootDir, "pkg/tests"))
+				fs.CreateDir(filepath.Join(ctx.RootDir, "internal/testutils"))
+				
+				// Create Go files
+				fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
+				fs.WriteString(filepath.Join(ctx.RootDir, "src/app.go"), "package src")
+				fs.WriteString(filepath.Join(ctx.RootDir, "src/app_test.go"), "package src")
+				fs.WriteString(filepath.Join(ctx.RootDir, "tests/unit/user_test.go"), "package unit")
+				fs.WriteString(filepath.Join(ctx.RootDir, "tests/integration/api_test.go"), "package integration")
+				fs.WriteString(filepath.Join(ctx.RootDir, "pkg/tests/helper.go"), "package tests")
+				fs.WriteString(filepath.Join(ctx.RootDir, "internal/testutils/mock.go"), "package testutils")
+				
+				// Create sibling project for cross-directory testing
+				parentDir := filepath.Dir(ctx.RootDir)
+				siblingDir := filepath.Join(parentDir, "sibling-project")
+				fs.CreateDir(filepath.Join(siblingDir, "cmd"))
+				fs.CreateDir(filepath.Join(siblingDir, "tests/e2e"))
+				fs.CreateDir(filepath.Join(siblingDir, "pkg/util"))
+				fs.CreateDir(filepath.Join(siblingDir, "internal/core/db"))
+				
+				fs.WriteString(filepath.Join(siblingDir, "main.go"), "package main")
+				fs.WriteString(filepath.Join(siblingDir, "cmd/cli.go"), "package cmd")
+				fs.WriteString(filepath.Join(siblingDir, "cmd/root.go"), "package cmd")
+				fs.WriteString(filepath.Join(siblingDir, "tests/e2e/flow_test.go"), "package e2e")
+				fs.WriteString(filepath.Join(siblingDir, "pkg/util/helper.go"), "package util")
+				fs.WriteString(filepath.Join(siblingDir, "internal/core/db/manager.go"), "package db")
+				
+				return nil
+			}),
+			harness.NewStep("Test !tests pattern (gitignore compatible)", func(ctx *harness.Context) error {
+				rules := `**/*.go
+!tests`
+				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+				
+				cx, _ := FindProjectBinary()
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				if result.Error != nil {
+					return result.Error
+				}
+				
+				output := result.Stdout
+				
+				// Should exclude any file in directories named "tests"
+				if strings.Contains(output, "tests/unit/user_test.go") ||
+				   strings.Contains(output, "tests/integration/api_test.go") ||
+				   strings.Contains(output, "pkg/tests/helper.go") {
+					return fmt.Errorf("!tests pattern should exclude files in 'tests' directories")
+				}
+				
+				// Should NOT exclude testutils or files with test in the name
+				if !strings.Contains(output, "src/app_test.go") {
+					return fmt.Errorf("!tests pattern should not exclude files ending with _test.go")
+				}
+				if !strings.Contains(output, "internal/testutils/mock.go") {
+					return fmt.Errorf("!tests pattern should not exclude 'testutils' directory")
+				}
+				
+				return nil
+			}),
+			harness.NewStep("Test !**/tests/** pattern", func(ctx *harness.Context) error {
+				rules := `**/*.go
+!**/tests/**`
+				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+				
+				cx, _ := FindProjectBinary()
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				if result.Error != nil {
+					return result.Error
+				}
+				
+				// Same behavior as !tests for this case
+				output := result.Stdout
+				if strings.Contains(output, "tests/") {
+					return fmt.Errorf("!**/tests/** should exclude all files under tests directories")
+				}
+				
+				return nil
+			}),
+			harness.NewStep("Test cross-directory exclusions", func(ctx *harness.Context) error {
+				rules := `../sibling-project/**/*.go
+!tests`
+				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+				
+				cx, _ := FindProjectBinary()
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				if result.Error != nil {
+					return result.Error
+				}
+				
+				output := result.Stdout
+				ctx.ShowCommandOutput(cmd.String(), output, result.Stderr)
+				
+				// Check that we got some files
+				if output == "" {
+					return fmt.Errorf("No files found. Expected files from sibling project")
+				}
+				
+				// Should include files from sibling project (checking for path components)
+				if !strings.Contains(output, "sibling-project") {
+					return fmt.Errorf("Output should contain files from sibling-project. Got: %s", output)
+				}
+				
+				// Should include main.go and cmd/cli.go
+				if !strings.Contains(output, "main.go") || !strings.Contains(output, "cmd/cli.go") {
+					return fmt.Errorf("Should include main.go and cmd/cli.go from sibling project. Got: %s", output)
+				}
+				
+				// Should exclude test directories in sibling project
+				if strings.Contains(output, "tests/e2e/flow_test.go") {
+					return fmt.Errorf("Should exclude test directories from sibling project")
+				}
+				
+				return nil
+			}),
+		},
+	}
+}

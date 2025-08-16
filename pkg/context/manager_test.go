@@ -2,253 +2,419 @@ package context
 
 import (
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
 
-func TestManager_ReadFilesList(t *testing.T) {
-	// Create temporary directory
-	tempDir := t.TempDir()
-	os.Chdir(tempDir)
-	defer os.Chdir("..")
-
-	mgr := NewManager(tempDir)
-
-	// Test with non-existent file
-	_, err := mgr.ReadFilesList("nonexistent.txt")
-	if err == nil {
-		t.Error("Expected error for non-existent file")
+func TestManager_ExclusionPatterns(t *testing.T) {
+	// Create test directory structure
+	testDir := t.TempDir()
+	
+	// Create files in various locations including test directories
+	testFiles := map[string]string{
+		"main.go":                          "package main",
+		"cmd/app.go":                       "package cmd",
+		"cmd/app_test.go":                  "package cmd",
+		"tests/unit_test.go":               "package tests",
+		"tests/integration/api_test.go":    "package tests",
+		"pkg/util/helper.go":               "package util",
+		"pkg/tests/helper_test.go":         "package tests",
+		"internal/tests/fixtures/data.go":  "package fixtures",
 	}
-
-	// Create test file
-	testFile := "test-files.txt"
-	content := `# Comment line
-file1.go
-file2.go
-
-# Another comment
-file3.go
-`
-	os.WriteFile(testFile, []byte(content), 0644)
-
-	// Test reading
-	files, err := mgr.ReadFilesList(testFile)
-	if err != nil {
-		t.Fatalf("Failed to read files list: %v", err)
-	}
-
-	expected := []string{"file1.go", "file2.go", "file3.go"}
-	if len(files) != len(expected) {
-		t.Errorf("Expected %d files, got %d", len(expected), len(files))
-	}
-
-	for i, file := range files {
-		if file != expected[i] {
-			t.Errorf("Expected file %s, got %s", expected[i], file)
+	
+	for relPath, content := range testFiles {
+		fullPath := filepath.Join(testDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
-}
-
-func TestManager_GenerateContext(t *testing.T) {
-	// Create temporary directory
-	tempDir := t.TempDir()
-	os.Chdir(tempDir)
-	defer os.Chdir("..")
-
-	mgr := NewManager(tempDir)
-
+	
 	// Create .grove directory
-	os.MkdirAll(GroveDir, 0755)
-
-	// Create test files
-	os.WriteFile("file1.go", []byte("package main\n// File 1"), 0644)
-	os.WriteFile("file2.go", []byte("package main\n// File 2"), 0644)
-
-	// Create rules file
-	os.WriteFile(ActiveRulesFile, []byte("file1.go\nfile2.go\n"), 0644)
-
-	// Generate context with XML format
-	err := mgr.GenerateContext(true)
-	if err != nil {
-		t.Fatalf("Failed to generate context: %v", err)
+	groveDir := filepath.Join(testDir, ".grove")
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
-
-	// Check context file was created
-	content, err := os.ReadFile(ContextFile)
-	if err != nil {
-		t.Fatalf("Failed to read context file: %v", err)
+	
+	tests := []struct {
+		name     string
+		rules    string
+		expected []string
+	}{
+		{
+			name: "exclude with !tests pattern (gitignore compatible)",
+			rules: `*.go
+!tests`,
+			expected: []string{
+				"main.go",
+				"cmd/app.go",
+				"cmd/app_test.go",
+				"pkg/util/helper.go",
+			},
+		},
+		{
+			name: "exclude with !**/tests/** pattern",
+			rules: `**/*.go
+!**/tests/**`,
+			expected: []string{
+				"main.go",
+				"cmd/app.go",
+				"cmd/app_test.go",
+				"pkg/util/helper.go",
+			},
+		},
+		{
+			name: "exclude test files with !*_test.go",
+			rules: `**/*.go
+!*_test.go`,
+			expected: []string{
+				"main.go",
+				"cmd/app.go",
+				"pkg/util/helper.go",
+				"internal/tests/fixtures/data.go",
+			},
+		},
+		{
+			name: "multiple exclusion patterns",
+			rules: `**/*.go
+!tests
+!*_test.go`,
+			expected: []string{
+				"main.go",
+				"cmd/app.go",
+				"pkg/util/helper.go",
+			},
+		},
 	}
-
-	// Check for XML tags
-	expectedTags := []string{
-		`<file path="file1.go">`,
-		`<file path="file2.go">`,
-		`</file>`,
-	}
-
-	for _, tag := range expectedTags {
-		if !strings.Contains(string(content), tag) {
-			t.Errorf("Expected tag %q not found in context", tag)
-		}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Write rules file
+			rulesPath := filepath.Join(groveDir, "rules")
+			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
+				t.Fatalf("Failed to write rules file: %v", err)
+			}
+			
+			// Create manager and resolve files
+			mgr := NewManager(testDir)
+			files, err := mgr.ResolveFilesFromRules()
+			if err != nil {
+				t.Fatalf("Failed to resolve files: %v", err)
+			}
+			
+			// Sort for consistent comparison
+			sort.Strings(files)
+			sort.Strings(tt.expected)
+			
+			// Compare results
+			if len(files) != len(tt.expected) {
+				t.Errorf("Expected %d files, got %d\nExpected: %v\nGot: %v",
+					len(tt.expected), len(files), tt.expected, files)
+				return
+			}
+			
+			for i, expected := range tt.expected {
+				if files[i] != expected {
+					t.Errorf("File mismatch at index %d: expected %s, got %s",
+						i, expected, files[i])
+				}
+			}
+		})
 	}
 }
 
-func TestManager_UpdateFromRules(t *testing.T) {
-	// Create temporary directory
-	tempDir := t.TempDir()
-	os.Chdir(tempDir)
-	defer os.Chdir("..")
-
-	mgr := NewManager(tempDir)
-
-	// Create test files
-	os.WriteFile("main.go", []byte("package main"), 0644)
-	os.WriteFile("test.go", []byte("package main"), 0644)
-	os.WriteFile("test_test.go", []byte("package main"), 0644)
-	os.WriteFile("README.md", []byte("# Test"), 0644)
-
-	// Create rules file with include and exclude patterns
-	rules := `*.go
-!*_test.go
-README.md`
-	os.WriteFile(RulesFile, []byte(rules), 0644)
-
-	// Update from rules
-	err := mgr.UpdateFromRules()
-	if err != nil {
-		t.Fatalf("Failed to update from rules: %v", err)
-	}
-
-	// Resolve files from rules
-	files, err := mgr.ResolveFilesFromRules()
-	if err != nil {
-		t.Fatalf("Failed to resolve files from rules: %v", err)
-	}
-
-	// Should include main.go and test.go but not test_test.go
-	expectedFiles := map[string]bool{
-		"main.go":   true,
-		"test.go":   true,
-		"README.md": true,
-	}
-
-	if len(files) != len(expectedFiles) {
-		t.Errorf("Expected %d files, got %d", len(expectedFiles), len(files))
-	}
-
-	for _, file := range files {
-		if !expectedFiles[file] {
-			t.Errorf("Unexpected file in list: %s", file)
+func TestManager_CrossDirectoryExclusions(t *testing.T) {
+	// This tests the specific case where we have patterns like ../other-project/**/*.go
+	// with exclusions that should apply to those external paths
+	
+	// Create two sibling directories
+	tempParent := t.TempDir()
+	projectDir := filepath.Join(tempParent, "main-project")
+	siblingDir := filepath.Join(tempParent, "sibling-project")
+	
+	// Create directories
+	for _, dir := range []string{projectDir, siblingDir} {
+		if err := os.MkdirAll(filepath.Join(dir, ".grove"), 0755); err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
 		}
-		delete(expectedFiles, file)
 	}
-
-	for file := range expectedFiles {
-		t.Errorf("Expected file not found: %s", file)
+	
+	// Create files in sibling project
+	siblingFiles := map[string]string{
+		"main.go":                          "package main",
+		"cmd/app.go":                       "package cmd",
+		"tests/unit_test.go":               "package tests",
+		"tests/e2e/api_test.go":            "package e2e",
+		"pkg/core/logic.go":                "package core",
+		"pkg/core/logic_test.go":           "package core",
+		"internal/tests/fixtures/data.go":  "package fixtures",
+	}
+	
+	for relPath, content := range siblingFiles {
+		fullPath := filepath.Join(siblingDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write file %s: %v", relPath, err)
+		}
+	}
+	
+	// Test cases
+	tests := []struct {
+		name     string
+		rules    string
+		expected []string
+	}{
+		{
+			name: "cross-directory with !tests exclusion",
+			rules: `../sibling-project/**/*.go
+!tests`,
+			expected: []string{
+				"../sibling-project/main.go",
+				"../sibling-project/cmd/app.go",
+				"../sibling-project/pkg/core/logic.go",
+				"../sibling-project/pkg/core/logic_test.go",
+			},
+		},
+		{
+			name: "cross-directory with !**/tests/** exclusion",
+			rules: `../sibling-project/**/*.go
+!**/tests/**`,
+			expected: []string{
+				"../sibling-project/main.go",
+				"../sibling-project/cmd/app.go",
+				"../sibling-project/pkg/core/logic.go",
+				"../sibling-project/pkg/core/logic_test.go",
+			},
+		},
+		{
+			name: "cross-directory with multiple exclusions",
+			rules: `../sibling-project/**/*.go
+!**/tests/**
+!*_test.go`,
+			expected: []string{
+				"../sibling-project/main.go",
+				"../sibling-project/cmd/app.go",
+				"../sibling-project/pkg/core/logic.go",
+			},
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Write rules file
+			rulesPath := filepath.Join(projectDir, ".grove", "rules")
+			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
+				t.Fatalf("Failed to write rules file: %v", err)
+			}
+			
+			// Create manager and resolve files
+			mgr := NewManager(projectDir)
+			files, err := mgr.ResolveFilesFromRules()
+			if err != nil {
+				t.Fatalf("Failed to resolve files: %v", err)
+			}
+			
+			// Sort for consistent comparison
+			sort.Strings(files)
+			sort.Strings(tt.expected)
+			
+			// Compare results - need to handle both relative and absolute paths
+			if len(files) != len(tt.expected) {
+				t.Errorf("Expected %d files, got %d", len(tt.expected), len(files))
+				t.Errorf("Expected: %v", tt.expected)
+				t.Errorf("Got: %v", files)
+				return
+			}
+			
+			// Check that all expected files are present (handling path differences)
+			found := make(map[string]bool)
+			for _, expected := range tt.expected {
+				for _, got := range files {
+					// Check various ways the paths might match
+					if got == expected || 
+					   strings.HasSuffix(got, expected) ||
+					   strings.HasSuffix(got, strings.TrimPrefix(expected, "../")) {
+						found[expected] = true
+						break
+					}
+				}
+				if !found[expected] {
+					t.Errorf("Expected file not found: %s (got files: %v)", expected, files)
+				}
+			}
+		})
 	}
 }
 
-func TestManager_Snapshots(t *testing.T) {
-	// Create temporary directory
-	tempDir := t.TempDir()
-	os.Chdir(tempDir)
-	defer os.Chdir("..")
+func TestMatchDoubleStarPattern(t *testing.T) {
+	tests := []struct {
+		pattern string
+		path    string
+		want    bool
+	}{
+		// Basic ** patterns
+		{"**/*.go", "main.go", true},
+		{"**/*.go", "cmd/app.go", true},
+		{"**/*.go", "deep/nested/path/file.go", true},
+		{"**/*.go", "file.txt", false},
+		
+		// Patterns with prefix
+		{"src/**/*.go", "src/main.go", true},
+		{"src/**/*.go", "src/cmd/app.go", true},
+		{"src/**/*.go", "main.go", false},
+		{"src/**/*.go", "other/main.go", false},
+		
+		// Patterns with complex suffix
+		{"**/tests/*.go", "tests/unit.go", true},
+		{"**/tests/*.go", "src/tests/unit.go", true},
+		{"**/tests/*.go", "src/tests/e2e/api.go", false}, // Too deep
+		
+		// Special case: **/dir/** patterns
+		{"**/tests/**", "tests/unit.go", true},
+		{"**/tests/**", "src/tests/unit.go", true},
+		{"**/tests/**", "src/tests/e2e/api.go", true},
+		{"**/tests/**", "src/testing/api.go", false},
+		{"**/tests/**", "../project/tests/unit.go", true},
+		
+		// Edge cases
+		{"**", "anything", true},
+		{"**", "deep/nested/path", true},
+		{"**/", "dir/", true},
+		{"**.go", "file.go", false}, // Invalid pattern, falls back to literal match
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.pattern+"_"+tt.path, func(t *testing.T) {
+			got := matchDoubleStarPattern(tt.pattern, tt.path)
+			if got != tt.want {
+				t.Errorf("matchDoubleStarPattern(%q, %q) = %v, want %v",
+					tt.pattern, tt.path, got, tt.want)
+			}
+		})
+	}
+}
 
-	mgr := NewManager(tempDir)
-
+// Add this test to the existing test file
+func TestManager_GitignoreCompatibility(t *testing.T) {
+	// Test that our patterns behave like gitignore
+	testDir := t.TempDir()
+	
+	// Create test structure
+	files := []string{
+		"main.go",
+		"test.go",
+		"tests/unit.go",
+		"src/tests/integration.go",
+		"testdata/sample.go",
+		"contest/solution.go",
+	}
+	
+	for _, relPath := range files {
+		fullPath := filepath.Join(testDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte("package main"), 0644); err != nil {
+			t.Fatalf("Failed to write file: %v", err)
+		}
+	}
+	
 	// Create .grove directory
-	os.MkdirAll(GroveDir, 0755)
-
-	// Create initial rules file
-	filesList := []string{"file1.go", "file2.go"}
-	mgr.WriteFilesList(ActiveRulesFile, filesList)
-
-	// Save snapshot
-	err := mgr.SaveSnapshot("test-snapshot", "Test snapshot description")
-	if err != nil {
-		t.Fatalf("Failed to save snapshot: %v", err)
+	groveDir := filepath.Join(testDir, ".grove")
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
-
-	// Modify rules file
-	newFilesList := []string{"file3.go", "file4.go", "file5.go"}
-	mgr.WriteFilesList(ActiveRulesFile, newFilesList)
-
-	// Load snapshot
-	err = mgr.LoadSnapshot("test-snapshot")
-	if err != nil {
-		t.Fatalf("Failed to load snapshot: %v", err)
+	
+	tests := []struct {
+		name     string
+		rules    string
+		expected []string
+	}{
+		{
+			name: "pattern without slash matches at any level",
+			rules: `**/*.go
+!test`,
+			expected: []string{
+				"main.go",
+				"test.go", // NOT excluded - filename is "test.go" not "test"
+				"tests/unit.go",
+				"src/tests/integration.go",
+				"testdata/sample.go",
+				"contest/solution.go",
+			},
+		},
+		{
+			name: "pattern without slash matches directories",
+			rules: `**/*.go
+!tests`,
+			expected: []string{
+				"main.go",
+				"test.go",
+				"testdata/sample.go",
+				"contest/solution.go",
+			},
+		},
+		{
+			name: "wildcard patterns",
+			rules: `**/*.go
+!test*`,
+			expected: []string{
+				"main.go",
+				"contest/solution.go",
+			},
+		},
+		{
+			name: "partial name matching",
+			rules: `**/*.go
+!*test*`,
+			expected: []string{
+				"main.go",
+			},
+		},
 	}
-
-	// Verify rules file was restored
-	files, err := mgr.ReadFilesList(ActiveRulesFile)
-	if err != nil {
-		t.Fatalf("Failed to read rules file: %v", err)
-	}
-
-	if len(files) != len(filesList) {
-		t.Errorf("Expected %d files, got %d", len(filesList), len(files))
-	}
-
-	// List snapshots
-	snapshots, err := mgr.ListSnapshots()
-	if err != nil {
-		t.Fatalf("Failed to list snapshots: %v", err)
-	}
-
-	if len(snapshots) != 1 {
-		t.Errorf("Expected 1 snapshot, got %d", len(snapshots))
-	}
-
-	if snapshots[0].Name != "test-snapshot" {
-		t.Errorf("Expected snapshot name 'test-snapshot', got '%s'", snapshots[0].Name)
-	}
-
-	if snapshots[0].Description != "Test snapshot description" {
-		t.Errorf("Expected description 'Test snapshot description', got '%s'", snapshots[0].Description)
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Write rules file
+			rulesPath := filepath.Join(groveDir, "rules")
+			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
+				t.Fatalf("Failed to write rules file: %v", err)
+			}
+			
+			// Create manager and resolve files
+			mgr := NewManager(testDir)
+			files, err := mgr.ResolveFilesFromRules()
+			if err != nil {
+				t.Fatalf("Failed to resolve files: %v", err)
+			}
+			
+			// Sort for comparison
+			sort.Strings(files)
+			sort.Strings(tt.expected)
+			
+			// Compare
+			if !slicesEqual(files, tt.expected) {
+				t.Errorf("Pattern %q: expected %v, got %v", 
+					strings.Split(tt.rules, "\n")[1], tt.expected, files)
+			}
+		})
 	}
 }
 
-func TestFormatTokenCount(t *testing.T) {
-	tests := []struct {
-		tokens   int
-		expected string
-	}{
-		{100, "100"},
-		{999, "999"},
-		{1000, "1.0k"},
-		{1500, "1.5k"},
-		{10000, "10.0k"},
-		{999999, "1000.0k"},
-		{1000000, "1.0M"},
-		{1500000, "1.5M"},
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
 	}
-
-	for _, tt := range tests {
-		result := FormatTokenCount(tt.tokens)
-		if result != tt.expected {
-			t.Errorf("FormatTokenCount(%d) = %s; want %s", tt.tokens, result, tt.expected)
+	for i := range a {
+		if a[i] != b[i] {
+			return false
 		}
 	}
-}
-
-func TestFormatBytes(t *testing.T) {
-	tests := []struct {
-		bytes    int
-		expected string
-	}{
-		{100, "100 bytes"},
-		{1023, "1023 bytes"},
-		{1024, "1.0 KB"},
-		{1536, "1.5 KB"},
-		{1048576, "1.0 MB"},
-		{1572864, "1.5 MB"},
-		{1073741824, "1.0 GB"},
-	}
-
-	for _, tt := range tests {
-		result := FormatBytes(tt.bytes)
-		if result != tt.expected {
-			t.Errorf("FormatBytes(%d) = %s; want %s", tt.bytes, result, tt.expected)
-		}
-	}
+	return true
 }

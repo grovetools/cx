@@ -25,6 +25,7 @@ func main() {
         GitBasedContextScenario(),
         ComplexPatternScenario(),
         RecursiveParentPatternScenario(),
+        ExclusionPatternsScenario(),
     }
 
     // Setup signal handling for graceful shutdown.
