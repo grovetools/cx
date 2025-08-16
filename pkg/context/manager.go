@@ -540,107 +540,37 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 		// Default to not included. A file must match an include pattern.
 		isIncluded := false
 		for _, pattern := range patterns {
-			// Skip special patterns
 			if pattern == "!binary:exclude" || pattern == "binary:include" {
 				continue
 			}
-			
 			isExclude := strings.HasPrefix(pattern, "!")
+			cleanPattern := pattern
 			if isExclude {
-				pattern = strings.TrimPrefix(pattern, "!")
+				cleanPattern = strings.TrimPrefix(pattern, "!")
 			}
 
-			// Gitignore-style matching logic
 			match := false
-			pattern = filepath.ToSlash(pattern) // Ensure pattern uses slashes
-			
-			// For absolute path patterns or relative patterns going up (../)
-			if filepath.IsAbs(pattern) || strings.HasPrefix(pattern, "../") {
-				// For absolute patterns, match against the full absolute path
-				absPath := filepath.ToSlash(path)
-				
-				// If pattern is relative (../) resolve it relative to workDir
-				if !filepath.IsAbs(pattern) {
-					resolvedPattern := filepath.Join(m.workDir, pattern)
-					pattern = filepath.ToSlash(resolvedPattern)
-				}
-				
-				// Check if pattern matches the absolute path
-				if pattern == absPath {
-					// Exact match
-					match = true
-				} else if strings.HasSuffix(pattern, "/") {
-					// Directory pattern
-					dirPattern := strings.TrimSuffix(pattern, "/")
-					if absPath == dirPattern || strings.HasPrefix(absPath, dirPattern+"/") {
-						match = true
-					}
-				} else if matched, _ := filepath.Match(pattern, absPath); matched {
-					// Wildcard pattern match
-					match = true
-				} else {
-					// Check if pattern without trailing slash should match directory contents
-					if info, err := os.Stat(pattern); err == nil && info.IsDir() {
-						if strings.HasPrefix(absPath, pattern+"/") {
-							match = true
-						}
-					}
+			matchPath := relPath // Default path to match against (relative to walk root)
+
+			// If pattern is absolute or starts with ../, we need to use a different path for matching.
+			if filepath.IsAbs(cleanPattern) {
+				matchPath = filepath.ToSlash(path) // Use the full absolute path of the file
+			} else if strings.HasPrefix(cleanPattern, "../") {
+				// Reconstruct path relative to workDir to give context to "../"
+				relFromWorkDir, err := filepath.Rel(m.workDir, path)
+				if err == nil {
+					matchPath = filepath.ToSlash(relFromWorkDir)
 				}
 			}
 
-			if !match {
-				// Handle ** patterns
-				if strings.Contains(pattern, "**") {
-					match = matchDoubleStarPattern(pattern, relPath)
-					// Also check if pattern matches parent directories for exclusion
-					if !match && isExclude {
-						// For patterns like !**/bin, also match files inside bin directories
-						parts := strings.Split(relPath, "/")
-						for i := range parts {
-							partialPath := strings.Join(parts[:i+1], "/")
-							if matchDoubleStarPattern(pattern, partialPath) {
-								match = true
-								break
-							}
-						}
-					}
-				} else if strings.HasSuffix(pattern, "/") {
-					// Directory pattern: 'demos/' should match 'demos/main.go'
-					dirPattern := strings.TrimSuffix(pattern, "/")
-					if relPath == dirPattern || strings.HasPrefix(relPath, dirPattern+"/") {
-						match = true
-					}
-				} else if matched, _ := filepath.Match(pattern, relPath); matched {
-					// Full path pattern: 'internal/cli/agent.go'
+			// Now perform the match using the correctly contextualized path
+			if strings.Contains(cleanPattern, "**") {
+				match = matchDoubleStarPattern(cleanPattern, matchPath)
+			} else if matched, _ := filepath.Match(cleanPattern, matchPath); matched {
+				match = true
+			} else if !strings.Contains(cleanPattern, "/") { // Basename match (e.g., "*.go")
+				if matched, _ := filepath.Match(cleanPattern, filepath.Base(matchPath)); matched {
 					match = true
-				} else if !strings.Contains(pattern, "/") {
-					// Basename pattern if no slashes: '*.go' should match 'a.go' and 'cli/a.go'
-					if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
-						match = true
-					}
-					// Also check if this is a directory name that should match contents
-					if !match && isExclude && !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?") {
-						// For patterns like !bin, also match files inside bin directories
-						parts := strings.Split(relPath, "/")
-						for _, part := range parts {
-							if part == pattern {
-								match = true
-								break
-							}
-						}
-					}
-				} else {
-					// Check if pattern matches a parent directory (for exclusions)
-					if isExclude {
-						parts := strings.Split(relPath, "/")
-						for i := range parts {
-							partialPath := strings.Join(parts[:i+1], "/")
-							if matched, _ := filepath.Match(pattern, partialPath); matched {
-								match = true
-								break
-							}
-						}
-					}
 				}
 			}
 
@@ -802,26 +732,51 @@ func matchDoubleStarPattern(pattern, path string) bool {
 			return false
 		}
 		
-		// Check suffix match
-		if suffix != "" {
-			// For patterns like "**/*.go", match against the filename
-			if !strings.Contains(suffix, "/") {
-				matched, _ := filepath.Match(suffix, filepath.Base(path))
-				return matched
-			}
-			// For patterns with paths in suffix, do a full suffix match
-			// This is a simplified version - full gitignore would be more complex
-			pathAfterPrefix := strings.TrimPrefix(path, prefix)
+		// Remove the prefix from the path for suffix matching
+		pathAfterPrefix := path
+		if prefix != "" {
+			pathAfterPrefix = strings.TrimPrefix(path, prefix)
 			pathAfterPrefix = strings.TrimPrefix(pathAfterPrefix, "/")
-			matched, _ := filepath.Match(suffix, pathAfterPrefix)
-			return matched
 		}
 		
-		// If only prefix is specified, it matches
+		// Check suffix match
+		if suffix != "" {
+			// For patterns like "**/*.go", we need to check if the suffix matches
+			// any part of the remaining path, not just the filename
+			if !strings.Contains(suffix, "/") {
+				// Simple suffix like "*.go" - check if the filename matches
+				matched, _ := filepath.Match(suffix, filepath.Base(pathAfterPrefix))
+				return matched
+			} else {
+				// Complex suffix with directory components
+				// For example, "foo/*.go" should match "bar/baz/foo/test.go"
+				// The ** means we need to try matching the suffix at all possible positions
+				
+				suffixParts := strings.Split(suffix, "/")
+				pathParts := strings.Split(pathAfterPrefix, "/")
+				
+				// Try to match suffix against all possible positions in the path
+				for i := 0; i <= len(pathParts)-len(suffixParts); i++ {
+					match := true
+					for j := 0; j < len(suffixParts); j++ {
+						if matched, _ := filepath.Match(suffixParts[j], pathParts[i+j]); !matched {
+							match = false
+							break
+						}
+					}
+					if match {
+						return true
+					}
+				}
+				return false
+			}
+		}
+		
+		// If only prefix is specified (or no suffix), it matches
 		return true
 	}
 	
-	// Fallback to simple match
+	// Handle multiple ** in pattern or patterns without **
 	matched, _ := filepath.Match(pattern, path)
 	return matched
 }

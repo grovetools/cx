@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -219,6 +220,84 @@ func ComplexPatternScenario() *harness.Scenario {
 				if strings.Contains(output, "vendor") {
 					return fmt.Errorf("list output should not contain vendor files")
 				}
+				return nil
+			}),
+		},
+	}
+}
+
+// RecursiveParentPatternScenario tests ** patterns with ../ prefix for files in sibling directories.
+func RecursiveParentPatternScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-recursive-parent-patterns",
+		Description: "Tests ** patterns with ../ prefix to match files in sibling directories recursively.",
+		Tags:        []string{"cx", "rules", "recursive"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup sibling project structure", func(ctx *harness.Context) error {
+				// Create a parent directory with two sibling projects
+				parentDir := filepath.Dir(ctx.RootDir)
+				siblingDir := filepath.Join(parentDir, "sibling-project")
+				
+				// Clean up any existing sibling project first
+				os.RemoveAll(siblingDir)
+				
+				// Create sibling project structure with nested directories
+				fs.CreateDir(filepath.Join(siblingDir, "cmd"))
+				fs.CreateDir(filepath.Join(siblingDir, "pkg/util"))
+				fs.CreateDir(filepath.Join(siblingDir, "internal/core/db"))
+				
+				// Create Go files at various depths
+				fs.WriteString(filepath.Join(siblingDir, "main.go"), "package main")
+				fs.WriteString(filepath.Join(siblingDir, "cmd/root.go"), "package cmd")
+				fs.WriteString(filepath.Join(siblingDir, "pkg/util/helper.go"), "package util")
+				fs.WriteString(filepath.Join(siblingDir, "internal/core/db/manager.go"), "package db")
+				
+				// Create non-Go files to ensure pattern matching works
+				fs.WriteString(filepath.Join(siblingDir, "README.md"), "# Sibling")
+				fs.WriteString(filepath.Join(siblingDir, "pkg/util/config.json"), "{}")
+				
+				return nil
+			}),
+			harness.NewStep("Create rules with ../**/*.go pattern", func(ctx *harness.Context) error {
+				rules := "../sibling-project/**/*.go"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx list' and verify recursive matching", func(ctx *harness.Context) error {
+				cx, _ := FindProjectBinary()
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+				
+				output := result.Stdout
+				
+				// Check that files at all depths are included
+				expectedFiles := []string{
+					"main.go",              // Root level
+					"cmd/root.go",          // First level subdirectory
+					"pkg/util/helper.go",   // Second level subdirectory
+					"internal/core/db/manager.go", // Third level subdirectory
+				}
+				
+				for _, file := range expectedFiles {
+					if !strings.Contains(output, file) {
+						return fmt.Errorf("list output missing %s from sibling project", file)
+					}
+				}
+				
+				// Ensure non-Go files are not included
+				if strings.Contains(output, "README.md") || strings.Contains(output, "config.json") {
+					return fmt.Errorf("list output should not contain non-Go files")
+				}
+				
+				// Count total files - should be exactly 4
+				lines := strings.Split(strings.TrimSpace(output), "\n")
+				if len(lines) != 4 {
+					return fmt.Errorf("expected 4 files, got %d", len(lines))
+				}
+				
 				return nil
 			}),
 		},
