@@ -19,6 +19,11 @@ func main() {
         BasicContextGenerationScenario(),
         MissingRulesScenario(),
 
+        // Hybrid Context Scenarios
+        DualContextWorkflowScenario(),
+        NoSeparatorBackwardCompatibilityScenario(),
+        EmptyColdContextScenario(),
+
         // Advanced Scenarios
         StatsAndValidateScenario(),
         SnapshotWorkflowScenario(),

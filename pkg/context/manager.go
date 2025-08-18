@@ -13,12 +13,13 @@ import (
 
 // Constants for context file paths
 const (
-	GroveDir        = ".grove"
-	ContextFile     = ".grove/context"
-	FilesListFile   = ".grove/context-files"
-	RulesFile       = ".grovectx"
-	ActiveRulesFile = ".grove/rules"
-	SnapshotsDir    = ".grove/context-snapshots"
+	GroveDir                  = ".grove"
+	ContextFile               = ".grove/context"
+	FilesListFile             = ".grove/context-files"
+	RulesFile                 = ".grovectx"
+	ActiveRulesFile           = ".grove/rules"
+	SnapshotsDir              = ".grove/context-snapshots"
+	CachedContextFilesListFile = ".grove/cached-context-files"
 )
 
 // Manager handles context operations
@@ -80,6 +81,23 @@ func (m *Manager) WriteFilesList(filename string, files []string) error {
 	return nil
 }
 
+
+// findActiveRulesFile returns the path to the active rules file if it exists
+func (m *Manager) findActiveRulesFile() string {
+	// Check for new rules file location first
+	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if _, err := os.Stat(activeRulesPath); err == nil {
+		return activeRulesPath
+	}
+	
+	// Check for old .grovectx file for backward compatibility
+	oldRulesPath := filepath.Join(m.workDir, RulesFile)
+	if _, err := os.Stat(oldRulesPath); err == nil {
+		return oldRulesPath
+	}
+	
+	return ""
+}
 
 // GenerateContext creates the context file from the files list
 func (m *Manager) GenerateContext(useXMLFormat bool) error {
@@ -164,6 +182,36 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	}
 	
 	fmt.Printf("Generated %s with %d files\n", ContextFile, len(filesToInclude))
+	
+	// Generate cached context file list
+	activeRulesPath := m.findActiveRulesFile()
+	if activeRulesPath == "" {
+		// If no rules file, ensure any old cached list is removed
+		os.Remove(filepath.Join(m.workDir, CachedContextFilesListFile))
+		return nil
+	}
+
+	_, coldPatterns, err := m.parseRulesFile(activeRulesPath)
+	if err != nil {
+		return fmt.Errorf("error parsing cold context rules: %w", err)
+	}
+
+	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	if err != nil {
+		return fmt.Errorf("error resolving cold context files: %w", err)
+	}
+
+	// Write the list to .grove/cached-context-files
+	cachedListPath := filepath.Join(m.workDir, CachedContextFilesListFile)
+	if err := m.WriteFilesList(cachedListPath, coldFiles); err != nil {
+		return err
+	}
+
+	// Provide user feedback
+	if len(coldFiles) > 0 {
+		fmt.Printf("Generated %s with %d files for cached context\n", CachedContextFilesListFile, len(coldFiles))
+	}
+	
 	return nil
 }
 
@@ -271,6 +319,37 @@ func (m *Manager) UpdateFromRules() error {
 	return m.WriteFilesList(filesPath, filesToInclude)
 }
 
+// parseRulesFile reads a rules file and separates patterns into main and cold contexts.
+func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns []string, err error) {
+	file, err := os.Open(rulesPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer file.Close()
+
+	inColdSection := false
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "---" {
+			inColdSection = true
+			continue
+		}
+		if line != "" && !strings.HasPrefix(line, "#") {
+			if inColdSection {
+				coldPatterns = append(coldPatterns, line)
+			} else {
+				mainPatterns = append(mainPatterns, line)
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, nil, err
+	}
+	return mainPatterns, coldPatterns, nil
+}
+
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	// Check for new rules file location first
@@ -291,16 +370,10 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	return []string{}, nil
 }
 
-// resolveFileListFromRules dynamically resolves the list of files from a rules file
-func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
-	// Read rules from the specified rules file
-	patterns, err := m.ReadFilesList(rulesPath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading rules file: %w", err)
-	}
-
+// resolveFilesFromPatterns resolves files from a given set of patterns
+func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) {
 	if len(patterns) == 0 {
-		return nil, fmt.Errorf("rules file is empty")
+		return []string{}, nil
 	}
 	
 	// Get gitignored files for the current working directory for handling relative patterns.
@@ -433,6 +506,48 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 
 	// Return the resolved file list
 	return filesToInclude, nil
+}
+
+// resolveFileListFromRules dynamically resolves the list of files from a rules file
+func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
+	// Parse the rules file to get main and cold patterns
+	mainPatterns, coldPatterns, err := m.parseRulesFile(rulesPath)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing rules file: %w", err)
+	}
+
+	// If no main patterns, return empty list
+	if len(mainPatterns) == 0 && len(coldPatterns) == 0 {
+		return nil, fmt.Errorf("rules file is empty")
+	}
+
+	// Resolve files from main patterns
+	mainFiles, err := m.resolveFilesFromPatterns(mainPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving main context files: %w", err)
+	}
+
+	// Resolve files from cold patterns
+	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving cold context files: %w", err)
+	}
+
+	// Create a map of cold files for efficient exclusion
+	coldFilesMap := make(map[string]bool)
+	for _, file := range coldFiles {
+		coldFilesMap[file] = true
+	}
+
+	// Filter main files to exclude any that are in cold files
+	var finalMainFiles []string
+	for _, file := range mainFiles {
+		if !coldFilesMap[file] {
+			finalMainFiles = append(finalMainFiles, file)
+		}
+	}
+
+	return finalMainFiles, nil
 }
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
