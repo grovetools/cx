@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
@@ -62,11 +63,19 @@ func NewEditCmd() *cobra.Command {
 				}
 			}
 			
+			// Find git root directory
+			gitRoot := findGitRoot()
+			
 			// Open the file in the editor
 			editorCmd := exec.Command(editor, rulesPath)
 			editorCmd.Stdin = os.Stdin
 			editorCmd.Stdout = os.Stdout
 			editorCmd.Stderr = os.Stderr
+			
+			// Set working directory to git root if found
+			if gitRoot != "" {
+				editorCmd.Dir = gitRoot
+			}
 			
 			if err := editorCmd.Run(); err != nil {
 				return fmt.Errorf("error opening editor: %w", err)
@@ -77,4 +86,35 @@ func NewEditCmd() *cobra.Command {
 	}
 	
 	return cmd
+}
+
+// findGitRoot finds the root directory of the git repository
+func findGitRoot() string {
+	// Try using git rev-parse
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err == nil {
+		return strings.TrimSpace(string(output))
+	}
+	
+	// Fallback: walk up the directory tree looking for .git
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached the root
+			break
+		}
+		dir = parent
+	}
+	
+	return ""
 }
