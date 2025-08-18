@@ -13,6 +13,7 @@ func main() {
     )
     
     // Add subcommands
+    rootCmd.AddCommand(cmd.NewDashboardCmd())
     rootCmd.AddCommand(cmd.NewEditCmd())
     rootCmd.AddCommand(cmd.NewGenerateCmd()) 
     rootCmd.AddCommand(cmd.NewShowCmd())
