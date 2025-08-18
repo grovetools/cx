@@ -89,15 +89,45 @@ src/utils.go
 				}
 				return result.Error
 			}),
-			harness.NewStep("Verify 'cx stats' operates only on hot context", func(ctx *harness.Context) error {
+			harness.NewStep("Verify 'cx stats' shows both hot and cold context statistics", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
 				cmd := command.New(cx, "stats").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
-				if !strings.Contains(result.Stdout, "Total Files:    2") {
-					return fmt.Errorf("'cx stats' should report 2 files for the hot context, got: %s", result.Stdout)
+				// Verify Hot Context Statistics
+				if !strings.Contains(result.Stdout, "Hot Context Statistics:") {
+					return fmt.Errorf("output missing 'Hot Context Statistics:' header")
 				}
+				if !strings.Contains(result.Stdout, "Total Files:    2") {
+					return fmt.Errorf("hot context should report 2 files, got: %s", result.Stdout)
+				}
+				
+				// Verify Cold Context Statistics
+				if !strings.Contains(result.Stdout, "Cold (Cached) Context Statistics:") {
+					return fmt.Errorf("output missing 'Cold (Cached) Context Statistics:' header")
+				}
+				
+				// Verify the separator line between contexts
+				if !strings.Contains(result.Stdout, "──────────────────────────────────────────────────") {
+					return fmt.Errorf("output missing separator between hot and cold contexts")
+				}
+				
+				// Verify hot context contains main.go and README.md
+				if !strings.Contains(result.Stdout, "src/main.go") || !strings.Contains(result.Stdout, "README.md") {
+					return fmt.Errorf("hot context should list src/main.go and README.md in largest files")
+				}
+				
+				// Verify cold context contains utils.go
+				if !strings.Contains(result.Stdout, "src/utils.go") {
+					return fmt.Errorf("cold context should list src/utils.go")
+				}
+				
+				// Verify language distribution shows both Go and Markdown for hot context
+				if !strings.Contains(result.Stdout, "Go") || !strings.Contains(result.Stdout, "Markdown") {
+					return fmt.Errorf("hot context should show both Go and Markdown in language distribution")
+				}
+				
 				return result.Error
 			}),
 		},

@@ -370,6 +370,27 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	return []string{}, nil
 }
 
+// ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
+func (m *Manager) ResolveColdContextFiles() ([]string, error) {
+	activeRulesPath := m.findActiveRulesFile()
+	if activeRulesPath == "" {
+		// No rules file means no cold context.
+		return []string{}, nil
+	}
+
+	_, coldPatterns, err := m.parseRulesFile(activeRulesPath)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing cold context rules: %w", err)
+	}
+
+	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving cold context files: %w", err)
+	}
+
+	return coldFiles, nil
+}
+
 // resolveFilesFromPatterns resolves files from a given set of patterns
 func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) {
 	if len(patterns) == 0 {

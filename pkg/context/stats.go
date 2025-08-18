@@ -34,6 +34,7 @@ type TokenDistribution struct {
 
 // ContextStats contains comprehensive statistics about the context
 type ContextStats struct {
+	ContextType  string                    `json:"context_type"`
 	TotalFiles   int                       `json:"total_files"`
 	TotalTokens  int                       `json:"total_tokens"`
 	TotalSize    int64                     `json:"total_size"`
@@ -45,14 +46,15 @@ type ContextStats struct {
 }
 
 // GetStats analyzes the context and returns comprehensive statistics
-func (m *Manager) GetStats(files []string, topN int) (*ContextStats, error) {
+func (m *Manager) GetStats(contextType string, files []string, topN int) (*ContextStats, error) {
 	if len(files) == 0 {
-		return &ContextStats{}, nil
+		return &ContextStats{ContextType: contextType}, nil
 	}
 
 	stats := &ContextStats{
-		TotalFiles: len(files),
-		Languages:  make(map[string]*LanguageStats),
+		ContextType: contextType,
+		TotalFiles:  len(files),
+		Languages:   make(map[string]*LanguageStats),
 	}
 	
 	var allFiles []FileStats
@@ -247,9 +249,9 @@ const (
 	colorBold   = "\033[1m"
 )
 
-// PrintStats displays context statistics in a formatted way
-func (s *ContextStats) Print() {
-	fmt.Println("Context Statistics:")
+// Print displays context statistics in a formatted way
+func (s *ContextStats) Print(title string) {
+	fmt.Println(title + ":")
 	fmt.Println()
 	
 	// Summary box
