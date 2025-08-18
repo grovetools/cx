@@ -66,16 +66,31 @@ func NewEditCmd() *cobra.Command {
 			// Find git root directory
 			gitRoot := findGitRoot()
 			
-			// Open the file in the editor
-			editorCmd := exec.Command(editor, rulesPath)
+			// Get absolute path to rules file
+			absRulesPath, err := filepath.Abs(rulesPath)
+			if err != nil {
+				return fmt.Errorf("error getting absolute path: %w", err)
+			}
+			
+			// Save current directory
+			originalDir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("error getting current directory: %w", err)
+			}
+			
+			// Change to git root if found
+			if gitRoot != "" {
+				if err := os.Chdir(gitRoot); err != nil {
+					return fmt.Errorf("error changing to git root: %w", err)
+				}
+				defer os.Chdir(originalDir) // Restore original directory when done
+			}
+			
+			// Open the file in the editor with absolute path
+			editorCmd := exec.Command(editor, absRulesPath)
 			editorCmd.Stdin = os.Stdin
 			editorCmd.Stdout = os.Stdout
 			editorCmd.Stderr = os.Stderr
-			
-			// Set working directory to git root if found
-			if gitRoot != "" {
-				editorCmd.Dir = gitRoot
-			}
 			
 			if err := editorCmd.Run(); err != nil {
 				return fmt.Errorf("error opening editor: %w", err)

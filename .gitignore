@@ -4,3 +4,4 @@ bin/
 
 .grove
 .grove-worktrees
+.grove/cached-context

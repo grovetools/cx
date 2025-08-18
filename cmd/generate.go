@@ -24,6 +24,15 @@ func NewGenerateCmd() *cobra.Command {
 			}
 			
 			logger.Info("Context file generated successfully")
+			
+			// Also generate cached context
+			logger.Info("Generating cached context file...")
+			
+			if err := mgr.GenerateCachedContext(); err != nil {
+				return err
+			}
+			
+			logger.Info("Cached context file generated successfully")
 			return nil
 		},
 	}

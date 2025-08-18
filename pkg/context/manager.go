@@ -20,6 +20,7 @@ const (
 	ActiveRulesFile           = ".grove/rules"
 	SnapshotsDir              = ".grove/context-snapshots"
 	CachedContextFilesListFile = ".grove/cached-context-files"
+	CachedContextFile          = ".grove/cached-context"
 )
 
 // Manager handles context operations
@@ -212,6 +213,92 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		fmt.Printf("Generated %s with %d files for cached context\n", CachedContextFilesListFile, len(coldFiles))
 	}
 	
+	return nil
+}
+
+// GenerateCachedContext generates .grove/cached-context with all hot and cold context files wrapped in XML
+func (m *Manager) GenerateCachedContext() error {
+	// Ensure .grove directory exists
+	groveDir := filepath.Join(m.workDir, GroveDir)
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
+	}
+	
+	// Get hot context files
+	hotFiles, err := m.ResolveFilesFromRules()
+	if err != nil {
+		return fmt.Errorf("error resolving hot context files: %w", err)
+	}
+	
+	// Get cold context files
+	coldFiles, err := m.ResolveColdContextFiles()
+	if err != nil {
+		return fmt.Errorf("error resolving cold context files: %w", err)
+	}
+	
+	// Create cached context file
+	cachedPath := filepath.Join(m.workDir, CachedContextFile)
+	cachedFile, err := os.Create(cachedPath)
+	if err != nil {
+		return fmt.Errorf("error creating %s: %w", cachedPath, err)
+	}
+	defer cachedFile.Close()
+	
+	// Write XML header
+	fmt.Fprintf(cachedFile, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+	fmt.Fprintf(cachedFile, "<context>\n")
+	fmt.Fprintf(cachedFile, "  <hot-context files=\"%d\">\n", len(hotFiles))
+	
+	// Write hot context files
+	for _, file := range hotFiles {
+		if err := m.writeFileToXML(cachedFile, file, "    "); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: error writing file %s: %v\n", file, err)
+		}
+	}
+	
+	fmt.Fprintf(cachedFile, "  </hot-context>\n")
+	fmt.Fprintf(cachedFile, "  <cold-context files=\"%d\">\n", len(coldFiles))
+	
+	// Write cold context files
+	for _, file := range coldFiles {
+		if err := m.writeFileToXML(cachedFile, file, "    "); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: error writing file %s: %v\n", file, err)
+		}
+	}
+	
+	fmt.Fprintf(cachedFile, "  </cold-context>\n")
+	fmt.Fprintf(cachedFile, "</context>\n")
+	
+	fmt.Printf("Generated %s with %d hot files and %d cold files\n", CachedContextFile, len(hotFiles), len(coldFiles))
+	return nil
+}
+
+// writeFileToXML writes a file's content to the XML output with proper indentation
+func (m *Manager) writeFileToXML(w io.Writer, file string, indent string) error {
+	fmt.Fprintf(w, "%s<file path=\"%s\">\n", indent, file)
+	
+	// Read file content
+	filePath := file
+	if !filepath.IsAbs(file) {
+		filePath = filepath.Join(m.workDir, file)
+	}
+	
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Fprintf(w, "%s  <error>%v</error>\n", indent, err)
+		fmt.Fprintf(w, "%s</file>\n", indent)
+		return err
+	}
+	
+	// Write content directly without extra indentation (content already has its own)
+	w.Write(content)
+	
+	// Ensure there's a newline before the closing tag
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		fmt.Fprintf(w, "\n")
+	}
+	
+	fmt.Fprintf(w, "%s</file>\n", indent)
 	return nil
 }
 
