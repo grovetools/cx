@@ -29,6 +29,7 @@ func main() {
         SnapshotWorkflowScenario(),
         GitBasedContextScenario(),
         ComplexPatternScenario(),
+        PlainDirectoryPatternScenario(),
         RecursiveParentPatternScenario(),
         ExclusionPatternsScenario(),
     }

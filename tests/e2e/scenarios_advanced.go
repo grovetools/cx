@@ -226,6 +226,100 @@ func ComplexPatternScenario() *harness.Scenario {
 	}
 }
 
+// PlainDirectoryPatternScenario tests plain directory patterns like ../grove-flow
+func PlainDirectoryPatternScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-plain-directory-pattern",
+		Description: "Tests that plain directory patterns like ../grove-flow are treated as recursive includes.",
+		Tags:        []string{"cx", "rules", "patterns", "directory"},
+		Steps: []harness.Step{
+			harness.NewStep("Create sibling projects with various files", func(ctx *harness.Context) error {
+				// Create sibling directories
+				parentDir := filepath.Dir(ctx.RootDir)
+				groveFlowDir := filepath.Join(parentDir, "grove-flow")
+				groveNotebookDir := filepath.Join(parentDir, "grove-notebook")
+				nvimPluginDir := filepath.Join(groveNotebookDir, "nvim-plugin")
+				
+				// Create grove-flow structure
+				fs.CreateDir(filepath.Join(groveFlowDir, "src"))
+				fs.CreateDir(filepath.Join(groveFlowDir, "pkg/core"))
+				fs.WriteString(filepath.Join(groveFlowDir, "main.go"), "package main")
+				fs.WriteString(filepath.Join(groveFlowDir, "README.md"), "# Grove Flow")
+				fs.WriteString(filepath.Join(groveFlowDir, "src/app.go"), "package src")
+				fs.WriteString(filepath.Join(groveFlowDir, "pkg/core/flow.go"), "package core")
+				
+				// Create grove-notebook/nvim-plugin structure
+				fs.CreateDir(filepath.Join(nvimPluginDir, "lua"))
+				fs.CreateDir(filepath.Join(nvimPluginDir, "plugin"))
+				fs.WriteString(filepath.Join(nvimPluginDir, "init.lua"), "-- Neovim plugin")
+				fs.WriteString(filepath.Join(nvimPluginDir, "README.md"), "# Nvim Plugin")
+				fs.WriteString(filepath.Join(nvimPluginDir, "lua/config.lua"), "-- Config")
+				fs.WriteString(filepath.Join(nvimPluginDir, "plugin/main.vim"), "\" Main plugin")
+				
+				return nil
+			}),
+			harness.NewStep("Create rules with plain directory patterns", func(ctx *harness.Context) error {
+				rules := `*
+---
+../grove-flow
+../grove-notebook/nvim-plugin`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx generate' and verify files are in cached context", func(ctx *harness.Context) error {
+				cx, _ := FindProjectBinary()
+				
+				// First generate the context
+				cmd := command.New(cx, "generate").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+				
+				// Read the cached-context-files list to verify cold context files
+				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				content, err := os.ReadFile(cachedFilesPath)
+				if err != nil {
+					return fmt.Errorf("failed to read cached-context-files: %v", err)
+				}
+				
+				output := string(content)
+				
+				// Check that files from grove-flow are included (cold context section)
+				expectedFlowFiles := []string{
+					"grove-flow/main.go",
+					"grove-flow/README.md",
+					"grove-flow/src/app.go",
+					"grove-flow/pkg/core/flow.go",
+				}
+				
+				// Check that files from grove-notebook/nvim-plugin are included
+				expectedNvimFiles := []string{
+					"grove-notebook/nvim-plugin/init.lua",
+					"grove-notebook/nvim-plugin/README.md",
+					"grove-notebook/nvim-plugin/lua/config.lua",
+					"grove-notebook/nvim-plugin/plugin/main.vim",
+				}
+				
+				allExpectedFiles := append(expectedFlowFiles, expectedNvimFiles...)
+				
+				missingFiles := []string{}
+				for _, file := range allExpectedFiles {
+					if !strings.Contains(output, file) {
+						missingFiles = append(missingFiles, file)
+					}
+				}
+				
+				if len(missingFiles) > 0 {
+					return fmt.Errorf("cached-context-files missing files: %v", missingFiles)
+				}
+				
+				return nil
+			}),
+		},
+	}
+}
+
 // RecursiveParentPatternScenario tests ** patterns with ../ prefix for files in sibling directories.
 func RecursiveParentPatternScenario() *harness.Scenario {
 	return &harness.Scenario{

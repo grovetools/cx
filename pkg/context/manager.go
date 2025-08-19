@@ -192,7 +192,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		return nil
 	}
 
-	_, coldPatterns, err := m.parseRulesFile(activeRulesPath)
+	_, coldPatterns, _, err := m.parseRulesFile(activeRulesPath)
 	if err != nil {
 		return fmt.Errorf("error parsing cold context rules: %w", err)
 	}
@@ -407,10 +407,10 @@ func (m *Manager) UpdateFromRules() error {
 }
 
 // parseRulesFile reads a rules file and separates patterns into main and cold contexts.
-func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns []string, err error) {
+func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns []string, freezeCache bool, err error) {
 	file, err := os.Open(rulesPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	defer file.Close()
 
@@ -418,6 +418,10 @@ func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns [
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+		if line == "@freeze-cache" {
+			freezeCache = true
+			continue
+		}
 		if line == "---" {
 			inColdSection = true
 			continue
@@ -432,9 +436,24 @@ func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns [
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	return mainPatterns, coldPatterns, nil
+	return mainPatterns, coldPatterns, freezeCache, nil
+}
+
+// ShouldFreezeCache checks if the @freeze-cache directive is present in the rules file.
+func (m *Manager) ShouldFreezeCache() (bool, error) {
+	activeRulesPath := m.findActiveRulesFile()
+	if activeRulesPath == "" {
+		return false, nil
+	}
+
+	_, _, freezeCache, err := m.parseRulesFile(activeRulesPath)
+	if err != nil {
+		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
+	}
+
+	return freezeCache, nil
 }
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
@@ -465,7 +484,7 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 		return []string{}, nil
 	}
 
-	_, coldPatterns, err := m.parseRulesFile(activeRulesPath)
+	_, coldPatterns, _, err := m.parseRulesFile(activeRulesPath)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing cold context rules: %w", err)
 	}
@@ -483,6 +502,42 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	if len(patterns) == 0 {
 		return []string{}, nil
 	}
+	
+	// Pre-process patterns to transform directory patterns into recursive globs
+	processedPatterns := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		isExclude := strings.HasPrefix(pattern, "!")
+		cleanPattern := pattern
+		if isExclude {
+			cleanPattern = strings.TrimPrefix(pattern, "!")
+		}
+		
+		// Check if pattern contains glob characters
+		hasGlob := strings.Contains(cleanPattern, "*") || strings.Contains(cleanPattern, "?")
+		
+		// Only transform plain directory patterns for INCLUSION patterns
+		// Exclusion patterns like !tests should remain as-is for gitignore compatibility
+		if !hasGlob && !isExclude {
+			// Resolve the path to check if it exists and is a directory
+			checkPath := cleanPattern
+			if !filepath.IsAbs(cleanPattern) {
+				checkPath = filepath.Join(m.workDir, cleanPattern)
+			}
+			checkPath = filepath.Clean(checkPath)
+			
+			if info, err := os.Stat(checkPath); err == nil && info.IsDir() {
+				// Transform directory pattern to recursive glob
+				processedPatterns = append(processedPatterns, cleanPattern+"/**")
+				continue
+			}
+		}
+		
+		// Keep pattern as-is
+		processedPatterns = append(processedPatterns, pattern)
+	}
+	
+	// Use processed patterns for the rest of the logic
+	patterns = processedPatterns
 	
 	// Get gitignored files for the current working directory for handling relative patterns.
 	gitIgnoredForCWD, err := m.getGitIgnoredFiles(m.workDir)
@@ -619,7 +674,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 // resolveFileListFromRules dynamically resolves the list of files from a rules file
 func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 	// Parse the rules file to get main and cold patterns
-	mainPatterns, coldPatterns, err := m.parseRulesFile(rulesPath)
+	mainPatterns, coldPatterns, _, err := m.parseRulesFile(rulesPath)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules file: %w", err)
 	}
