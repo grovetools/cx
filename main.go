@@ -18,6 +18,7 @@ func main() {
     rootCmd.AddCommand(cmd.NewGenerateCmd()) 
     rootCmd.AddCommand(cmd.NewShowCmd())
     rootCmd.AddCommand(cmd.NewListCmd())
+    rootCmd.AddCommand(cmd.NewListCacheCmd())
     rootCmd.AddCommand(cmd.NewSaveCmd())
     rootCmd.AddCommand(cmd.NewLoadCmd())
     rootCmd.AddCommand(cmd.NewDiffCmd())
