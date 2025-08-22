@@ -433,6 +433,7 @@ func TestManager_ParseDirectives(t *testing.T) {
 		rules             string
 		expectFreeze      bool
 		expectNoExpire    bool
+		expectDisableCache bool
 		expectExpireTime  time.Duration
 		expectError       bool
 	}{
@@ -440,54 +441,60 @@ func TestManager_ParseDirectives(t *testing.T) {
 			name: "no directives",
 			rules: `*.go
 pkg/**/*.go`,
-			expectFreeze:     false,
-			expectNoExpire:   false,
-			expectExpireTime: 0,
+			expectFreeze:      false,
+			expectNoExpire:    false,
+			expectDisableCache: false,
+			expectExpireTime:  0,
 		},
 		{
 			name: "only @freeze-cache",
 			rules: `@freeze-cache
 *.go
 pkg/**/*.go`,
-			expectFreeze:     true,
-			expectNoExpire:   false,
-			expectExpireTime: 0,
+			expectFreeze:      true,
+			expectNoExpire:    false,
+			expectDisableCache: false,
+			expectExpireTime:  0,
 		},
 		{
 			name: "only @no-expire",
 			rules: `@no-expire
 *.go
 pkg/**/*.go`,
-			expectFreeze:     false,
-			expectNoExpire:   true,
-			expectExpireTime: 0,
+			expectFreeze:      false,
+			expectNoExpire:    true,
+			expectDisableCache: false,
+			expectExpireTime:  0,
 		},
 		{
 			name: "only @expire-time with valid duration",
 			rules: `@expire-time 24h
 *.go
 pkg/**/*.go`,
-			expectFreeze:     false,
-			expectNoExpire:   false,
-			expectExpireTime: 24 * time.Hour,
+			expectFreeze:      false,
+			expectNoExpire:    false,
+			expectDisableCache: false,
+			expectExpireTime:  24 * time.Hour,
 		},
 		{
 			name: "multiple time formats",
 			rules: `@expire-time 1h30m
 *.go
 pkg/**/*.go`,
-			expectFreeze:     false,
-			expectNoExpire:   false,
-			expectExpireTime: 90 * time.Minute,
+			expectFreeze:      false,
+			expectNoExpire:    false,
+			expectDisableCache: false,
+			expectExpireTime:  90 * time.Minute,
 		},
 		{
 			name: "@expire-time with seconds",
 			rules: `@expire-time 300s
 *.go
 pkg/**/*.go`,
-			expectFreeze:     false,
-			expectNoExpire:   false,
-			expectExpireTime: 300 * time.Second,
+			expectFreeze:      false,
+			expectNoExpire:    false,
+			expectDisableCache: false,
+			expectExpireTime:  300 * time.Second,
 		},
 		{
 			name: "all directives combined",
@@ -496,9 +503,10 @@ pkg/**/*.go`,
 @expire-time 48h
 *.go
 pkg/**/*.go`,
-			expectFreeze:     true,
-			expectNoExpire:   true,
-			expectExpireTime: 48 * time.Hour,
+			expectFreeze:      true,
+			expectNoExpire:    true,
+			expectDisableCache: false,
+			expectExpireTime:  48 * time.Hour,
 		},
 		{
 			name: "directives with cold section",
@@ -508,9 +516,10 @@ pkg/**/*.go`,
 *.go
 ---
 pkg/**/*.go`,
-			expectFreeze:     true,
-			expectNoExpire:   true,
-			expectExpireTime: 12 * time.Hour,
+			expectFreeze:      true,
+			expectNoExpire:    true,
+			expectDisableCache: false,
+			expectExpireTime:  12 * time.Hour,
 		},
 		{
 			name: "@expire-time with invalid duration",
@@ -524,9 +533,33 @@ pkg/**/*.go`,
 			rules: `@expire-time
 *.go
 pkg/**/*.go`,
-			expectFreeze:     false,
-			expectNoExpire:   false,
-			expectExpireTime: 0,
+			expectFreeze:      false,
+			expectNoExpire:    false,
+			expectDisableCache: false,
+			expectExpireTime:  0,
+		},
+		{
+			name: "only @disable-cache",
+			rules: `@disable-cache
+*.go
+pkg/**/*.go`,
+			expectFreeze:      false,
+			expectNoExpire:    false,
+			expectDisableCache: true,
+			expectExpireTime:  0,
+		},
+		{
+			name: "@disable-cache with other directives",
+			rules: `@freeze-cache
+@no-expire
+@disable-cache
+@expire-time 6h
+*.go
+pkg/**/*.go`,
+			expectFreeze:      true,
+			expectNoExpire:    true,
+			expectDisableCache: true,
+			expectExpireTime:  6 * time.Hour,
 		},
 	}
 	
@@ -564,6 +597,14 @@ pkg/**/*.go`,
 			}
 			if disableExpiration != tt.expectNoExpire {
 				t.Errorf("Expected ShouldDisableExpiration to return %v, got %v", tt.expectNoExpire, disableExpiration)
+			}
+			
+			disableCache, err := mgr.ShouldDisableCache()
+			if err != nil {
+				t.Fatalf("Failed to check disable-cache directive: %v", err)
+			}
+			if disableCache != tt.expectDisableCache {
+				t.Errorf("Expected ShouldDisableCache to return %v, got %v", tt.expectDisableCache, disableCache)
 			}
 			
 			expireTime, err := mgr.GetExpireTime()
