@@ -126,7 +126,7 @@ func TestManager_GetStats(t *testing.T) {
 	}
 
 	// Get stats
-	stats, err := mgr.GetStats(files, 5)
+	stats, err := mgr.GetStats("hot", files, 5)
 	if err != nil {
 		t.Fatalf("Failed to get stats: %v", err)
 	}

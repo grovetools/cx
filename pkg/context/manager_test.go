@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestManager_ExclusionPatterns(t *testing.T) {
@@ -417,4 +418,161 @@ func slicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestManager_ParseDirectives(t *testing.T) {
+	// Create test directory
+	testDir := t.TempDir()
+	groveDir := filepath.Join(testDir, ".grove")
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		t.Fatalf("Failed to create .grove directory: %v", err)
+	}
+	
+	tests := []struct {
+		name              string
+		rules             string
+		expectFreeze      bool
+		expectNoExpire    bool
+		expectExpireTime  time.Duration
+		expectError       bool
+	}{
+		{
+			name: "no directives",
+			rules: `*.go
+pkg/**/*.go`,
+			expectFreeze:     false,
+			expectNoExpire:   false,
+			expectExpireTime: 0,
+		},
+		{
+			name: "only @freeze-cache",
+			rules: `@freeze-cache
+*.go
+pkg/**/*.go`,
+			expectFreeze:     true,
+			expectNoExpire:   false,
+			expectExpireTime: 0,
+		},
+		{
+			name: "only @no-expire",
+			rules: `@no-expire
+*.go
+pkg/**/*.go`,
+			expectFreeze:     false,
+			expectNoExpire:   true,
+			expectExpireTime: 0,
+		},
+		{
+			name: "only @expire-time with valid duration",
+			rules: `@expire-time 24h
+*.go
+pkg/**/*.go`,
+			expectFreeze:     false,
+			expectNoExpire:   false,
+			expectExpireTime: 24 * time.Hour,
+		},
+		{
+			name: "multiple time formats",
+			rules: `@expire-time 1h30m
+*.go
+pkg/**/*.go`,
+			expectFreeze:     false,
+			expectNoExpire:   false,
+			expectExpireTime: 90 * time.Minute,
+		},
+		{
+			name: "@expire-time with seconds",
+			rules: `@expire-time 300s
+*.go
+pkg/**/*.go`,
+			expectFreeze:     false,
+			expectNoExpire:   false,
+			expectExpireTime: 300 * time.Second,
+		},
+		{
+			name: "all directives combined",
+			rules: `@freeze-cache
+@no-expire
+@expire-time 48h
+*.go
+pkg/**/*.go`,
+			expectFreeze:     true,
+			expectNoExpire:   true,
+			expectExpireTime: 48 * time.Hour,
+		},
+		{
+			name: "directives with cold section",
+			rules: `@freeze-cache
+@no-expire
+@expire-time 12h
+*.go
+---
+pkg/**/*.go`,
+			expectFreeze:     true,
+			expectNoExpire:   true,
+			expectExpireTime: 12 * time.Hour,
+		},
+		{
+			name: "@expire-time with invalid duration",
+			rules: `@expire-time invalid
+*.go
+pkg/**/*.go`,
+			expectError: true,
+		},
+		{
+			name: "@expire-time with no argument",
+			rules: `@expire-time
+*.go
+pkg/**/*.go`,
+			expectFreeze:     false,
+			expectNoExpire:   false,
+			expectExpireTime: 0,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Write rules file
+			rulesPath := filepath.Join(groveDir, "rules")
+			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
+				t.Fatalf("Failed to write rules file: %v", err)
+			}
+			
+			// Create manager and check directives
+			mgr := NewManager(testDir)
+			
+			// Check if we expect an error
+			if tt.expectError {
+				_, err := mgr.GetExpireTime()
+				if err == nil {
+					t.Errorf("Expected error for invalid duration, but got none")
+				}
+				return
+			}
+			
+			freezeCache, err := mgr.ShouldFreezeCache()
+			if err != nil {
+				t.Fatalf("Failed to check freeze cache directive: %v", err)
+			}
+			if freezeCache != tt.expectFreeze {
+				t.Errorf("Expected ShouldFreezeCache to return %v, got %v", tt.expectFreeze, freezeCache)
+			}
+			
+			disableExpiration, err := mgr.ShouldDisableExpiration()
+			if err != nil {
+				t.Fatalf("Failed to check no-expire directive: %v", err)
+			}
+			if disableExpiration != tt.expectNoExpire {
+				t.Errorf("Expected ShouldDisableExpiration to return %v, got %v", tt.expectNoExpire, disableExpiration)
+			}
+			
+			expireTime, err := mgr.GetExpireTime()
+			if err != nil {
+				t.Fatalf("Failed to get expire time: %v", err)
+			}
+			if expireTime != tt.expectExpireTime {
+				t.Errorf("Expected GetExpireTime to return %v, got %v", tt.expectExpireTime, expireTime)
+			}
+		})
+	}
 }

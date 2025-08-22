@@ -75,7 +75,7 @@ func NewStatsCmd() *cobra.Command {
 				// Print both hot and cold context stats
 				for i, stats := range allStats {
 					if i > 0 {
-						fmt.Println("\n──────────────────────────────────────────────────\n")
+						fmt.Print("\n──────────────────────────────────────────────────\n\n")
 					}
 					title := "Hot Context Statistics"
 					if stats.ContextType == "cold" {

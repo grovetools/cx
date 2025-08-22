@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Constants for context file paths
@@ -192,7 +193,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		return nil
 	}
 
-	_, coldPatterns, _, err := m.parseRulesFile(activeRulesPath)
+	_, coldPatterns, _, _, _, err := m.parseRulesFile(activeRulesPath)
 	if err != nil {
 		return fmt.Errorf("error parsing cold context rules: %w", err)
 	}
@@ -407,10 +408,10 @@ func (m *Manager) UpdateFromRules() error {
 }
 
 // parseRulesFile reads a rules file and separates patterns into main and cold contexts.
-func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns []string, freezeCache bool, err error) {
+func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns []string, freezeCache, disableExpiration bool, expireTime time.Duration, err error) {
 	file, err := os.Open(rulesPath)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, nil, false, false, 0, err
 	}
 	defer file.Close()
 
@@ -420,6 +421,22 @@ func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns [
 		line := strings.TrimSpace(scanner.Text())
 		if line == "@freeze-cache" {
 			freezeCache = true
+			continue
+		}
+		if line == "@no-expire" {
+			disableExpiration = true
+			continue
+		}
+		if strings.HasPrefix(line, "@expire-time ") {
+			// Parse the duration argument
+			durationStr := strings.TrimSpace(strings.TrimPrefix(line, "@expire-time"))
+			if durationStr != "" {
+				parsedDuration, parseErr := time.ParseDuration(durationStr)
+				if parseErr != nil {
+					return nil, nil, false, false, 0, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
+				}
+				expireTime = parsedDuration
+			}
 			continue
 		}
 		if line == "---" {
@@ -436,9 +453,9 @@ func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns [
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, nil, false, err
+		return nil, nil, false, false, 0, err
 	}
-	return mainPatterns, coldPatterns, freezeCache, nil
+	return mainPatterns, coldPatterns, freezeCache, disableExpiration, expireTime, nil
 }
 
 // ShouldFreezeCache checks if the @freeze-cache directive is present in the rules file.
@@ -448,12 +465,43 @@ func (m *Manager) ShouldFreezeCache() (bool, error) {
 		return false, nil
 	}
 
-	_, _, freezeCache, err := m.parseRulesFile(activeRulesPath)
+	_, _, freezeCache, _, _, err := m.parseRulesFile(activeRulesPath)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
 
 	return freezeCache, nil
+}
+
+// ShouldDisableExpiration checks if the @no-expire directive is present in the rules file.
+func (m *Manager) ShouldDisableExpiration() (bool, error) {
+	activeRulesPath := m.findActiveRulesFile()
+	if activeRulesPath == "" {
+		return false, nil
+	}
+
+	_, _, _, disableExpiration, _, err := m.parseRulesFile(activeRulesPath)
+	if err != nil {
+		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
+	}
+
+	return disableExpiration, nil
+}
+
+// GetExpireTime returns the custom expiration duration if @expire-time directive is present.
+// Returns 0 if no custom expiration time is set.
+func (m *Manager) GetExpireTime() (time.Duration, error) {
+	activeRulesPath := m.findActiveRulesFile()
+	if activeRulesPath == "" {
+		return 0, nil
+	}
+
+	_, _, _, _, expireTime, err := m.parseRulesFile(activeRulesPath)
+	if err != nil {
+		return 0, fmt.Errorf("error parsing rules file for expire time: %w", err)
+	}
+
+	return expireTime, nil
 }
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
@@ -484,7 +532,7 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 		return []string{}, nil
 	}
 
-	_, coldPatterns, _, err := m.parseRulesFile(activeRulesPath)
+	_, coldPatterns, _, _, _, err := m.parseRulesFile(activeRulesPath)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing cold context rules: %w", err)
 	}
@@ -674,7 +722,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 // resolveFileListFromRules dynamically resolves the list of files from a rules file
 func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 	// Parse the rules file to get main and cold patterns
-	mainPatterns, coldPatterns, _, err := m.parseRulesFile(rulesPath)
+	mainPatterns, coldPatterns, _, _, _, err := m.parseRulesFile(rulesPath)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules file: %w", err)
 	}
