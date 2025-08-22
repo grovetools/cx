@@ -64,14 +64,30 @@ src/utils.go
 					return fmt.Errorf("main context should not contain 'src/utils.go' due to cold context precedence")
 				}
 
-				// Verify cached context file
-				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				// Verify cached context file (the XML file with cold files)
+				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
 				cachedContent, err := fs.ReadString(cachedContextPath)
 				if err != nil {
 					return err
 				}
-				if strings.TrimSpace(cachedContent) != "src/utils.go" {
-					return fmt.Errorf("cached context file should contain only 'src/utils.go', got: %s", cachedContent)
+				if !strings.Contains(cachedContent, "<cold-context files=\"1\">") {
+					return fmt.Errorf("cached context should indicate 1 cold file")
+				}
+				if !strings.Contains(cachedContent, "src/utils.go") {
+					return fmt.Errorf("cached context should contain 'src/utils.go'")
+				}
+				if strings.Contains(cachedContent, "src/main.go") || strings.Contains(cachedContent, "README.md") {
+					return fmt.Errorf("cached context should not contain hot files")
+				}
+				
+				// Also verify the cached-context-files list
+				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				cachedFiles, err := fs.ReadString(cachedFilesPath)
+				if err != nil {
+					return err
+				}
+				if strings.TrimSpace(cachedFiles) != "src/utils.go" {
+					return fmt.Errorf("cached-context-files should contain only 'src/utils.go', got: %s", cachedFiles)
 				}
 				return nil
 			}),
@@ -166,10 +182,19 @@ func NoSeparatorBackwardCompatibilityScenario() *harness.Scenario {
 					return fmt.Errorf("main context should contain both files")
 				}
 
-				// Verify cached context file does not exist or is empty
-				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				// Verify cached context XML file exists with empty cold context (no --- means no cold files)
+				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
 				if fs.Exists(cachedContextPath) {
-					content, _ := fs.ReadString(cachedContextPath)
+					cachedContent, _ := fs.ReadString(cachedContextPath)
+					if !strings.Contains(cachedContent, "<cold-context files=\"0\">") {
+						return fmt.Errorf("cached context should indicate 0 cold files when no separator exists")
+					}
+				}
+				
+				// Verify cached-context-files does not exist or is empty
+				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				if fs.Exists(cachedFilesPath) {
+					content, _ := fs.ReadString(cachedFilesPath)
 					if content != "" {
 						return fmt.Errorf("cached-context-files should be empty, but has content")
 					}
@@ -215,18 +240,128 @@ func EmptyColdContextScenario() *harness.Scenario {
 					return fmt.Errorf("main context should not contain README.md")
 				}
 
-				// Verify cached context file exists and is empty
-				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				// Verify cached context XML file exists with empty cold context
+				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
 				if !fs.Exists(cachedContextPath) {
+					return fmt.Errorf("cached-context should exist")
+				}
+				cachedContent, err := fs.ReadString(cachedContextPath)
+				if err != nil {
+					return err
+				}
+				if !strings.Contains(cachedContent, "<cold-context files=\"0\">") {
+					return fmt.Errorf("cached context should indicate 0 cold files")
+				}
+				if strings.Contains(cachedContent, "main.go") || strings.Contains(cachedContent, "README.md") {
+					return fmt.Errorf("cached context should not contain any hot files")
+				}
+				
+				// Also verify the cached-context-files list is empty
+				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				if !fs.Exists(cachedFilesPath) {
 					return fmt.Errorf("cached-context-files should exist")
 				}
-				content, err := fs.ReadString(cachedContextPath)
+				content, err := fs.ReadString(cachedFilesPath)
 				if err != nil {
 					return err
 				}
 				if content != "" {
 					return fmt.Errorf("cached-context-files should be empty, but has content")
 				}
+				return nil
+			}),
+		},
+	}
+}
+
+// CachedContextOnlyColdFilesScenario tests that cached-context only contains cold files
+func CachedContextOnlyColdFilesScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-cached-context-only-cold-files",
+		Description: "Tests that .grove/cached-context only contains cold files and excludes all hot files",
+		Tags:        []string{"cx", "hybrid", "cached-context"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup project with multiple hot and cold files", func(ctx *harness.Context) error {
+				git.Init(ctx.RootDir)
+				
+				// Create hot files
+				fs.CreateDir(filepath.Join(ctx.RootDir, "src"))
+				fs.WriteString(filepath.Join(ctx.RootDir, "src", "main.go"), "package main // main hot file")
+				fs.WriteString(filepath.Join(ctx.RootDir, "src", "app.go"), "package main // app hot file")
+				fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Hot README")
+				
+				// Create cold files
+				fs.CreateDir(filepath.Join(ctx.RootDir, "config"))
+				fs.WriteString(filepath.Join(ctx.RootDir, "config", "schema.json"), `{"type": "object"}`)
+				fs.WriteString(filepath.Join(ctx.RootDir, "LICENSE"), "MIT License")
+				fs.WriteString(filepath.Join(ctx.RootDir, "go.mod"), "module example")
+
+				// Rules with clear separation
+				rules := `# Hot context
+src/**/*.go
+README.md
+---
+# Cold context
+config/schema.json
+LICENSE
+go.mod
+`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Generate context and verify cached-context only has cold files", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := command.New(cx, "generate").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				// Read and verify cached context
+				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
+				cachedContent, err := fs.ReadString(cachedContextPath)
+				if err != nil {
+					return err
+				}
+				
+				// Should have exactly 3 cold files
+				if !strings.Contains(cachedContent, "<cold-context files=\"3\">") {
+					return fmt.Errorf("cached context should indicate 3 cold files")
+				}
+				
+				// Should contain all cold files
+				if !strings.Contains(cachedContent, "config/schema.json") {
+					return fmt.Errorf("cached context missing config/schema.json")
+				}
+				if !strings.Contains(cachedContent, "LICENSE") {
+					return fmt.Errorf("cached context missing LICENSE")
+				}
+				if !strings.Contains(cachedContent, "go.mod") {
+					return fmt.Errorf("cached context missing go.mod")
+				}
+				
+				// Should NOT contain any hot files
+				if strings.Contains(cachedContent, "src/main.go") {
+					return fmt.Errorf("cached context should not contain src/main.go (hot file)")
+				}
+				if strings.Contains(cachedContent, "src/app.go") {
+					return fmt.Errorf("cached context should not contain src/app.go (hot file)")
+				}
+				if strings.Contains(cachedContent, "# Hot README") {
+					return fmt.Errorf("cached context should not contain README.md content (hot file)")
+				}
+				
+				// Verify the XML structure
+				if !strings.Contains(cachedContent, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>") {
+					return fmt.Errorf("cached context missing XML header")
+				}
+				if !strings.Contains(cachedContent, "<context>") && !strings.Contains(cachedContent, "</context>") {
+					return fmt.Errorf("cached context missing proper XML structure")
+				}
+				
 				return nil
 			}),
 		},

@@ -217,7 +217,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	return nil
 }
 
-// GenerateCachedContext generates .grove/cached-context with all hot and cold context files wrapped in XML
+// GenerateCachedContext generates .grove/cached-context with only the cold context files.
 func (m *Manager) GenerateCachedContext() error {
 	// Ensure .grove directory exists
 	groveDir := filepath.Join(m.workDir, GroveDir)
@@ -225,13 +225,7 @@ func (m *Manager) GenerateCachedContext() error {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 	
-	// Get hot context files
-	hotFiles, err := m.ResolveFilesFromRules()
-	if err != nil {
-		return fmt.Errorf("error resolving hot context files: %w", err)
-	}
-	
-	// Get cold context files
+	// Get ONLY cold context files
 	coldFiles, err := m.ResolveColdContextFiles()
 	if err != nil {
 		return fmt.Errorf("error resolving cold context files: %w", err)
@@ -245,19 +239,10 @@ func (m *Manager) GenerateCachedContext() error {
 	}
 	defer cachedFile.Close()
 	
-	// Write XML header
+	// If no cold files, we can just create an empty file or a small XML structure.
+	// Let's keep the structure for consistency.
 	fmt.Fprintf(cachedFile, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 	fmt.Fprintf(cachedFile, "<context>\n")
-	fmt.Fprintf(cachedFile, "  <hot-context files=\"%d\">\n", len(hotFiles))
-	
-	// Write hot context files
-	for _, file := range hotFiles {
-		if err := m.writeFileToXML(cachedFile, file, "    "); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: error writing file %s: %v\n", file, err)
-		}
-	}
-	
-	fmt.Fprintf(cachedFile, "  </hot-context>\n")
 	fmt.Fprintf(cachedFile, "  <cold-context files=\"%d\">\n", len(coldFiles))
 	
 	// Write cold context files
@@ -270,7 +255,7 @@ func (m *Manager) GenerateCachedContext() error {
 	fmt.Fprintf(cachedFile, "  </cold-context>\n")
 	fmt.Fprintf(cachedFile, "</context>\n")
 	
-	fmt.Printf("Generated %s with %d hot files and %d cold files\n", CachedContextFile, len(hotFiles), len(coldFiles))
+	fmt.Printf("Generated %s with %d cold files\n", CachedContextFile, len(coldFiles))
 	return nil
 }
 

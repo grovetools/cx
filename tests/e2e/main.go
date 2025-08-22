@@ -23,6 +23,7 @@ func main() {
         DualContextWorkflowScenario(),
         NoSeparatorBackwardCompatibilityScenario(),
         EmptyColdContextScenario(),
+        CachedContextOnlyColdFilesScenario(),
 
         // Advanced Scenarios
         StatsAndValidateScenario(),
