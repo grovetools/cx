@@ -1,3 +1,31 @@
+## v0.2.14 (2025-08-25)
+
+### Bug Fixes
+
+* change cached-context to only include cold files
+* set editor working directory to git root in cx edit command
+* improve glob pattern matching for recursive ** patterns
+
+### Continuous Integration
+
+* add Git LFS configuration to disable LFS during CI runs
+
+### Features
+
+* add @disable-cache directive to completely disable caching
+* add cache control directives @no-expire and @expire-time
+* add list for cold cache
+* add @freeze-cache directive and plain directory pattern support
+* add cached-context generation and improve dashboard
+* add live-updating CLI dashboard for context statistics
+* show cold context in stats
+* add hybrid hot/cold context with rules separator
+* add gitignore-compatible exclusion patterns and improve tests
+
+### Chores
+
+* update go.mod tidy
+
 ## v0.2.13 (2025-08-15)
 
 ### Chores
