@@ -1,3 +1,13 @@
+## v0.2.17 (2025-08-25)
+
+### Continuous Integration
+
+* add Git LFS disable to release workflow
+
+### Chores
+
+* **deps:** sync Grove dependencies to latest versions
+
 ## v0.2.16 (2025-08-25)
 
 ### Continuous Integration
