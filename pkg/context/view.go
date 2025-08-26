@@ -25,10 +25,18 @@ func (m *Manager) AnalyzeProjectTree() (*FileNode, error) {
 	
 	// Build FileNode map from the classifications
 	nodes := make(map[string]*FileNode)
+	hasExternalFiles := false
+	
 	for path, status := range fileStatuses {
 		// Skip StatusIgnoredByGit - we don't want to show git-ignored files
 		if status == StatusIgnoredByGit {
 			continue
+		}
+		
+		// Check if this is an external file
+		relPath, err := filepath.Rel(m.workDir, path)
+		if err != nil || strings.HasPrefix(relPath, "..") {
+			hasExternalFiles = true
 		}
 		
 		node := &FileNode{
@@ -41,10 +49,73 @@ func (m *Manager) AnalyzeProjectTree() (*FileNode, error) {
 		nodes[path] = node
 	}
 	
-	// Build the tree structure with support for external directories
-	root := buildTreeWithExternals(m.workDir, nodes)
+	// Build the tree structure
+	var root *FileNode
+	if hasExternalFiles {
+		// Create a synthetic root to show CWD and external paths as siblings
+		root = buildTreeWithSyntheticRoot(m.workDir, nodes)
+	} else {
+		// No external files, use the working directory as root
+		root = buildTreeWithExternals(m.workDir, nodes)
+	}
 	
 	return root, nil
+}
+
+// buildTreeWithSyntheticRoot creates a synthetic root with CWD and external paths as siblings
+func buildTreeWithSyntheticRoot(workDir string, nodes map[string]*FileNode) *FileNode {
+	// Create a synthetic root node
+	syntheticRoot := &FileNode{
+		Path:     "/",
+		Name:     "/",
+		Status:   StatusDirectory,
+		IsDir:    true,
+		Children: []*FileNode{},
+	}
+	
+	// First, ensure all directory nodes exist
+	for path := range nodes {
+		ensureParentNodes("", path, nodes)
+	}
+	
+	// Build parent-child relationships
+	for path, node := range nodes {
+		parentPath := filepath.Dir(path)
+		
+		if parent, exists := nodes[parentPath]; exists {
+			parent.Children = append(parent.Children, node)
+		}
+	}
+	
+	// Create the CWD node using the existing workDir node or create new
+	cwdNode, exists := nodes[workDir]
+	if !exists {
+		cwdNode = &FileNode{
+			Path:     workDir,
+			Name:     filepath.Base(workDir) + " (CWD)",
+			Status:   StatusDirectory,
+			IsDir:    true,
+			Children: []*FileNode{},
+		}
+	} else {
+		// Update the name to indicate it's the CWD
+		cwdNode.Name = filepath.Base(workDir) + " (CWD)"
+	}
+	
+	// Add CWD to synthetic root
+	syntheticRoot.Children = append(syntheticRoot.Children, cwdNode)
+	
+	// Add external root directories (like /Users) as siblings to CWD
+	for path, node := range nodes {
+		if path == "/Users" {
+			syntheticRoot.Children = append(syntheticRoot.Children, node)
+		}
+	}
+	
+	// Sort children at each level
+	sortChildren(syntheticRoot)
+	
+	return syntheticRoot
 }
 
 // buildTreeWithExternals constructs a hierarchical tree that includes external directories
