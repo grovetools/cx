@@ -12,6 +12,18 @@ import (
 	"time"
 )
 
+// NodeStatus represents the classification of a file in the context
+type NodeStatus int
+
+const (
+	StatusIncludedHot    NodeStatus = iota // In hot context
+	StatusIncludedCold                     // In cold context
+	StatusExcludedByRule                   // Matched an include rule, but then an exclude rule
+	StatusOmittedNoMatch                   // Not matched by any include rule
+	StatusIgnoredByGit                     // Ignored by .gitignore (not used in final result)
+	StatusDirectory                        // A directory containing other nodes
+)
+
 // Constants for context file paths
 const (
 	GroveDir                  = ".grove"
@@ -510,42 +522,55 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
-	// Check for new rules file location first
-	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
-	if _, err := os.Stat(activeRulesPath); err == nil {
-		return m.resolveFileListFromRules(activeRulesPath)
+	// Use the centralized engine
+	fileStatuses, err := m.ResolveAndClassifyAllFiles()
+	if err != nil {
+		return nil, err
 	}
 	
-	// Check for old .grovectx file for backward compatibility
-	oldRulesPath := filepath.Join(m.workDir, RulesFile)
-	if _, err := os.Stat(oldRulesPath); err == nil {
-		fmt.Fprintf(os.Stderr, "Warning: Using deprecated .grovectx file. Please move it to %s\n", ActiveRulesFile)
-		return m.resolveFileListFromRules(oldRulesPath)
+	// Filter for hot context files only
+	var hotFiles []string
+	for path, status := range fileStatuses {
+		if status == StatusIncludedHot {
+			// Convert absolute paths back to relative if within workDir
+			relPath, err := filepath.Rel(m.workDir, path)
+			if err == nil && !strings.HasPrefix(relPath, "..") {
+				hotFiles = append(hotFiles, relPath)
+			} else {
+				hotFiles = append(hotFiles, path)
+			}
+		}
 	}
 	
-	// Neither file exists - return empty list instead of error
-	// The GenerateContext method will handle the warning
-	return []string{}, nil
+	// Sort for consistent output
+	sort.Strings(hotFiles)
+	return hotFiles, nil
 }
 
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
 func (m *Manager) ResolveColdContextFiles() ([]string, error) {
-	activeRulesPath := m.findActiveRulesFile()
-	if activeRulesPath == "" {
-		// No rules file means no cold context.
-		return []string{}, nil
-	}
-
-	_, coldPatterns, _, _, _, _, err := m.parseRulesFile(activeRulesPath)
+	// Use the centralized engine
+	fileStatuses, err := m.ResolveAndClassifyAllFiles()
 	if err != nil {
-		return nil, fmt.Errorf("error parsing cold context rules: %w", err)
+		return nil, err
 	}
-
-	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving cold context files: %w", err)
+	
+	// Filter for cold context files only
+	var coldFiles []string
+	for path, status := range fileStatuses {
+		if status == StatusIncludedCold {
+			// Convert absolute paths back to relative if within workDir
+			relPath, err := filepath.Rel(m.workDir, path)
+			if err == nil && !strings.HasPrefix(relPath, "..") {
+				coldFiles = append(coldFiles, relPath)
+			} else {
+				coldFiles = append(coldFiles, path)
+			}
+		}
 	}
-
+	
+	// Sort for consistent output
+	sort.Strings(coldFiles)
 	return coldFiles, nil
 }
 
@@ -763,6 +788,253 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 	}
 
 	return finalMainFiles, nil
+}
+
+// ResolveAndClassifyAllFiles is the centralized engine that resolves and classifies all files
+// based on context rules. It returns a map of file paths to their NodeStatus.
+func (m *Manager) ResolveAndClassifyAllFiles() (map[string]NodeStatus, error) {
+	result := make(map[string]NodeStatus)
+	
+	// Parse rules file to get patterns
+	rulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
+		// Try legacy rules file
+		rulesPath = filepath.Join(m.workDir, RulesFile)
+		if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
+			// No rules file exists
+			return result, nil
+		}
+	}
+	
+	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesPath)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Combine all patterns for classification
+	allPatterns := append([]string{}, mainPatterns...)
+	allPatterns = append(allPatterns, coldPatterns...)
+	
+	// Resolve hot context files
+	hotFiles := make(map[string]bool)
+	if err := m.resolveFilesIntoMap(mainPatterns, hotFiles); err != nil {
+		return nil, err
+	}
+	
+	// Resolve cold context files
+	coldFiles := make(map[string]bool)
+	if err := m.resolveFilesIntoMap(coldPatterns, coldFiles); err != nil {
+		return nil, err
+	}
+	
+	// Remove cold files from hot files (cold takes precedence)
+	for f := range coldFiles {
+		delete(hotFiles, f)
+	}
+	
+	// Get all unique root paths to walk
+	rootPaths := m.extractRootPaths(allPatterns)
+	
+	// Ensure the working directory itself is in the result
+	result[m.workDir] = StatusDirectory
+	
+	// Walk each root and classify files
+	for _, rootPath := range rootPaths {
+		gitIgnoredFiles, err := m.getGitIgnoredFiles(rootPath)
+		if err != nil {
+			// Non-fatal, continue without gitignore
+			gitIgnoredFiles = make(map[string]bool)
+		}
+		
+		err = m.walkAndClassifyFiles(rootPath, allPatterns, gitIgnoredFiles, hotFiles, coldFiles, result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	
+	return result, nil
+}
+
+// resolveFilesIntoMap is a helper that resolves patterns and adds files to the provided map
+func (m *Manager) resolveFilesIntoMap(patterns []string, filesMap map[string]bool) error {
+	files, err := m.resolveFilesFromPatterns(patterns)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		filesMap[file] = true
+	}
+	return nil
+}
+
+// extractRootPaths extracts all unique root paths from patterns
+func (m *Manager) extractRootPaths(patterns []string) []string {
+	rootsMap := make(map[string]bool)
+	rootsMap[m.workDir] = true // Always include working directory
+	
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "!") {
+			pattern = strings.TrimPrefix(pattern, "!")
+		}
+		
+		// Extract base path from pattern
+		if filepath.IsAbs(pattern) {
+			// For absolute paths, find the non-glob base
+			basePath := pattern
+			for i, part := range strings.Split(pattern, string(filepath.Separator)) {
+				if strings.ContainsAny(part, "*?[") {
+					basePath = strings.Join(strings.Split(pattern, string(filepath.Separator))[:i], string(filepath.Separator))
+					break
+				}
+			}
+			if basePath != "" && basePath != pattern {
+				rootsMap[basePath] = true
+			}
+		} else if strings.HasPrefix(pattern, "../") {
+			// For relative external paths like ../grove-flow/**/*.go
+			// We need to find the first non-glob part
+			parts := strings.Split(pattern, "/")
+			nonGlobParts := []string{}
+			for _, part := range parts {
+				if strings.ContainsAny(part, "*?[") {
+					break
+				}
+				nonGlobParts = append(nonGlobParts, part)
+			}
+			if len(nonGlobParts) > 0 {
+				relBase := strings.Join(nonGlobParts, "/")
+				absBase := filepath.Join(m.workDir, relBase)
+				absBase = filepath.Clean(absBase)
+				if stat, err := os.Stat(absBase); err == nil && stat.IsDir() {
+					rootsMap[absBase] = true
+				}
+			}
+		}
+	}
+	
+	// Convert map to slice
+	var roots []string
+	for root := range rootsMap {
+		roots = append(roots, root)
+	}
+	return roots
+}
+
+// walkAndClassifyFiles walks a directory and classifies each file based on context rules
+func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIgnoredFiles, hotFiles, coldFiles map[string]bool, result map[string]NodeStatus) error {
+	// Extract include patterns for classification
+	var includePatterns []string
+	for _, p := range patterns {
+		if !strings.HasPrefix(p, "!") && p != "binary:include" && p != "!binary:exclude" {
+			includePatterns = append(includePatterns, p)
+		}
+	}
+	
+	// First, ensure the root path itself is in the result as a directory
+	if rootPath != m.workDir {
+		// For external roots, add all parent directories up to but not including workDir
+		current := rootPath
+		for current != m.workDir && current != "/" && current != "." {
+			if _, exists := result[current]; !exists {
+				result[current] = StatusDirectory
+			}
+			parent := filepath.Dir(current)
+			if parent == current {
+				break
+			}
+			current = parent
+		}
+	}
+	
+	return filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		
+		// Skip git-ignored files and directories entirely
+		if gitIgnoredFiles[path] {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		
+		// Always skip .git and .grove directories
+		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".grove") {
+			return filepath.SkipDir
+		}
+		
+		// Skip the root directory itself
+		if path == rootPath {
+			return nil
+		}
+		
+		// Get path relative to workDir for classification
+		relPath, err := filepath.Rel(m.workDir, path)
+		if err != nil {
+			return err
+		}
+		
+		// Create file key for map lookups
+		fileKey := relPath
+		if strings.HasPrefix(relPath, "..") {
+			// File is outside workDir, use absolute path
+			fileKey = path
+		}
+		
+		// Always add directory nodes to the result
+		if d.IsDir() {
+			result[path] = StatusDirectory
+		} else {
+			// Classify files
+			if coldFiles[fileKey] {
+				result[path] = StatusIncludedCold
+			} else if hotFiles[fileKey] {
+				result[path] = StatusIncludedHot  
+			} else if m.fileMatchesAnyPattern(path, includePatterns) {
+				// File matches an include pattern but isn't in the final context,
+				// so it must have been excluded by a rule
+				result[path] = StatusExcludedByRule
+			} else {
+				result[path] = StatusOmittedNoMatch
+			}
+		}
+		
+		return nil
+	})
+}
+
+// fileMatchesAnyPattern checks if a file matches any of the given patterns
+func (m *Manager) fileMatchesAnyPattern(filePath string, patterns []string) bool {
+	for _, pattern := range patterns {
+		// Get appropriate path for matching
+		relPath, _ := filepath.Rel(m.workDir, filePath)
+		relPath = filepath.ToSlash(relPath)
+		
+		if m.matchesPattern(relPath, pattern) {
+			return true
+		}
+		
+		// Also try matching against basename for patterns without slashes
+		if !strings.Contains(pattern, "/") {
+			if matched, _ := filepath.Match(pattern, filepath.Base(filePath)); matched {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// matchesPattern checks if a path matches a single pattern
+func (m *Manager) matchesPattern(path, pattern string) bool {
+	// Handle ** patterns
+	if strings.Contains(pattern, "**") {
+		return matchDoubleStarPattern(pattern, path)
+	}
+	
+	// Simple pattern matching
+	matched, _ := filepath.Match(pattern, path)
+	return matched
 }
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
