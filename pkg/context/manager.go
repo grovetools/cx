@@ -49,6 +49,11 @@ func NewManager(workDir string) *Manager {
 	return &Manager{workDir: workDir}
 }
 
+// GetWorkDir returns the current working directory
+func (m *Manager) GetWorkDir() string {
+	return m.workDir
+}
+
 // ReadFilesList reads the list of files from a file
 func (m *Manager) ReadFilesList(filename string) ([]string, error) {
 	// Ensure we use the full path relative to workDir
@@ -1401,6 +1406,96 @@ func (m *Manager) ListFiles() ([]string, error) {
 	}
 	
 	return absPaths, nil
+}
+
+// AppendRule adds a new rule to the active rules file.
+// contextType can be "hot", "cold", or "exclude".
+func (m *Manager) AppendRule(rulePath, contextType string) error {
+	// Find or create the rules file
+	rulesFilePath := m.findActiveRulesFile()
+	if rulesFilePath == "" {
+		// Create .grove/rules file
+		groveDir := filepath.Join(m.workDir, GroveDir)
+		if err := os.MkdirAll(groveDir, 0755); err != nil {
+			return fmt.Errorf("error creating %s directory: %w", groveDir, err)
+		}
+		rulesFilePath = filepath.Join(m.workDir, ActiveRulesFile)
+	}
+	
+	// Read existing content
+	var lines []string
+	if content, err := os.ReadFile(rulesFilePath); err == nil {
+		scanner := bufio.NewScanner(strings.NewReader(string(content)))
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+	}
+	
+	// Prepare the new rule
+	var newRule string
+	switch contextType {
+	case "exclude":
+		newRule = "!" + rulePath
+	default:
+		newRule = rulePath
+	}
+	
+	// Check if rule already exists
+	for _, line := range lines {
+		if strings.TrimSpace(line) == newRule {
+			// Rule already exists, no need to add
+			return nil
+		}
+	}
+	
+	// Find separator line index
+	separatorIndex := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "---" {
+			separatorIndex = i
+			break
+		}
+	}
+	
+	// Insert the new rule based on context type
+	switch contextType {
+	case "hot", "exclude":
+		if separatorIndex >= 0 {
+			// Insert before separator
+			lines = insertAt(lines, separatorIndex, newRule)
+		} else {
+			// No separator, append to end
+			lines = append(lines, newRule)
+		}
+	case "cold":
+		if separatorIndex >= 0 {
+			// Append after separator
+			lines = append(lines, newRule)
+		} else {
+			// No separator, add one first then the rule
+			lines = append(lines, "---", newRule)
+		}
+	}
+	
+	// Write back to file
+	content := strings.Join(lines, "\n")
+	if len(lines) > 0 && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return os.WriteFile(rulesFilePath, []byte(content), 0644)
+}
+
+// insertAt inserts a string at the specified index in a slice
+func insertAt(slice []string, index int, value string) []string {
+	if index < 0 || index > len(slice) {
+		return slice
+	}
+	
+	result := make([]string, len(slice)+1)
+	copy(result, slice[:index])
+	result[index] = value
+	copy(result[index+1:], slice[index:])
+	return result
 }
 
 // matchDoubleStarPattern handles patterns with ** for recursive matching

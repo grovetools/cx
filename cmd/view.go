@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,6 +34,12 @@ type treeLoadedMsg struct {
 	err  error
 }
 
+type ruleChangeResultMsg struct {
+	err           error
+	successMsg    string
+	refreshNeeded bool
+}
+
 // viewModel is the model for the interactive tree view
 type viewModel struct {
 	tree          *context.FileNode
@@ -45,6 +52,7 @@ type viewModel struct {
 	loading       bool
 	err           error
 	lastKey       string // Track last key for multi-key commands like "gg"
+	statusMessage string // Status message for user feedback
 }
 
 // nodeWithLevel stores a node with its display level
@@ -71,6 +79,37 @@ func loadTree() tea.Msg {
 	manager := context.NewManager("")
 	tree, err := manager.AnalyzeProjectTree()
 	return treeLoadedMsg{tree: tree, err: err}
+}
+
+// modifyRuleCmd creates a command to modify rules
+func (m *viewModel) modifyRuleCmd(path, contextType, actionVerb string) tea.Cmd {
+	return func() tea.Msg {
+		manager := context.NewManager("")
+		if err := manager.AppendRule(path, contextType); err != nil {
+			return ruleChangeResultMsg{err: err, refreshNeeded: false}
+		}
+		// On success, return success message and request refresh
+		successMsg := fmt.Sprintf("%s: %s", actionVerb, path)
+		return ruleChangeResultMsg{err: nil, successMsg: successMsg, refreshNeeded: true}
+	}
+}
+
+// getRelativePath converts node path to relative path suitable for rules file
+func (m *viewModel) getRelativePath(node *context.FileNode) (string, error) {
+	manager := context.NewManager("")
+	
+	// Get relative path from current working directory
+	relPath, err := filepath.Rel(manager.GetWorkDir(), node.Path)
+	if err != nil {
+		return "", err
+	}
+	
+	// If path starts with "..", it's outside workdir, use absolute path
+	if strings.HasPrefix(relPath, "..") {
+		return node.Path, nil
+	}
+	
+	return relPath, nil
 }
 
 // Update handles messages
@@ -132,9 +171,48 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 			}
 			m.ensureCursorVisible()
-		case "a", "A":
+		case "A":
 			// Auto-expand all directories
 			m.expandAll()
+		case "a":
+			// Add to hot context
+			if m.cursor >= len(m.visibleNodes) {
+				break
+			}
+			node := m.visibleNodes[m.cursor].node
+			relPath, err := m.getRelativePath(node)
+			if err != nil {
+				m.statusMessage = fmt.Sprintf("Error: %v", err)
+				break
+			}
+			m.statusMessage = fmt.Sprintf("Adding %s to hot context...", node.Name)
+			return m, m.modifyRuleCmd(relPath, "hot", "Added to hot context")
+		case "c":
+			// Add to cold context
+			if m.cursor >= len(m.visibleNodes) {
+				break
+			}
+			node := m.visibleNodes[m.cursor].node
+			relPath, err := m.getRelativePath(node)
+			if err != nil {
+				m.statusMessage = fmt.Sprintf("Error: %v", err)
+				break
+			}
+			m.statusMessage = fmt.Sprintf("Adding %s to cold context...", node.Name)
+			return m, m.modifyRuleCmd(relPath, "cold", "Added to cold context")
+		case "x":
+			// Exclude from context
+			if m.cursor >= len(m.visibleNodes) {
+				break
+			}
+			node := m.visibleNodes[m.cursor].node
+			relPath, err := m.getRelativePath(node)
+			if err != nil {
+				m.statusMessage = fmt.Sprintf("Error: %v", err)
+				break
+			}
+			m.statusMessage = fmt.Sprintf("Excluding %s from context...", node.Name)
+			return m, m.modifyRuleCmd(relPath, "exclude", "Excluded")
 		case "g":
 			if m.lastKey == "g" {
 				// gg - go to top
@@ -152,6 +230,18 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Clear lastKey for any other key that's not part of a combo
 			if m.lastKey != "" && msg.String() != "g" {
 				m.lastKey = ""
+			}
+		}
+
+	case ruleChangeResultMsg:
+		if msg.err != nil {
+			m.statusMessage = fmt.Sprintf("Error: %v", msg.err)
+		} else {
+			m.statusMessage = msg.successMsg
+			if msg.refreshNeeded {
+				// Refresh the tree to show the updated context
+				m.loading = true
+				return m, loadTree
 			}
 		}
 
@@ -340,20 +430,35 @@ func (m *viewModel) View() string {
 	// Legend
 	legend := m.renderLegend()
 
+	// Status message
+	statusMsg := ""
+	if m.statusMessage != "" {
+		statusMsg = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("34")).
+			Bold(true).
+			Render(m.statusMessage)
+	}
+
 	// Controls
 	controls := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
-		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | a: expand all | Ctrl-D/U: page down/up | q: quit")
+		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | A: expand all | a: add hot | c: add cold | x: exclude | Ctrl-D/U: page down/up | q: quit")
 
 	// Combine all parts
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
+	parts := []string{
 		header,
 		tree,
 		"",
 		legend,
-		controls,
-	)
+	}
+	
+	if statusMsg != "" {
+		parts = append(parts, statusMsg)
+	}
+	
+	parts = append(parts, controls)
+	
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 // renderNode renders a single node
