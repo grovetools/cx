@@ -852,7 +852,72 @@ func (m *Manager) ResolveAndClassifyAllFiles() (map[string]NodeStatus, error) {
 		}
 	}
 	
+	// Post-process: remove empty directories (directories with no non-ignored children)
+	result = m.removeEmptyDirectories(result)
+	
 	return result, nil
+}
+
+// removeEmptyDirectories removes directories that contain no included files
+func (m *Manager) removeEmptyDirectories(fileStatuses map[string]NodeStatus) map[string]NodeStatus {
+	// Build a map of directories to their children
+	dirChildren := make(map[string][]string)
+	
+	// First pass: identify all parent-child relationships
+	for path, status := range fileStatuses {
+		if status == StatusIgnoredByGit {
+			continue // Skip ignored files
+		}
+		
+		// Add this path to its parent's children
+		parent := filepath.Dir(path)
+		if parent != path { // Not the root
+			dirChildren[parent] = append(dirChildren[parent], path)
+		}
+	}
+	
+	// Second pass: identify directories with included content
+	dirsWithContent := make(map[string]bool)
+	
+	var markDirWithContent func(dirPath string)
+	markDirWithContent = func(dirPath string) {
+		if dirsWithContent[dirPath] {
+			return // Already marked
+		}
+		dirsWithContent[dirPath] = true
+		
+		// Mark all parent directories as having content
+		parent := filepath.Dir(dirPath)
+		if parent != dirPath && parent != "/" && parent != "." {
+			markDirWithContent(parent)
+		}
+	}
+	
+	// Mark directories that contain included files
+	for path, status := range fileStatuses {
+		if status == StatusIncludedHot || status == StatusIncludedCold || 
+		   status == StatusExcludedByRule || status == StatusOmittedNoMatch {
+			// This is a file with some status - mark its parent directory
+			parent := filepath.Dir(path)
+			markDirWithContent(parent)
+		}
+	}
+	
+	// Third pass: create the filtered result
+	filtered := make(map[string]NodeStatus)
+	for path, status := range fileStatuses {
+		if status == StatusDirectory {
+			// Only include directories that have content
+			if dirsWithContent[path] {
+				filtered[path] = status
+			}
+		} else if status != StatusIgnoredByGit {
+			// Include all non-ignored files
+			filtered[path] = status
+		}
+	}
+	
+	return filtered
 }
 
 // resolveFilesIntoMap is a helper that resolves patterns and adds files to the provided map
@@ -982,8 +1047,9 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 			fileKey = path
 		}
 		
-		// Always add directory nodes to the result
+		// Add directories and files to the result
 		if d.IsDir() {
+			// Directories will be filtered later if they contain no included files
 			result[path] = StatusDirectory
 		} else {
 			// Classify files
