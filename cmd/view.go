@@ -82,7 +82,7 @@ func loadTree() tea.Msg {
 }
 
 // toggleRuleCmd creates a command to toggle rules
-func (m *viewModel) toggleRuleCmd(path, targetType string) tea.Cmd {
+func (m *viewModel) toggleRuleCmd(path, targetType string, isDirectory bool) tea.Cmd {
 	return func() tea.Msg {
 		manager := context.NewManager("")
 		
@@ -91,6 +91,12 @@ func (m *viewModel) toggleRuleCmd(path, targetType string) tea.Cmd {
 		
 		var err error
 		var successMsg string
+		
+		// Determine item type for messages
+		itemType := "file"
+		if isDirectory {
+			itemType = "directory tree"
+		}
 		
 		// Toggle logic based on current state and target
 		switch targetType {
@@ -105,11 +111,11 @@ func (m *viewModel) toggleRuleCmd(path, targetType string) tea.Cmd {
 				}
 				// Add to hot context
 				err = manager.AppendRule(path, "hot")
-				successMsg = fmt.Sprintf("Added to hot context: %s", path)
+				successMsg = fmt.Sprintf("Added %s to hot context: %s", itemType, path)
 			case context.RuleHot:
 				// Remove from hot context
 				err = manager.RemoveRule(path)
-				successMsg = fmt.Sprintf("Removed from hot context: %s", path)
+				successMsg = fmt.Sprintf("Removed %s from hot context: %s", itemType, path)
 			}
 		case "cold":
 			switch currentStatus {
@@ -122,11 +128,11 @@ func (m *viewModel) toggleRuleCmd(path, targetType string) tea.Cmd {
 				}
 				// Add to cold context
 				err = manager.AppendRule(path, "cold")
-				successMsg = fmt.Sprintf("Added to cold context: %s", path)
+				successMsg = fmt.Sprintf("Added %s to cold context: %s", itemType, path)
 			case context.RuleCold:
 				// Remove from cold context
 				err = manager.RemoveRule(path)
-				successMsg = fmt.Sprintf("Removed from cold context: %s", path)
+				successMsg = fmt.Sprintf("Removed %s from cold context: %s", itemType, path)
 			}
 		case "exclude":
 			switch currentStatus {
@@ -139,11 +145,11 @@ func (m *viewModel) toggleRuleCmd(path, targetType string) tea.Cmd {
 				}
 				// Add exclusion rule
 				err = manager.AppendRule(path, "exclude")
-				successMsg = fmt.Sprintf("Excluded: %s", path)
+				successMsg = fmt.Sprintf("Excluded %s: %s", itemType, path)
 			case context.RuleExcluded:
 				// Remove exclusion
 				err = manager.RemoveRule(path)
-				successMsg = fmt.Sprintf("Removed exclusion: %s", path)
+				successMsg = fmt.Sprintf("Removed exclusion for %s: %s", itemType, path)
 			}
 		}
 		
@@ -156,6 +162,7 @@ func (m *viewModel) toggleRuleCmd(path, targetType string) tea.Cmd {
 }
 
 // getRelativePath converts node path to relative path suitable for rules file
+// For directories, it returns a glob pattern like "dirname/**" to include all contents
 func (m *viewModel) getRelativePath(node *context.FileNode) (string, error) {
 	manager := context.NewManager("")
 	
@@ -166,11 +173,24 @@ func (m *viewModel) getRelativePath(node *context.FileNode) (string, error) {
 	}
 	
 	// If path starts with "..", it's outside workdir, use absolute path
+	var basePath string
 	if strings.HasPrefix(relPath, "..") {
-		return node.Path, nil
+		basePath = node.Path
+	} else {
+		basePath = relPath
 	}
 	
-	return relPath, nil
+	// For directories, append /** to include all contents recursively
+	if node.IsDir {
+		// Ensure we don't double-slash
+		if strings.HasSuffix(basePath, "/") {
+			return basePath + "**", nil
+		} else {
+			return basePath + "/**", nil
+		}
+	}
+	
+	return basePath, nil
 }
 
 // Update handles messages
@@ -246,8 +266,15 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
 			}
-			m.statusMessage = fmt.Sprintf("Toggling hot context for %s...", node.Name)
-			return m, m.toggleRuleCmd(relPath, "hot")
+			// Create appropriate status message for directories vs files
+			var itemType string
+			if node.IsDir {
+				itemType = "directory tree"
+			} else {
+				itemType = "file"
+			}
+			m.statusMessage = fmt.Sprintf("Toggling hot context for %s %s...", itemType, node.Name)
+			return m, m.toggleRuleCmd(relPath, "hot", node.IsDir)
 		case "c":
 			// Toggle cold context
 			if m.cursor >= len(m.visibleNodes) {
@@ -259,8 +286,15 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
 			}
-			m.statusMessage = fmt.Sprintf("Toggling cold context for %s...", node.Name)
-			return m, m.toggleRuleCmd(relPath, "cold")
+			// Create appropriate status message for directories vs files
+			var itemType string
+			if node.IsDir {
+				itemType = "directory tree"
+			} else {
+				itemType = "file"
+			}
+			m.statusMessage = fmt.Sprintf("Toggling cold context for %s %s...", itemType, node.Name)
+			return m, m.toggleRuleCmd(relPath, "cold", node.IsDir)
 		case "x":
 			// Toggle exclude
 			if m.cursor >= len(m.visibleNodes) {
@@ -272,8 +306,15 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
 			}
-			m.statusMessage = fmt.Sprintf("Toggling exclusion for %s...", node.Name)
-			return m, m.toggleRuleCmd(relPath, "exclude")
+			// Create appropriate status message for directories vs files
+			var itemType string
+			if node.IsDir {
+				itemType = "directory tree"
+			} else {
+				itemType = "file"
+			}
+			m.statusMessage = fmt.Sprintf("Toggling exclusion for %s %s...", itemType, node.Name)
+			return m, m.toggleRuleCmd(relPath, "exclude", node.IsDir)
 		case "g":
 			if m.lastKey == "g" {
 				// gg - go to top
@@ -503,7 +544,7 @@ func (m *viewModel) View() string {
 	// Controls
 	controls := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
-		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | A: expand all | a: toggle hot | c: toggle cold | x: toggle exclude | Ctrl-D/U: page down/up | q: quit")
+		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | A: expand all | a: toggle hot | c: toggle cold | x: toggle exclude (dirs include all contents) | Ctrl-D/U: page down/up | q: quit")
 
 	// Combine all parts
 	parts := []string{
