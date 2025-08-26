@@ -169,6 +169,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tree = msg.tree
 		// Expand root by default
 		m.expandedPaths[m.tree.Path] = true
+		// Auto-expand paths to content
+		m.autoExpandToContent(m.tree)
 		m.updateVisibleNodes()
 	}
 
@@ -207,6 +209,39 @@ func (m *viewModel) expandAllRecursive(node *context.FileNode) {
 		m.expandedPaths[node.Path] = true
 		for _, child := range node.Children {
 			m.expandAllRecursive(child)
+		}
+	}
+}
+
+// autoExpandToContent expands directories that lead to actual content files
+func (m *viewModel) autoExpandToContent(node *context.FileNode) {
+	if !node.IsDir {
+		return
+	}
+	
+	// Check if this directory has any files (not just subdirectories)
+	hasFiles := false
+	hasOnlyOneChild := len(node.Children) == 1
+	
+	for _, child := range node.Children {
+		if !child.IsDir {
+			hasFiles = true
+			break
+		}
+	}
+	
+	// Auto-expand if:
+	// 1. This directory has files, OR
+	// 2. This directory has only one child (to avoid clicking through single-child chains)
+	// 3. This is a special path like /Users that we always want expanded
+	if hasFiles || hasOnlyOneChild || strings.HasPrefix(node.Path, "/Users") {
+		m.expandedPaths[node.Path] = true
+	}
+	
+	// Recursively check children
+	for _, child := range node.Children {
+		if child.IsDir {
+			m.autoExpandToContent(child)
 		}
 	}
 }

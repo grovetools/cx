@@ -62,7 +62,7 @@ func (m *Manager) AnalyzeProjectTree() (*FileNode, error) {
 	return root, nil
 }
 
-// buildTreeWithSyntheticRoot creates a synthetic root with CWD and external paths as siblings
+// buildTreeWithSyntheticRoot creates a synthetic root showing the filesystem hierarchy
 func buildTreeWithSyntheticRoot(workDir string, nodes map[string]*FileNode) *FileNode {
 	// Create a synthetic root node
 	syntheticRoot := &FileNode{
@@ -87,28 +87,16 @@ func buildTreeWithSyntheticRoot(workDir string, nodes map[string]*FileNode) *Fil
 		}
 	}
 	
-	// Create the CWD node using the existing workDir node or create new
-	cwdNode, exists := nodes[workDir]
-	if !exists {
-		cwdNode = &FileNode{
-			Path:     workDir,
-			Name:     filepath.Base(workDir) + " (CWD)",
-			Status:   StatusDirectory,
-			IsDir:    true,
-			Children: []*FileNode{},
-		}
-	} else {
-		// Update the name to indicate it's the CWD
+	// Mark the CWD node with (CWD) suffix to make it clear
+	if cwdNode, exists := nodes[workDir]; exists {
 		cwdNode.Name = filepath.Base(workDir) + " (CWD)"
 	}
 	
-	// Add CWD to synthetic root
-	syntheticRoot.Children = append(syntheticRoot.Children, cwdNode)
-	
-	// Add external root directories (like /Users) as siblings to CWD
+	// Add /Users as the only child of synthetic root
 	for path, node := range nodes {
 		if path == "/Users" {
 			syntheticRoot.Children = append(syntheticRoot.Children, node)
+			break
 		}
 	}
 	
@@ -117,6 +105,7 @@ func buildTreeWithSyntheticRoot(workDir string, nodes map[string]*FileNode) *Fil
 	
 	return syntheticRoot
 }
+
 
 // buildTreeWithExternals constructs a hierarchical tree that includes external directories
 func buildTreeWithExternals(rootPath string, nodes map[string]*FileNode) *FileNode {
