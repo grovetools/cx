@@ -1,3 +1,22 @@
+## v0.2.18 (2025-08-26)
+
+### Bug Fixes
+
+* improve auto-expansion to show project list at grove-ecosystem level
+* exclude empty and git-ignored directories from cx view
+* cx view dirs outside proj
+
+### Features
+
+* use changelog content for GitHub releases
+* add directory tree inclusion/exclusion to cx view
+* add toggle functionality and fix exclusion display in cx view
+* add interactive rule modification to cx view command
+* improve cx view tree structure and auto-expansion
+* add synthetic root to cx view for clearer local/external separation
+* consolidate file resolution logic and fix cx view for external directories
+* add cx view command for interactive context visualization
+
 ## v0.2.17 (2025-08-25)
 
 ### Continuous Integration
