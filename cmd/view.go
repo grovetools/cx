@@ -213,35 +213,39 @@ func (m *viewModel) expandAllRecursive(node *context.FileNode) {
 	}
 }
 
-// autoExpandToContent expands directories that lead to actual content files
+// autoExpandToContent expands directories intelligently
 func (m *viewModel) autoExpandToContent(node *context.FileNode) {
 	if !node.IsDir {
 		return
 	}
 	
-	// Check if this directory has any files (not just subdirectories)
-	hasFiles := false
-	hasOnlyOneChild := len(node.Children) == 1
+	// Count how many directory children this node has
+	dirCount := 0
+	var hasProjectDirs bool
 	
 	for _, child := range node.Children {
-		if !child.IsDir {
-			hasFiles = true
-			break
+		if child.IsDir {
+			dirCount++
+			// Check if any child contains "(CWD)" or looks like a project
+			if strings.Contains(child.Name, "(CWD)") || 
+			   strings.Contains(child.Name, "grove-") {
+				hasProjectDirs = true
+			}
 		}
 	}
 	
 	// Auto-expand if:
-	// 1. This directory has files, OR
-	// 2. This directory has only one child (to avoid clicking through single-child chains)
-	// 3. This is a special path like /Users that we always want expanded
-	if hasFiles || hasOnlyOneChild || strings.HasPrefix(node.Path, "/Users") {
+	// 1. This directory has only one child directory (single-child chain)
+	// 2. OR this directory contains project directories (to show the project list)
+	if (len(node.Children) == 1 && dirCount == 1) || hasProjectDirs {
 		m.expandedPaths[node.Path] = true
-	}
-	
-	// Recursively check children
-	for _, child := range node.Children {
-		if child.IsDir {
-			m.autoExpandToContent(child)
+		// Continue expanding single-child chains
+		if len(node.Children) == 1 && dirCount == 1 {
+			for _, child := range node.Children {
+				if child.IsDir {
+					m.autoExpandToContent(child)
+				}
+			}
 		}
 	}
 }
