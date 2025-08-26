@@ -33,12 +33,15 @@ func (m *Manager) AnalyzeProjectTree() (*FileNode, error) {
 			continue
 		}
 		
-		// Check if this is an external file
+		// Check if this is an external file that is actually included (hot or cold context)
 		relPath, err := filepath.Rel(m.workDir, path)
-		if err != nil || strings.HasPrefix(relPath, "..") {
+		isExternal := err != nil || strings.HasPrefix(relPath, "..")
+		if isExternal && (status == StatusIncludedHot || status == StatusIncludedCold) {
 			hasExternalFiles = true
 		}
 		
+		// For directories outside workDir, only include them if they have included descendants
+		// We'll handle this filtering later, for now just create the node
 		node := &FileNode{
 			Path:     path,
 			Name:     filepath.Base(path),
@@ -47,6 +50,19 @@ func (m *Manager) AnalyzeProjectTree() (*FileNode, error) {
 			Children: []*FileNode{},
 		}
 		nodes[path] = node
+	}
+	
+	// If no external files are included, remove external directory nodes
+	if !hasExternalFiles {
+		filteredNodes := make(map[string]*FileNode)
+		for path, node := range nodes {
+			relPath, err := filepath.Rel(m.workDir, path)
+			isExternal := err != nil || strings.HasPrefix(relPath, "..")
+			if !isExternal {
+				filteredNodes[path] = node
+			}
+		}
+		nodes = filteredNodes
 	}
 	
 	// Build the tree structure
@@ -141,23 +157,8 @@ func buildTreeWithExternals(rootPath string, nodes map[string]*FileNode) *FileNo
 		}
 	}
 	
-	// For external directories, we want to show them at the root level
-	// but in a condensed way. Find the /Users node and add it as a direct child of root
-	for path, node := range nodes {
-		if path == "/Users" {
-			// Check if it's already a child of root
-			isChild := false
-			for _, child := range root.Children {
-				if child.Path == path {
-					isChild = true
-					break
-				}
-			}
-			if !isChild {
-				root.Children = append(root.Children, node)
-			}
-		}
-	}
+	// buildTreeWithExternals should only show the working directory tree
+	// External directory handling is done in buildTreeWithSyntheticRoot
 
 	// Sort children at each level
 	sortChildren(root)

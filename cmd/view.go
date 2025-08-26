@@ -81,15 +81,76 @@ func loadTree() tea.Msg {
 	return treeLoadedMsg{tree: tree, err: err}
 }
 
-// modifyRuleCmd creates a command to modify rules
-func (m *viewModel) modifyRuleCmd(path, contextType, actionVerb string) tea.Cmd {
+// toggleRuleCmd creates a command to toggle rules
+func (m *viewModel) toggleRuleCmd(path, targetType string) tea.Cmd {
 	return func() tea.Msg {
 		manager := context.NewManager("")
-		if err := manager.AppendRule(path, contextType); err != nil {
+		
+		// Check current status
+		currentStatus := manager.GetRuleStatus(path)
+		
+		var err error
+		var successMsg string
+		
+		// Toggle logic based on current state and target
+		switch targetType {
+		case "hot":
+			switch currentStatus {
+			case context.RuleNotFound, context.RuleCold, context.RuleExcluded:
+				// Remove existing rule first if it exists
+				if currentStatus != context.RuleNotFound {
+					if removeErr := manager.RemoveRule(path); removeErr != nil {
+						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
+					}
+				}
+				// Add to hot context
+				err = manager.AppendRule(path, "hot")
+				successMsg = fmt.Sprintf("Added to hot context: %s", path)
+			case context.RuleHot:
+				// Remove from hot context
+				err = manager.RemoveRule(path)
+				successMsg = fmt.Sprintf("Removed from hot context: %s", path)
+			}
+		case "cold":
+			switch currentStatus {
+			case context.RuleNotFound, context.RuleHot, context.RuleExcluded:
+				// Remove existing rule first if it exists
+				if currentStatus != context.RuleNotFound {
+					if removeErr := manager.RemoveRule(path); removeErr != nil {
+						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
+					}
+				}
+				// Add to cold context
+				err = manager.AppendRule(path, "cold")
+				successMsg = fmt.Sprintf("Added to cold context: %s", path)
+			case context.RuleCold:
+				// Remove from cold context
+				err = manager.RemoveRule(path)
+				successMsg = fmt.Sprintf("Removed from cold context: %s", path)
+			}
+		case "exclude":
+			switch currentStatus {
+			case context.RuleNotFound, context.RuleHot, context.RuleCold:
+				// Remove existing rule first if it exists
+				if currentStatus != context.RuleNotFound {
+					if removeErr := manager.RemoveRule(path); removeErr != nil {
+						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
+					}
+				}
+				// Add exclusion rule
+				err = manager.AppendRule(path, "exclude")
+				successMsg = fmt.Sprintf("Excluded: %s", path)
+			case context.RuleExcluded:
+				// Remove exclusion
+				err = manager.RemoveRule(path)
+				successMsg = fmt.Sprintf("Removed exclusion: %s", path)
+			}
+		}
+		
+		if err != nil {
 			return ruleChangeResultMsg{err: err, refreshNeeded: false}
 		}
-		// On success, return success message and request refresh
-		successMsg := fmt.Sprintf("%s: %s", actionVerb, path)
+		
 		return ruleChangeResultMsg{err: nil, successMsg: successMsg, refreshNeeded: true}
 	}
 }
@@ -175,7 +236,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Auto-expand all directories
 			m.expandAll()
 		case "a":
-			// Add to hot context
+			// Toggle hot context
 			if m.cursor >= len(m.visibleNodes) {
 				break
 			}
@@ -185,10 +246,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
 			}
-			m.statusMessage = fmt.Sprintf("Adding %s to hot context...", node.Name)
-			return m, m.modifyRuleCmd(relPath, "hot", "Added to hot context")
+			m.statusMessage = fmt.Sprintf("Toggling hot context for %s...", node.Name)
+			return m, m.toggleRuleCmd(relPath, "hot")
 		case "c":
-			// Add to cold context
+			// Toggle cold context
 			if m.cursor >= len(m.visibleNodes) {
 				break
 			}
@@ -198,10 +259,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
 			}
-			m.statusMessage = fmt.Sprintf("Adding %s to cold context...", node.Name)
-			return m, m.modifyRuleCmd(relPath, "cold", "Added to cold context")
+			m.statusMessage = fmt.Sprintf("Toggling cold context for %s...", node.Name)
+			return m, m.toggleRuleCmd(relPath, "cold")
 		case "x":
-			// Exclude from context
+			// Toggle exclude
 			if m.cursor >= len(m.visibleNodes) {
 				break
 			}
@@ -211,8 +272,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
 			}
-			m.statusMessage = fmt.Sprintf("Excluding %s from context...", node.Name)
-			return m, m.modifyRuleCmd(relPath, "exclude", "Excluded")
+			m.statusMessage = fmt.Sprintf("Toggling exclusion for %s...", node.Name)
+			return m, m.toggleRuleCmd(relPath, "exclude")
 		case "g":
 			if m.lastKey == "g" {
 				// gg - go to top
@@ -442,7 +503,7 @@ func (m *viewModel) View() string {
 	// Controls
 	controls := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
-		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | A: expand all | a: add hot | c: add cold | x: exclude | Ctrl-D/U: page down/up | q: quit")
+		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | A: expand all | a: toggle hot | c: toggle cold | x: toggle exclude | Ctrl-D/U: page down/up | q: quit")
 
 	// Combine all parts
 	parts := []string{

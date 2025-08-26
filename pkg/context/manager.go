@@ -1066,6 +1066,9 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 				// File matches an include pattern but isn't in the final context,
 				// so it must have been excluded by a rule
 				result[path] = StatusExcludedByRule
+			} else if m.fileExplicitlyExcluded(path, patterns) {
+				// File is explicitly excluded (has !filename rule)
+				result[path] = StatusExcludedByRule
 			} else {
 				result[path] = StatusOmittedNoMatch
 			}
@@ -1073,6 +1076,35 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 		
 		return nil
 	})
+}
+
+// fileExplicitlyExcluded checks if a file is explicitly excluded by a !pattern rule
+func (m *Manager) fileExplicitlyExcluded(filePath string, patterns []string) bool {
+	// Get path relative to workDir for matching
+	relPath, _ := filepath.Rel(m.workDir, filePath)
+	relPath = filepath.ToSlash(relPath)
+	
+	for _, pattern := range patterns {
+		if !strings.HasPrefix(pattern, "!") {
+			continue
+		}
+		
+		// Remove the ! prefix to get the actual pattern
+		excludePattern := strings.TrimPrefix(pattern, "!")
+		
+		// Check various matching approaches
+		if m.matchesPattern(relPath, excludePattern) {
+			return true
+		}
+		
+		// Also try matching against basename for patterns without slashes
+		if !strings.Contains(excludePattern, "/") {
+			if matched, _ := filepath.Match(excludePattern, filepath.Base(filePath)); matched {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // fileMatchesAnyPattern checks if a file matches any of the given patterns
@@ -1496,6 +1528,139 @@ func insertAt(slice []string, index int, value string) []string {
 	result[index] = value
 	copy(result[index+1:], slice[index:])
 	return result
+}
+
+// RuleStatus represents the current state of a rule
+type RuleStatus int
+
+const (
+	RuleNotFound RuleStatus = iota // Rule doesn't exist
+	RuleHot                        // Rule exists in hot context
+	RuleCold                       // Rule exists in cold context  
+	RuleExcluded                   // Rule exists as exclusion
+)
+
+// GetRuleStatus checks the current status of a rule in the rules file
+func (m *Manager) GetRuleStatus(rulePath string) RuleStatus {
+	rulesFilePath := m.findActiveRulesFile()
+	if rulesFilePath == "" {
+		return RuleNotFound
+	}
+	
+	content, err := os.ReadFile(rulesFilePath)
+	if err != nil {
+		return RuleNotFound
+	}
+	
+	// Check for exclusion rule
+	excludeRule := "!" + rulePath
+	// Check for normal rule
+	normalRule := rulePath
+	
+	lines := strings.Split(string(content), "\n")
+	inColdSection := false
+	
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "---" {
+			inColdSection = true
+			continue
+		}
+		
+		if line == excludeRule {
+			return RuleExcluded
+		}
+		
+		if line == normalRule {
+			if inColdSection {
+				return RuleCold
+			} else {
+				return RuleHot
+			}
+		}
+	}
+	
+	return RuleNotFound
+}
+
+// RemoveRule removes a specific rule from the rules file
+func (m *Manager) RemoveRule(rulePath string) error {
+	rulesFilePath := m.findActiveRulesFile()
+	if rulesFilePath == "" {
+		// No rules file exists, nothing to remove
+		return nil
+	}
+	
+	content, err := os.ReadFile(rulesFilePath)
+	if err != nil {
+		return fmt.Errorf("error reading rules file: %w", err)
+	}
+	
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	
+	// Rules to potentially remove
+	excludeRule := "!" + rulePath
+	normalRule := rulePath
+	
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		// Skip the lines that match our rule (either normal or exclude form)
+		if trimmedLine == excludeRule || trimmedLine == normalRule {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+	
+	// Clean up empty lines and unnecessary separators
+	newLines = cleanupRulesLines(newLines)
+	
+	// Write back to file
+	newContent := strings.Join(newLines, "\n")
+	if len(newLines) > 0 && !strings.HasSuffix(newContent, "\n") {
+		newContent += "\n"
+	}
+	
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0644)
+}
+
+// cleanupRulesLines removes unnecessary separators and empty lines
+func cleanupRulesLines(lines []string) []string {
+	// Remove trailing empty lines
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	
+	// If only separator remains, remove it
+	if len(lines) == 1 && strings.TrimSpace(lines[0]) == "---" {
+		return []string{}
+	}
+	
+	// Remove separator if there are no cold context rules after it
+	hasColdRules := false
+	separatorIndex := -1
+	
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "---" {
+			separatorIndex = i
+		} else if separatorIndex >= 0 && strings.TrimSpace(line) != "" {
+			hasColdRules = true
+			break
+		}
+	}
+	
+	// Remove separator if no cold rules follow
+	if separatorIndex >= 0 && !hasColdRules {
+		result := make([]string, 0, len(lines)-1)
+		for i, line := range lines {
+			if i != separatorIndex {
+				result = append(result, line)
+			}
+		}
+		lines = result
+	}
+	
+	return lines
 }
 
 // matchDoubleStarPattern handles patterns with ** for recursive matching
