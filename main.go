@@ -27,6 +27,7 @@ func main() {
     rootCmd.AddCommand(cmd.NewFixCmd())
     rootCmd.AddCommand(cmd.NewStatsCmd())
     rootCmd.AddCommand(cmd.NewFromGitCmd())
+    rootCmd.AddCommand(cmd.NewViewCmd())
     rootCmd.AddCommand(cmd.NewVersionCmd())
     
     if err := rootCmd.Execute(); err != nil {
