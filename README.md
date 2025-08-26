@@ -1,29 +1,34 @@
 # Grove Context (cx)
+<img src="https://github.com/user-attachments/assets/f0f527de-ac59-41bf-b25f-a8bc138d7f1b" height=500 />
 
-Grove Context is a comprehensive context management tool for LLM interactions, allowing you to manage which files are included in your context and how they're formatted. This tool was migrated from the monolithic `grove cx` command to a standalone binary.
+`grove-context` (`cx`) is a, rule-based tool for dynamically managing the file-based context provided to Large Language Models (LLMs).
+
+It replaces manual copy-pasting with a repeatable, version-controlled workflow, ensuring your LLM has the precise information it needs for any task.
+
+## Features
+- **Dynamic Context Generation:** Define your context once in a `.grove/rules` file and generate it on demand.
+- **Hot & Cold Contexts:** Separate frequently changing files ("hot") from stable dependencies ("cold") to optimize context size and relevance.
+- **Interactive Tools:** Visualize your context with `cx view` and monitor it in real-time with `cx dashboard`.
+- **Git Integration:** Automatically generate context from recent changes, branches, or staged files.
+- **Snapshots:** Save and load different context configurations for different tasks (e.g., feature work, bug fixes).
+- **External Directory Support:** Easily include files from other repositories or directories.
+
+## How It Works
+
+The core of `grove-context` is the `.grove/rules` file. This plain text file uses `.gitignore`-style patterns to define which files to include or exclude. Every `cx` command resolves files dynamically from these rules—there is no intermediate state.
+
+A `---` separator divides the rules into a "hot" context (above) and a "cold" context (below).
+
+- **Hot Context:** Files you are actively editing.
+- **Cold Context:** Stable files, libraries, or dependencies that provide background information.
+
+This separation allows you to send only the hot context in follow-up prompts, while the cold context can be sent once or managed by more advanced agents.
 
 ## Installation
-
 Install via the Grove meta-CLI:
 ```bash
 grove install context
 ```
-
-Or install directly:
-```bash
-go install github.com/yourorg/grove-context@latest
-```
-
-The binary will be installed as `cx` in your PATH.
-
-## Overview
-
-The context system uses a rules-based approach where all operations dynamically resolve files from patterns:
-- `.grove/rules` - Rules file with glob patterns for selecting files
-- `.grove/context` - The generated context file containing all concatenated files
-- `.grove/context-snapshots/` - Saved rule snapshots
-
-**Note:** The system now operates stateless - there's no intermediate file list. Every command resolves files dynamically from the rules.
 
 ## File Structure
 
@@ -31,35 +36,25 @@ The context system uses a rules-based approach where all operations dynamically 
 Contains glob patterns to automatically select files. Supports recursive patterns with `**` and exclusions with `!`:
 ```
 # Include all Go files recursively
-**/*.go
-
-# But exclude test files
-!*_test.go
-
-# Include all markdown files recursively
-**/*.md
-
-# Include specific directories
-internal/**/*.go
-cmd/**/*.go
-
-# Include configuration
-go.mod
-go.sum
+src/**/*.go
 
 # Exclude vendor directory
-!vendor/**/*.go
+!vendor/**/*
+
+# Include the project README
+README.md
+
+---
+
+# Cold context: Stable dependencies from an external project
+../grove-core/**/*.go
+
+# Exclude tests from the external project
+!../grove-core/**/*_test.go
 ```
 
-#### Pattern Examples:
-- `*.go` - Go files in root directory only
-- `**/*.go` - All Go files recursively
-- `internal/**/*.go` - All Go files under internal/
-- `!*_test.go` - Exclude test files
-- `!vendor/**/*` - Exclude vendor directory
-
-### .grove/context
-The generated context file with all files concatenated using XML-style delimiters:
+### .grove/context & .grove/cached-context
+The generated context files for hot and cold contexts, respectively. Files are concatenated using XML-style delimiters:
 ```xml
 <file path="main.go">
 package main
@@ -77,305 +72,56 @@ package cli
 
 ## Commands
 
-### cx edit
+The `cx` binary provides a suite of commands for managing your context. Here are some of the most important ones. For a full list, run `cx --help`.
 
-Open the rules file in your default editor:
-```bash
-cx edit
-```
+### Interactive Tools
 
-This opens `.grove/rules` in your `$EDITOR` (defaults to vim on Unix, notepad on Windows).
-```
+- `cx view`: Launch an interactive tree view to see exactly which files are included, excluded, or ignored by your rules.
+- `cx dashboard`: Display a live-updating terminal dashboard showing statistics for your hot and cold contexts.
 
-### cx list
+### Core Workflow
 
-List absolute paths of all files in the context:
-```bash
-cx list
-```
+- `cx edit`: Open `.grove/rules` in your default editor.
+- `cx generate`: Build the `.grove/context` and `.grove/cached-context` files from your rules.
+- `cx show`: Print the generated hot context to the console, ready to be piped to your clipboard or an LLM.
 
-This dynamically resolves files from the current rules.
+### Analysis & Inspection
 
-### cx show
+- `cx stats`: Get a detailed breakdown of your context, including token counts, language distribution, and largest files.
+- `cx diff [snapshot]`: Compare your current context to a saved snapshot or an empty context.
+- `cx list`: List all files included in the hot context.
+- `cx list-cache`: List all files included in the cold context.
+- `cx validate`: Check for missing files or other issues in your resolved context.
 
-Print the entire context file (useful for piping):
-```bash
-cx show | pbcopy  # Copy to clipboard on macOS
-cx show > context.txt  # Save to file
-```
+### Snapshots
 
-### cx generate
+- `cx save <name>`: Save the current `.grove/rules` as a named snapshot.
+- `cx load <name>`: Restore a snapshot to `.grove/rules`.
+- `cx list-snapshots`: List all available snapshots.
 
-Generate the `.grove/context` file by dynamically resolving files from the rules:
-```bash
-cx generate
-```
+### Git Integration
 
-Options:
-- `--xml` (default: true) - Use XML-style delimiters
-- `--xml=false` - Use classic delimiter style
+- `cx from-git`: Automatically generate rules based on git history (e.g., `--staged`, `--branch=main`, `--since="1 day ago"`).
 
-### cx save
+## Example Workflow
 
-Save the current rules as a snapshot with optional description:
-```bash
-cx save my-snapshot --desc "Minimal bug fix context"
-```
-
-This saves `.grove/rules` to `.grove/context-snapshots/my-snapshot.rules`.
-
-### cx load
-
-Load a previously saved snapshot:
-```bash
-cx load my-feature-context
-```
-
-This replaces `.grove/context-files` with the saved snapshot.
-
-### cx diff
-
-Compare the current context with a saved snapshot to see what has changed:
-```bash
-cx diff feature-context
-```
-
-Output shows:
-- Added files with token counts
-- Removed files with token counts
-- Summary of changes (files, tokens, size)
-
-Compare with empty context to see everything in current context:
-```bash
-cx diff
-```
-
-### cx list-snapshots
-
-View all saved context snapshots with metadata:
-```bash
-cx list-snapshots
-```
-
-Output:
-```
-Available snapshots:
-
-NAME                 DATE         FILES  TOKENS   SIZE      DESCRIPTION
---------------------------------------------------------------------------------
-bug-fix-minimal      2025-07-18   15     45.2k    180.8 KB  Minimal context for bug fixes
-feature-full         2025-07-17   45     156.3k   625.2 KB  Full feature development
-code-review          2025-07-16   28     89.7k    358.8 KB  Code review context
-```
-
-Sort snapshots by different criteria:
-```bash
-cx list-snapshots --sort=size      # Sort by total size
-cx list-snapshots --sort=tokens    # Sort by token count
-cx list-snapshots --sort=name      # Sort alphabetically
-cx list-snapshots --sort=files     # Sort by file count
-cx list-snapshots --sort=date      # Sort by date (default)
-cx list-snapshots --desc=false     # Ascending order
-```
-
-### cx validate
-
-Check the integrity of all files in your context:
-```bash
-cx validate
-```
-
-This command:
-- Verifies all files exist
-- Checks file permissions
-- Detects duplicate entries
-- Reports any issues
-
-Example output:
-```
-Validating context files...
-
-✗ Missing files (2):
-  - internal/deleted-file.go (remove from context)
-  - docs/moved-file.md (remove from context)
-
-⚠ Duplicates found (1):
-  - internal/api/handler.go appears 2 times
-
-✓ Accessible files: 40/42
-✗ Issues found: 3
-
-Check your rules file and ensure all referenced files exist.
-```
-
-### cx fix
-
-**Note:** This command is deprecated. Context is now dynamically resolved from rules, so there's no intermediate file list to fix. To fix issues, edit your rules file directly.
-
-### cx stats
-
-Get detailed statistics about your context composition:
-```bash
-cx stats
-```
-
-Output:
-```
-Context Statistics:
-
-╭─ Summary ────────────────────────────────────────╮
-│ Total Files:    41                               │
-│ Total Tokens:   ~157.8k                          │
-│ Total Size:     631.2 KB                         │
-╰──────────────────────────────────────────────────╯
-
-Language Distribution:
-  Go            78.2%  (123.5k tokens, 28 files)
-  Markdown      15.3%  (24.1k tokens, 8 files)
-  YAML           4.2%  (6.6k tokens, 3 files)
-  Other          2.3%  (3.6k tokens, 2 files)
-
-Largest Files (by tokens):
-   1. internal/cli/agent.go                              12.3k tokens (7.8%)
-   2. internal/compose/service.go                         8.7k tokens (5.5%)
-   3. docs/architecture.md                                6.2k tokens (3.9%)
-   4. internal/mcp/server.go                              5.8k tokens (3.7%)
-   5. internal/config/config.go                           4.9k tokens (3.1%)
-
-Token Distribution:
-  < 1k tokens:      12 files (29.3%) █████
-  1k-5k tokens:     22 files (53.7%) ██████████
-  5k-10k tokens:     5 files (12.2%) ██
-  > 10k tokens:      2 files (4.9%)  █
-
-Average tokens per file: 3.8k
-Median tokens per file: 2.9k
-```
-
-**Note:** Files larger than 10k tokens are shown in red, files larger than 5k tokens in yellow.
-
-Options:
-- `--top N` - Number of largest files to show (default: 5)
-
-### cx from-git
-
-Generate context based on git history:
-```bash
-cx from-git [options]
-```
-
-This command creates rules from files that have been modified in your git repository based on various criteria. The generated rules will contain explicit file paths.
-
-Options:
-- `--since` - Include files changed since a date or commit
-- `--branch` - Include files changed in a branch comparison
-- `--staged` - Include only files in the staging area
-- `--commits` - Include files from the last N commits
-
-Examples:
-```bash
-# Files changed in the last week
-cx from-git --since="1 week ago"
-
-# Files changed since a specific commit
-cx from-git --since=abc123
-
-# Files changed in current branch compared to main
-cx from-git --branch=main..HEAD
-
-# Files in staging area (ready to commit)
-cx from-git --staged
-
-# Files from last 5 commits
-cx from-git --commits=5
-
-# Generate context after getting files from git
-cx from-git --staged
-cx generate
-```
-
-This is particularly useful for:
-- Creating minimal contexts for code reviews
-- Focusing on recently modified code
-- Working with specific features or bug fixes
-- Preparing contexts for commit messages or PR descriptions
-
-## Workflow Examples
-
-### Initial Setup
-
-1. Create rules file:
-```bash
-cx edit
-```
-
-Or create `.grove/rules` manually:
-```bash
-mkdir -p .grove
-cat > .grove/rules << EOF
-# Include all Go files recursively
-**/*.go
-
-# Exclude test files
-!*_test.go
-
-# Include documentation
-**/*.md
-
-# Include configuration
-go.mod
-go.sum
-EOF
-```
-
-2. Generate the context:
-```bash
-cx generate
-```
-
-### Managing Rules
-
-Edit your rules to control which files are included:
-```bash
-# Open rules in editor
-cx edit
-
-# Or edit directly
-echo "!internal/secret.go" >> .grove/rules  # Exclude a file
-echo "internal/important.go" >> .grove/rules  # Include specific file
-
-# Regenerate context
-cx generate
-```
-
-### Working with Snapshots
-
-Save different rule sets for different purposes:
-```bash
-# Save current rules for bug fixing
-cx save bug-fix-context
-
-# Edit rules for feature development
-cx edit
-# ... modify patterns ...
-cx save feature-dev-context
-
-# Later, switch back to bug fix rules
-cx load bug-fix-context
-cx generate
-```
-
-### Integration with LLMs
-
-Copy context to clipboard:
+1.  **Define your context:**
+    ```bash
+    # Open the rules file and add your patterns
+    cx edit
+    ```
+2.  **Visualize and refine:**
+    ```bash
+    # Interactively see what's included and make adjustments
+    cx view
+    ```
+3.  **Generate the context files:**
+    ```bash
+    cx generate
+    ```
+4.  **Copy to clipboard and send to your LLM:**
 ```bash
 cx show | pbcopy  # macOS
-cx show | xclip -selection clipboard  # Linux
-```
-
-Check token count before sending to LLM:
-```bash
-cx stats
 ```
 
 ## Best Practices
@@ -384,27 +130,15 @@ cx stats
 2. **Use Exclusions Wisely**: Exclude test files, generated code, and large assets with `!` patterns
 3. **Watch Large Files**: Use `cx stats` to identify files with high token counts (shown in red/yellow)
 4. **Save Snapshots**: Save different rule sets for different tasks
-5. **Monitor Size**: Use `cx stats` to keep track of token counts and file distribution
-6. **Version Control**: 
-   - Add `.grove/` to `.gitignore` (contains generated files and local rules)
-   - Optionally version control specific snapshot files from `.grove/context-snapshots/`
-   
-Example `.gitignore`:
+
+## Version Control
+
+It is recommended to add the `.grove` directory to your `.gitignore` file, as it contains locally generated files. You may choose to check in specific snapshots from `.grove/context-snapshots/` if they represent important, shared contexts.
+
 ```
 # Grove directory (contains rules and generated files)
 .grove/
 ```
-
-## Migration from grove cx
-
-This tool was migrated from the monolithic `grove cx` command. The functionality remains the same, but the commands are now available through the standalone `cx` binary. If you were previously using `grove cx <command>`, you can now use `cx <command>` instead.
-
-## Standard Flags
-
-All commands support standard Grove flags via grove-core:
-- `--verbose` - Enable verbose output
-- `--json` - Output in JSON format (where applicable)
-- `--config` - Specify a custom config file
 
 ## License
 
