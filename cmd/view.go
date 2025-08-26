@@ -44,6 +44,7 @@ type viewModel struct {
 	scrollOffset  int
 	loading       bool
 	err           error
+	lastKey       string // Track last key for multi-key commands like "gg"
 }
 
 // nodeWithLevel stores a node with its display level
@@ -109,6 +110,49 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "end":
 			m.cursor = len(m.visibleNodes) - 1
 			m.ensureCursorVisible()
+		case "ctrl+d":
+			// Scroll down half a page
+			viewportHeight := m.height - 6
+			if viewportHeight < 1 {
+				viewportHeight = 1
+			}
+			m.cursor += viewportHeight / 2
+			if m.cursor >= len(m.visibleNodes) {
+				m.cursor = len(m.visibleNodes) - 1
+			}
+			m.ensureCursorVisible()
+		case "ctrl+u":
+			// Scroll up half a page
+			viewportHeight := m.height - 6
+			if viewportHeight < 1 {
+				viewportHeight = 1
+			}
+			m.cursor -= viewportHeight / 2
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+			m.ensureCursorVisible()
+		case "a", "A":
+			// Auto-expand all directories
+			m.expandAll()
+		case "g":
+			if m.lastKey == "g" {
+				// gg - go to top
+				m.cursor = 0
+				m.scrollOffset = 0
+				m.lastKey = ""
+			} else {
+				m.lastKey = "g"
+			}
+		case "G":
+			// Go to bottom
+			m.cursor = len(m.visibleNodes) - 1
+			m.ensureCursorVisible()
+		default:
+			// Clear lastKey for any other key that's not part of a combo
+			if m.lastKey != "" && msg.String() != "g" {
+				m.lastKey = ""
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -145,6 +189,25 @@ func (m *viewModel) toggleExpanded() {
 			m.expandedPaths[current.node.Path] = true
 		}
 		m.updateVisibleNodes()
+	}
+}
+
+// expandAll expands all directories in the tree
+func (m *viewModel) expandAll() {
+	if m.tree == nil {
+		return
+	}
+	m.expandAllRecursive(m.tree)
+	m.updateVisibleNodes()
+}
+
+// expandAllRecursive recursively marks all directories as expanded
+func (m *viewModel) expandAllRecursive(node *context.FileNode) {
+	if node.IsDir && len(node.Children) > 0 {
+		m.expandedPaths[node.Path] = true
+		for _, child := range node.Children {
+			m.expandAllRecursive(child)
+		}
 	}
 }
 
@@ -241,7 +304,7 @@ func (m *viewModel) View() string {
 	// Controls
 	controls := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
-		Render("Use ↑/↓/j/k to navigate, Enter/Space to toggle directories, q to quit")
+		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | a: expand all | Ctrl-D/U: page down/up | q: quit")
 
 	// Combine all parts
 	return lipgloss.JoinVertical(
@@ -310,8 +373,6 @@ func (m *viewModel) getIcon(node *context.FileNode) string {
 		return "❄️"
 	case context.StatusExcludedByRule:
 		return "🚫"
-	case context.StatusIgnoredByGit:
-		return "🔒"
 	default:
 		return "📄"
 	}
@@ -326,8 +387,6 @@ func (m *viewModel) getStyle(status context.NodeStatus) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("51")) // Cyan
 	case context.StatusExcludedByRule:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red
-	case context.StatusIgnoredByGit:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("242")) // Dark gray
 	case context.StatusOmittedNoMatch:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // Gray
 	case context.StatusDirectory:
@@ -345,7 +404,6 @@ func (m *viewModel) renderLegend() string {
 		"❄️  Cold Context",
 		"🚫 Excluded by Rule",
 		"📄 Omitted (No Match)",
-		"🔒 Ignored by Git",
 	}
 
 	return lipgloss.NewStyle().
