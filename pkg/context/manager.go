@@ -1046,13 +1046,8 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 			return err
 		}
 		
-		// Skip git-ignored files and directories entirely
-		if gitIgnoredFiles[path] {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
+		// Note: We don't skip git-ignored files anymore, we classify them
+		// so they can optionally be shown in cx view
 		
 		// Always skip .git, .grove, and .grove-worktrees directories
 		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".grove" || d.Name() == ".grove-worktrees") {
@@ -1088,8 +1083,11 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 		
 		// Add directories and files to the result
 		if d.IsDir() {
-			// Check if the directory is explicitly excluded by a pattern or inside an excluded directory
-			if m.fileExplicitlyExcluded(path, patterns) || isInsideExcludedDir {
+			// Check if the directory is git ignored
+			if gitIgnoredFiles[path] {
+				result[path] = StatusIgnoredByGit
+				// Continue walking to show contents as gitignored
+			} else if m.fileExplicitlyExcluded(path, patterns) || isInsideExcludedDir {
 				result[path] = StatusExcludedByRule
 				excludedDirs[path] = true
 				// Continue walking to show contents as excluded
@@ -1099,7 +1097,10 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 			}
 		} else {
 			// Classify files
-			if isInsideExcludedDir {
+			if gitIgnoredFiles[path] {
+				// File is ignored by git
+				result[path] = StatusIgnoredByGit
+			} else if isInsideExcludedDir {
 				// Files inside excluded directories are also excluded
 				result[path] = StatusExcludedByRule
 			} else if coldFiles[fileKey] {

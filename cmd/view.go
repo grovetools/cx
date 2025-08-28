@@ -430,7 +430,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.loading = true
 			return m, m.loadTreeCmd()
-		case ".":
+		case ".", "H":
 			// Toggle gitignored files visibility
 			m.showGitIgnored = !m.showGitIgnored
 			if m.showGitIgnored {
@@ -924,7 +924,7 @@ func (m *viewModel) renderHelp() string {
 		keyStyle.Render("x") + " - Toggle exclude",
 		keyStyle.Render("A") + " - Expand all",
 		keyStyle.Render("p") + " - Toggle pruning",
-		keyStyle.Render(".") + " - Toggle gitignored files",
+		keyStyle.Render("./H") + " - Toggle gitignored files",
 		keyStyle.Render("r") + " - Refresh view",
 		"",
 		keyStyle.Render("q") + " - Quit",

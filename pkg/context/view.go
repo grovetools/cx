@@ -25,6 +25,33 @@ func (m *Manager) AnalyzeProjectTree(prune bool, showGitIgnored bool) (*FileNode
 		return nil, err
 	}
 	
+	// If showing gitignored files, we need to walk the entire tree to find them
+	if showGitIgnored {
+		gitIgnoredFiles, err := m.getGitIgnoredFiles(m.workDir)
+		if err == nil {
+			// Walk the entire working directory to find all gitignored files
+			err = filepath.WalkDir(m.workDir, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return nil // Continue walking even if we can't access a directory
+				}
+				
+				// Skip .git directory
+				if d.IsDir() && d.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				
+				// If this file is gitignored and not already in our results, add it
+				if gitIgnoredFiles[path] {
+					if _, exists := fileStatuses[path]; !exists {
+						fileStatuses[path] = StatusIgnoredByGit
+					}
+				}
+				
+				return nil
+			})
+		}
+	}
+	
 	// Build FileNode map from the classifications
 	nodes := make(map[string]*FileNode)
 	hasExternalFiles := false
