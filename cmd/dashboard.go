@@ -112,7 +112,7 @@ func watchDirectory(path string, watcher *fsnotify.Watcher) error {
 			// Skip common directories that shouldn't be watched
 			name := entry.Name()
 			if name == ".git" || name == "node_modules" || name == "vendor" || 
-			   name == "dist" || name == "build" || name == ".grove-context" {
+			   name == "dist" || name == "build" || name == ".grove-context" || name == ".grove-worktrees" {
 				continue
 			}
 			
@@ -458,7 +458,7 @@ func isRelevantFile(path string) bool {
 	for _, part := range parts {
 		if part == "node_modules" || part == "vendor" || part == ".git" ||
 		   part == "dist" || part == "build" || part == "target" ||
-		   part == "__pycache__" || part == ".pytest_cache" {
+		   part == "__pycache__" || part == ".pytest_cache" || part == ".grove-worktrees" {
 			return false
 		}
 	}

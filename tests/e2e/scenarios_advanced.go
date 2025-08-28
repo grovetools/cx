@@ -530,3 +530,55 @@ func ExclusionPatternsScenario() *harness.Scenario {
 		},
 	}
 }
+
+// WorktreeExclusionScenario tests that .grove-worktrees are excluded even with broad parent-directory patterns.
+func WorktreeExclusionScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-worktree-exclusion",
+		Description: "Ensures .grove-worktrees are excluded even when matched by broad ../ patterns.",
+		Tags:        []string{"cx", "rules", "worktree"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup sibling project with a worktree", func(ctx *harness.Context) error {
+				// Harness root is the "main" project. Create a sibling project next to it.
+				parentDir := filepath.Dir(ctx.RootDir)
+				siblingDir := filepath.Join(parentDir, "sibling-lib")
+
+				// Create a file that should be included
+				fs.CreateDir(filepath.Join(siblingDir, "src"))
+				fs.WriteString(filepath.Join(siblingDir, "src", "lib.go"), "package lib")
+
+				// Create a file in a worktree that MUST be excluded
+				fs.CreateDir(filepath.Join(siblingDir, ".grove-worktrees", "feature", "src"))
+				fs.WriteString(filepath.Join(siblingDir, ".grove-worktrees", "feature", "src", "feature.go"), "package feature")
+				return nil
+			}),
+			harness.NewStep("Create rules to include sibling project files", func(ctx *harness.Context) error {
+				// This broad pattern would normally include the worktree file if not for our hardcoded exclusion.
+				rules := `../sibling-lib/**/*.go`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx list' and verify exclusion", func(ctx *harness.Context) error {
+				cx, _ := FindProjectBinary()
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// Verify the legitimate file IS included
+				if !strings.Contains(output, "lib.go") {
+					return fmt.Errorf("list output is missing the legitimate sibling file 'lib.go'")
+				}
+
+				// Verify the worktree file IS NOT included
+				if strings.Contains(output, ".grove-worktrees") || strings.Contains(output, "feature.go") {
+					return fmt.Errorf("list output MUST NOT include files from .grove-worktrees")
+				}
+				return nil
+			}),
+		},
+	}
+}

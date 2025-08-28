@@ -1054,8 +1054,8 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 			return nil
 		}
 		
-		// Always skip .git and .grove directories
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".grove") {
+		// Always skip .git, .grove, and .grove-worktrees directories
+		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".grove" || d.Name() == ".grove-worktrees") {
 			return filepath.SkipDir
 		}
 		
@@ -1236,9 +1236,9 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 			return nil // Skip ignored files.
 		}
 
-		// Always prune .git and .grove directories from the walk.
+		// Always prune .git, .grove, and .grove-worktrees directories from the walk.
 		if d.IsDir() {
-			if d.Name() == ".git" || d.Name() == ".grove" {
+			if d.Name() == ".git" || d.Name() == ".grove" || d.Name() == ".grove-worktrees" {
 				return filepath.SkipDir
 			}
 			
@@ -1347,6 +1347,11 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 		}
 
 		if isIncluded {
+			// Always exclude files in .grove-worktrees directories
+			if strings.Contains(path, ".grove-worktrees") {
+				return nil
+			}
+			
 			// Determine the final path to store
 			var finalPath string
 			if useRelativePaths {

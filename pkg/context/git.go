@@ -60,6 +60,11 @@ func (m *Manager) UpdateFromGit(opts GitOptions) error {
 	// Convert map to slice
 	var fileList []string
 	for file := range uniqueFiles {
+		// Always exclude files in .grove-worktrees directories
+		if strings.Contains(file, ".grove-worktrees") {
+			continue
+		}
+		
 		// Check if file still exists (might have been deleted)
 		if _, err := os.Stat(file); err == nil {
 			fileList = append(fileList, file)

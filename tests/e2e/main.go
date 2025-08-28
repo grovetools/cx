@@ -33,6 +33,7 @@ func main() {
         PlainDirectoryPatternScenario(),
         RecursiveParentPatternScenario(),
         ExclusionPatternsScenario(),
+        WorktreeExclusionScenario(),
     }
 
     // Setup signal handling for graceful shutdown.
