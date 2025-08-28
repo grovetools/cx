@@ -913,6 +913,12 @@ func (m *Manager) filterTreeNodes(fileStatuses map[string]NodeStatus, prune bool
 			hasContent = status != StatusDirectory && status != StatusIgnoredByGit
 		}
 		
+		// Also mark excluded directories themselves as having content so they show up
+		if status == StatusExcludedByRule {
+			hasContent = true
+			dirsWithContent[path] = true
+		}
+		
 		if hasContent {
 			// This is a file with content - mark its parent directory
 			parent := filepath.Dir(path)
@@ -923,9 +929,9 @@ func (m *Manager) filterTreeNodes(fileStatuses map[string]NodeStatus, prune bool
 	// Third pass: create the filtered result
 	filtered := make(map[string]NodeStatus)
 	for path, status := range fileStatuses {
-		if status == StatusDirectory {
-			// Only include directories that have content
-			if dirsWithContent[path] {
+		if status == StatusDirectory || status == StatusExcludedByRule {
+			// Include directories that have content or are explicitly excluded
+			if dirsWithContent[path] || status == StatusExcludedByRule {
 				filtered[path] = status
 			}
 		} else if status != StatusIgnoredByGit {
@@ -1016,6 +1022,9 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 		}
 	}
 	
+	// Track excluded directories so we can mark their contents as excluded
+	excludedDirs := make(map[string]bool)
+	
 	// First, ensure the root path itself is in the result as a directory
 	if rootPath != m.workDir {
 		// For external roots, add all parent directories up to but not including workDir
@@ -1068,13 +1077,32 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 			fileKey = path
 		}
 		
+		// Check if this path is inside an excluded directory
+		isInsideExcludedDir := false
+		for excludedDir := range excludedDirs {
+			if strings.HasPrefix(path, excludedDir+string(filepath.Separator)) {
+				isInsideExcludedDir = true
+				break
+			}
+		}
+		
 		// Add directories and files to the result
 		if d.IsDir() {
-			// Directories will be filtered later if they contain no included files
-			result[path] = StatusDirectory
+			// Check if the directory is explicitly excluded by a pattern or inside an excluded directory
+			if m.fileExplicitlyExcluded(path, patterns) || isInsideExcludedDir {
+				result[path] = StatusExcludedByRule
+				excludedDirs[path] = true
+				// Continue walking to show contents as excluded
+			} else {
+				// Directories will be filtered later if they contain no included files
+				result[path] = StatusDirectory
+			}
 		} else {
 			// Classify files
-			if coldFiles[fileKey] {
+			if isInsideExcludedDir {
+				// Files inside excluded directories are also excluded
+				result[path] = StatusExcludedByRule
+			} else if coldFiles[fileKey] {
 				result[path] = StatusIncludedCold
 			} else if hotFiles[fileKey] {
 				result[path] = StatusIncludedHot  

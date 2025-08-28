@@ -45,6 +45,12 @@ func (m *Manager) AnalyzeProjectTree(prune bool) (*FileNode, error) {
 		// For directories outside workDir, only include them if they have included descendants
 		// We'll handle this filtering later, for now just create the node
 		isDir := status == StatusDirectory
+		// Check if excluded items are actually directories
+		if status == StatusExcludedByRule {
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				isDir = true
+			}
+		}
 		tokenCount := 0
 		// Calculate token count for included files
 		if !isDir && (status == StatusIncludedHot || status == StatusIncludedCold) {
@@ -87,6 +93,9 @@ func (m *Manager) AnalyzeProjectTree(prune bool) (*FileNode, error) {
 		// No external files, use the working directory as root
 		root = buildTreeWithExternals(m.workDir, nodes)
 	}
+	
+	// Post-process the tree to infer directory statuses from their children
+	setDirectoryStatuses(root)
 	
 	// Calculate directory token counts
 	calculateDirectoryTokenCounts(root)
@@ -243,4 +252,47 @@ func calculateDirectoryTokenCounts(node *FileNode) int {
 	}
 	node.TokenCount = totalTokens
 	return totalTokens
+}
+
+// setDirectoryStatuses infers directory status from children
+func setDirectoryStatuses(node *FileNode) {
+	if !node.IsDir || node.Status == StatusExcludedByRule {
+		return
+	}
+	
+	// Recurse to process children first
+	for _, child := range node.Children {
+		setDirectoryStatuses(child)
+	}
+	
+	if len(node.Children) == 0 {
+		return
+	}
+	
+	// Count the status types among children
+	hotCount, coldCount, excludedCount, omittedCount := 0, 0, 0, 0
+	for _, child := range node.Children {
+		switch child.Status {
+		case StatusIncludedHot:
+			hotCount++
+		case StatusIncludedCold:
+			coldCount++
+		case StatusExcludedByRule:
+			excludedCount++
+		case StatusOmittedNoMatch:
+			omittedCount++
+		}
+	}
+	
+	// Set directory status based on predominant child status
+	// Priority: Hot > Cold > Excluded > Omitted
+	if hotCount > 0 {
+		node.Status = StatusIncludedHot
+	} else if coldCount > 0 {
+		node.Status = StatusIncludedCold
+	} else if excludedCount > 0 {
+		node.Status = StatusExcludedByRule
+	} else if omittedCount > 0 {
+		node.Status = StatusOmittedNoMatch
+	}
 }
