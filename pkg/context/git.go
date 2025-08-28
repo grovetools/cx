@@ -60,8 +60,11 @@ func (m *Manager) UpdateFromGit(opts GitOptions) error {
 	// Convert map to slice
 	var fileList []string
 	for file := range uniqueFiles {
-		// Always exclude files in .grove-worktrees directories
-		if strings.Contains(file, ".grove-worktrees") {
+		// Exclude files in .grove-worktrees directories, but only if the .grove-worktrees
+		// is a descendant of the working directory (not an ancestor)
+		relPath, err := filepath.Rel(m.workDir, file)
+		if err == nil && strings.Contains(relPath, ".grove-worktrees") {
+			// The .grove-worktrees is within our working directory, exclude it
 			continue
 		}
 		

@@ -1347,8 +1347,11 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 		}
 
 		if isIncluded {
-			// Always exclude files in .grove-worktrees directories
-			if strings.Contains(path, ".grove-worktrees") {
+			// Exclude files in .grove-worktrees directories, but only if the .grove-worktrees
+			// is a descendant of the working directory (not an ancestor)
+			relPath, err := filepath.Rel(m.workDir, path)
+			if err == nil && strings.Contains(relPath, ".grove-worktrees") {
+				// The .grove-worktrees is within our working directory, exclude it
 				return nil
 			}
 			

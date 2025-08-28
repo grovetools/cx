@@ -57,6 +57,7 @@ type viewModel struct {
 	pruning       bool   // Whether to show only directories with context files
 	showHelp      bool   // Whether to show help popup
 	rulesContent  string // Content of .grove/rules file
+	showGitIgnored bool  // Whether to show gitignored files
 	// Statistics
 	hotFiles     int
 	hotTokens    int
@@ -75,9 +76,10 @@ type nodeWithLevel struct {
 // newViewModel creates a new view model
 func newViewModel() *viewModel {
 	return &viewModel{
-		expandedPaths: make(map[string]bool),
-		loading:       true,
-		pruning:       false,
+		expandedPaths:  make(map[string]bool),
+		loading:        true,
+		pruning:        false,
+		showGitIgnored: false,
 	}
 }
 
@@ -92,7 +94,7 @@ func (m *viewModel) Init() tea.Cmd {
 func (m *viewModel) loadTreeCmd() tea.Cmd {
 	return func() tea.Msg {
 		manager := context.NewManager("")
-		tree, err := manager.AnalyzeProjectTree(m.pruning)
+		tree, err := manager.AnalyzeProjectTree(m.pruning, m.showGitIgnored)
 		return treeLoadedMsg{tree: tree, err: err}
 	}
 }
@@ -425,6 +427,16 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = "Pruning mode enabled - showing only directories with context files"
 			} else {
 				m.statusMessage = "Pruning mode disabled - showing all directories"
+			}
+			m.loading = true
+			return m, m.loadTreeCmd()
+		case ".":
+			// Toggle gitignored files visibility
+			m.showGitIgnored = !m.showGitIgnored
+			if m.showGitIgnored {
+				m.statusMessage = "Showing gitignored files"
+			} else {
+				m.statusMessage = "Hiding gitignored files"
 			}
 			m.loading = true
 			return m, m.loadTreeCmd()
@@ -835,6 +847,8 @@ func (m *viewModel) getStatusSymbol(node *context.FileNode) string {
 		return lightBlueStyle.Render(" ❄️")
 	case context.StatusExcludedByRule:
 		return " 🚫"
+	case context.StatusIgnoredByGit:
+		return " 🙈" // Git ignored
 	default:
 		return ""
 	}
@@ -855,6 +869,8 @@ func (m *viewModel) getStyle(node *context.FileNode) lipgloss.Style {
 		style = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Darker grey for omitted
 	case context.StatusDirectory:
 		style = lipgloss.NewStyle().Foreground(lipgloss.Color("252")) // Light gray for plain directories
+	case context.StatusIgnoredByGit:
+		style = lipgloss.NewStyle().Foreground(lipgloss.Color("238")) // Very dark grey for gitignored
 	default:
 		style = lipgloss.NewStyle()
 	}
@@ -908,6 +924,7 @@ func (m *viewModel) renderHelp() string {
 		keyStyle.Render("x") + " - Toggle exclude",
 		keyStyle.Render("A") + " - Expand all",
 		keyStyle.Render("p") + " - Toggle pruning",
+		keyStyle.Render(".") + " - Toggle gitignored files",
 		keyStyle.Render("r") + " - Refresh view",
 		"",
 		keyStyle.Render("q") + " - Quit",
@@ -926,6 +943,7 @@ func (m *viewModel) renderHelp() string {
 		"  " + keyStyle.Render("✓") + " - Hot Context",
 		"  " + keyStyle.Render("❄️") + " - Cold Context",  
 		"  " + keyStyle.Render("🚫") + " - Excluded",
+		"  " + keyStyle.Render("🙈") + " - Git Ignored",
 		"  (none) - Omitted",
 		"",
 		"Colors:",
@@ -934,6 +952,7 @@ func (m *viewModel) renderHelp() string {
 		"  Blue-grey - Cold items",
 		"  Red-grey - Excluded items",
 		"  Grey - Omitted items",
+		"  Dark grey - Git ignored",
 	}
 	
 	// Render columns
