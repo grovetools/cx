@@ -1,3 +1,23 @@
+## v0.2.20 (2025-08-28)
+
+### Bug Fixes
+
+* properly show gitignored files and add H hotkey
+* increase viewport padding in cx view to prevent content cutoff
+
+### Features
+
+* wrap hot context with XML structure matching cold context format
+* add gitignored files toggle and fix worktree exclusion logic
+* exclude .grove-worktrees directories from context
+* enhance cx view with improved UI and functionality
+* add pruning mode to cx view
+* add token count display to cx view
+
+### Chores
+
+* **deps:** sync Grove dependencies to latest versions
+
 ## v0.2.19 (2025-08-26)
 
 ### Chores
