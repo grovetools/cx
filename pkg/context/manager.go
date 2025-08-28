@@ -148,10 +148,17 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	}
 	defer ctxFile.Close()
 	
+	// Write XML header and opening tags if using XML format
+	if useXMLFormat {
+		fmt.Fprintf(ctxFile, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+		fmt.Fprintf(ctxFile, "<context>\n")
+		fmt.Fprintf(ctxFile, "  <hot-context files=\"%d\" description=\"Files to be used for reference/background context to carry out the user's question/task to be provided later\">\n", len(filesToInclude))
+	}
+	
 	// If no files to include, write a comment explaining why
 	if len(filesToInclude) == 0 {
 		if useXMLFormat {
-			fmt.Fprintf(ctxFile, "<!-- No rules file found. Create %s with patterns to include files. -->\n", ActiveRulesFile)
+			fmt.Fprintf(ctxFile, "    <!-- No rules file found. Create %s with patterns to include files. -->\n", ActiveRulesFile)
 		} else {
 			fmt.Fprintf(ctxFile, "# No rules file found. Create %s with patterns to include files.\n", ActiveRulesFile)
 		}
@@ -160,23 +167,10 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	// Write concatenated content
 	for _, file := range filesToInclude {
 		if useXMLFormat {
-			// XML-style delimiters (often better for LLMs)
-			fmt.Fprintf(ctxFile, "<file path=\"%s\">\n", file)
-			
-			// Read and write file content
-			filePath := file
-			if !filepath.IsAbs(file) {
-				filePath = filepath.Join(m.workDir, file)
+			// Use the existing writeFileToXML method for consistency
+			if err := m.writeFileToXML(ctxFile, file, "    "); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: error writing file %s: %v\n", file, err)
 			}
-			content, err := os.ReadFile(filePath)
-			if err != nil {
-				fmt.Fprintf(ctxFile, "<error>%v</error>\n", err)
-				fmt.Fprintf(ctxFile, "</file>\n\n")
-				continue
-			}
-			
-			ctxFile.Write(content)
-			fmt.Fprintf(ctxFile, "\n</file>\n\n")
 		} else {
 			// Classic delimiter style
 			fmt.Fprintf(ctxFile, "=== FILE: %s ===\n", file)
@@ -198,6 +192,12 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 			// Write end marker
 			fmt.Fprintf(ctxFile, "\n=== END FILE: %s ===\n\n", file)
 		}
+	}
+	
+	// Close XML tags if using XML format
+	if useXMLFormat {
+		fmt.Fprintf(ctxFile, "  </hot-context>\n")
+		fmt.Fprintf(ctxFile, "</context>\n")
 	}
 	
 	fmt.Printf("Generated %s with %d files\n", ContextFile, len(filesToInclude))
@@ -260,7 +260,7 @@ func (m *Manager) GenerateCachedContext() error {
 	// Let's keep the structure for consistency.
 	fmt.Fprintf(cachedFile, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 	fmt.Fprintf(cachedFile, "<context>\n")
-	fmt.Fprintf(cachedFile, "  <cold-context files=\"%d\">\n", len(coldFiles))
+	fmt.Fprintf(cachedFile, "  <cold-context files=\"%d\" description=\"Files to be used for reference/background context to carry out the user's question/task to be provided later\">\n", len(coldFiles))
 	
 	// Write cold context files
 	for _, file := range coldFiles {
