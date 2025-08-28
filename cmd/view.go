@@ -322,7 +322,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ensureCursorVisible()
 		case "ctrl+d":
 			// Scroll down half a page
-			viewportHeight := m.height - 6
+			viewportHeight := m.height - 10
 			if viewportHeight < 1 {
 				viewportHeight = 1
 			}
@@ -333,7 +333,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ensureCursorVisible()
 		case "ctrl+u":
 			// Scroll up half a page
-			viewportHeight := m.height - 6
+			viewportHeight := m.height - 10
 			if viewportHeight < 1 {
 				viewportHeight = 1
 			}
@@ -589,7 +589,7 @@ func (m *viewModel) collectVisibleNodes(node *context.FileNode, level int) {
 
 // ensureCursorVisible ensures the cursor is visible in the viewport
 func (m *viewModel) ensureCursorVisible() {
-	viewportHeight := m.height - 6 // Account for header and footer
+	viewportHeight := m.height - 10 // Account for header and footer - match View() calculation
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
@@ -646,7 +646,7 @@ func (m *viewModel) View() string {
 	rulesWidth := m.width - treeWidth - 3 // -3 for border and padding
 	
 	// Tree view
-	viewportHeight := m.height - 6 // Account for header, footer, and margins
+	viewportHeight := m.height - 10 // Account for header, footer, and margins - add more padding
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
@@ -733,7 +733,7 @@ func (m *viewModel) View() string {
 	treeStyle := lipgloss.NewStyle().
 		Width(treeWidth).
 		Height(viewportHeight).
-		Padding(0, 1)
+		Padding(0, 1) // top/bottom: 0, left/right: 1
 	
 	treePanel := treeStyle.Render(tree)
 	
