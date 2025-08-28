@@ -1,17 +1,19 @@
 package context
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
 type FileNode struct {
-	Path     string
-	Name     string
-	Status   NodeStatus
-	IsDir    bool
-	Children []*FileNode
+	Path       string
+	Name       string
+	Status     NodeStatus
+	IsDir      bool
+	TokenCount int
+	Children   []*FileNode
 }
 
 // AnalyzeProjectTree walks the entire project and creates a tree structure showing
@@ -42,12 +44,23 @@ func (m *Manager) AnalyzeProjectTree() (*FileNode, error) {
 		
 		// For directories outside workDir, only include them if they have included descendants
 		// We'll handle this filtering later, for now just create the node
+		isDir := status == StatusDirectory
+		tokenCount := 0
+		// Calculate token count for included files
+		if !isDir && (status == StatusIncludedHot || status == StatusIncludedCold) {
+			if info, err := os.Stat(path); err == nil {
+				// Estimate tokens as roughly 4 bytes per token
+				tokenCount = int(info.Size() / 4)
+			}
+		}
+		
 		node := &FileNode{
-			Path:     path,
-			Name:     filepath.Base(path),
-			Status:   status,
-			IsDir:    status == StatusDirectory,
-			Children: []*FileNode{},
+			Path:       path,
+			Name:       filepath.Base(path),
+			Status:     status,
+			IsDir:      isDir,
+			TokenCount: tokenCount,
+			Children:   []*FileNode{},
 		}
 		nodes[path] = node
 	}
@@ -74,6 +87,9 @@ func (m *Manager) AnalyzeProjectTree() (*FileNode, error) {
 		// No external files, use the working directory as root
 		root = buildTreeWithExternals(m.workDir, nodes)
 	}
+	
+	// Calculate directory token counts
+	calculateDirectoryTokenCounts(root)
 	
 	return root, nil
 }
@@ -213,4 +229,18 @@ func sortChildren(node *FileNode) {
 			sortChildren(child)
 		}
 	}
+}
+
+// calculateDirectoryTokenCounts recursively calculates token counts for directories
+func calculateDirectoryTokenCounts(node *FileNode) int {
+	if !node.IsDir {
+		return node.TokenCount
+	}
+	
+	var totalTokens int
+	for _, child := range node.Children {
+		totalTokens += calculateDirectoryTokenCounts(child)
+	}
+	node.TokenCount = totalTokens
+	return totalTokens
 }

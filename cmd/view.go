@@ -601,8 +601,15 @@ func (m *viewModel) renderNode(index int) string {
 		expandIndicator = "  "
 	}
 
+	// Token count
+	tokenStr := ""
+	if node.TokenCount > 0 {
+		tokenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // Dim gray
+		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", context.FormatTokenCount(node.TokenCount)))
+	}
+
 	// Combine all parts
-	line := fmt.Sprintf("%s%s%s%s %s", cursor, indent, expandIndicator, icon, name)
+	line := fmt.Sprintf("%s%s%s%s %s%s", cursor, indent, expandIndicator, icon, name, tokenStr)
 	return style.Render(line)
 }
 
