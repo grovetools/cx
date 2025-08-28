@@ -53,6 +53,7 @@ type viewModel struct {
 	err           error
 	lastKey       string // Track last key for multi-key commands like "gg"
 	statusMessage string // Status message for user feedback
+	pruning       bool   // Whether to show only directories with context files
 }
 
 // nodeWithLevel stores a node with its display level
@@ -66,19 +67,22 @@ func newViewModel() *viewModel {
 	return &viewModel{
 		expandedPaths: make(map[string]bool),
 		loading:       true,
+		pruning:       false,
 	}
 }
 
 // Init initializes the model
 func (m *viewModel) Init() tea.Cmd {
-	return loadTree
+	return m.loadTreeCmd()
 }
 
-// loadTree loads the project tree analysis
-func loadTree() tea.Msg {
-	manager := context.NewManager("")
-	tree, err := manager.AnalyzeProjectTree()
-	return treeLoadedMsg{tree: tree, err: err}
+// loadTreeCmd returns a command to load the project tree analysis
+func (m *viewModel) loadTreeCmd() tea.Cmd {
+	return func() tea.Msg {
+		manager := context.NewManager("")
+		tree, err := manager.AnalyzeProjectTree(m.pruning)
+		return treeLoadedMsg{tree: tree, err: err}
+	}
 }
 
 // toggleRuleCmd creates a command to toggle rules
@@ -328,6 +332,16 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Go to bottom
 			m.cursor = len(m.visibleNodes) - 1
 			m.ensureCursorVisible()
+		case "p":
+			// Toggle pruning mode
+			m.pruning = !m.pruning
+			if m.pruning {
+				m.statusMessage = "Pruning mode enabled - showing only directories with context files"
+			} else {
+				m.statusMessage = "Pruning mode disabled - showing all directories"
+			}
+			m.loading = true
+			return m, m.loadTreeCmd()
 		default:
 			// Clear lastKey for any other key that's not part of a combo
 			if m.lastKey != "" && msg.String() != "g" {
@@ -343,7 +357,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.refreshNeeded {
 				// Refresh the tree to show the updated context
 				m.loading = true
-				return m, loadTree
+				return m, m.loadTreeCmd()
 			}
 		}
 
@@ -509,11 +523,15 @@ func (m *viewModel) View() string {
 	}
 
 	// Header
+	pruningIndicator := ""
+	if m.pruning {
+		pruningIndicator = " (Pruning)"
+	}
 	header := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("12")).
 		MarginBottom(1).
-		Render("Grove Context Visualization")
+		Render("Grove Context Visualization" + pruningIndicator)
 
 	// Tree view
 	viewportHeight := m.height - 6 // Account for header, footer, and margins
@@ -544,7 +562,7 @@ func (m *viewModel) View() string {
 	// Controls
 	controls := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
-		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | A: expand all | a: toggle hot | c: toggle cold | x: toggle exclude (dirs include all contents) | Ctrl-D/U: page down/up | q: quit")
+		Render("↑/↓/j/k: navigate | gg/G: top/bottom | Enter/Space: toggle | A: expand all | p: toggle pruning | a: toggle hot | c: toggle cold | x: toggle exclude (dirs include all contents) | Ctrl-D/U: page down/up | q: quit")
 
 	// Combine all parts
 	parts := []string{

@@ -18,9 +18,9 @@ type FileNode struct {
 
 // AnalyzeProjectTree walks the entire project and creates a tree structure showing
 // which files are included, excluded, or ignored based on context rules
-func (m *Manager) AnalyzeProjectTree() (*FileNode, error) {
+func (m *Manager) AnalyzeProjectTree(prune bool) (*FileNode, error) {
 	// Use the centralized engine to get all file classifications
-	fileStatuses, err := m.ResolveAndClassifyAllFiles()
+	fileStatuses, err := m.ResolveAndClassifyAllFiles(prune)
 	if err != nil {
 		return nil, err
 	}

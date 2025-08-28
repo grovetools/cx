@@ -528,7 +528,7 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	// Use the centralized engine
-	fileStatuses, err := m.ResolveAndClassifyAllFiles()
+	fileStatuses, err := m.ResolveAndClassifyAllFiles(false)
 	if err != nil {
 		return nil, err
 	}
@@ -555,7 +555,7 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
 func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 	// Use the centralized engine
-	fileStatuses, err := m.ResolveAndClassifyAllFiles()
+	fileStatuses, err := m.ResolveAndClassifyAllFiles(false)
 	if err != nil {
 		return nil, err
 	}
@@ -797,7 +797,7 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 
 // ResolveAndClassifyAllFiles is the centralized engine that resolves and classifies all files
 // based on context rules. It returns a map of file paths to their NodeStatus.
-func (m *Manager) ResolveAndClassifyAllFiles() (map[string]NodeStatus, error) {
+func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus, error) {
 	result := make(map[string]NodeStatus)
 	
 	// Parse rules file to get patterns
@@ -858,13 +858,15 @@ func (m *Manager) ResolveAndClassifyAllFiles() (map[string]NodeStatus, error) {
 	}
 	
 	// Post-process: remove empty directories (directories with no non-ignored children)
-	result = m.removeEmptyDirectories(result)
+	result = m.filterTreeNodes(result, prune)
 	
 	return result, nil
 }
 
-// removeEmptyDirectories removes directories that contain no included files
-func (m *Manager) removeEmptyDirectories(fileStatuses map[string]NodeStatus) map[string]NodeStatus {
+// filterTreeNodes filters the file tree based on the specified mode
+// If prune is true, only directories containing context files (hot, cold, or excluded) are shown
+// If prune is false, all directories containing any non-git-ignored files are shown
+func (m *Manager) filterTreeNodes(fileStatuses map[string]NodeStatus, prune bool) map[string]NodeStatus {
 	// Build a map of directories to their children
 	dirChildren := make(map[string][]string)
 	
@@ -900,9 +902,19 @@ func (m *Manager) removeEmptyDirectories(fileStatuses map[string]NodeStatus) map
 	
 	// Mark directories that contain included files
 	for path, status := range fileStatuses {
-		if status == StatusIncludedHot || status == StatusIncludedCold || 
-		   status == StatusExcludedByRule || status == StatusOmittedNoMatch {
-			// This is a file with some status - mark its parent directory
+		// Determine what constitutes "content" based on prune mode
+		hasContent := false
+		if prune {
+			// In prune mode, only context files (hot, cold, excluded) count as content
+			hasContent = status == StatusIncludedHot || status == StatusIncludedCold || 
+			            status == StatusExcludedByRule
+		} else {
+			// In normal mode, any non-directory and non-git-ignored file counts as content
+			hasContent = status != StatusDirectory && status != StatusIgnoredByGit
+		}
+		
+		if hasContent {
+			// This is a file with content - mark its parent directory
 			parent := filepath.Dir(path)
 			markDirWithContent(parent)
 		}
@@ -917,8 +929,12 @@ func (m *Manager) removeEmptyDirectories(fileStatuses map[string]NodeStatus) map
 				filtered[path] = status
 			}
 		} else if status != StatusIgnoredByGit {
-			// Include all non-ignored files
-			filtered[path] = status
+			// For files, check if their parent directory has content
+			parent := filepath.Dir(path)
+			if dirsWithContent[parent] {
+				// Include all non-ignored files whose parent directory has content
+				filtered[path] = status
+			}
 		}
 	}
 	
