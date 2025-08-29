@@ -1,3 +1,13 @@
+## v0.2.21 (2025-08-29)
+
+### Chores
+
+* **deps:** sync Grove dependencies to latest versions
+
+### Bug Fixes
+
+* **cx-view:** implement comprehensive safety measures for context rules
+
 ## v0.2.20 (2025-08-28)
 
 ### Bug Fixes
