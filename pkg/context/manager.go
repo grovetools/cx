@@ -39,6 +39,7 @@ const (
 // Manager handles context operations
 type Manager struct {
 	workDir string
+	gitIgnoredCache map[string]map[string]bool // Cache for gitignored files by repository root
 }
 
 // NewManager creates a new context manager
@@ -46,7 +47,10 @@ func NewManager(workDir string) *Manager {
 	if workDir == "" {
 		workDir, _ = os.Getwd()
 	}
-	return &Manager{workDir: workDir}
+	return &Manager{
+		workDir: workDir,
+		gitIgnoredCache: make(map[string]map[string]bool),
+	}
 }
 
 // GetWorkDir returns the current working directory
@@ -308,12 +312,10 @@ func (m *Manager) writeFileToXML(w io.Writer, file string, indent string) error 
 // getGitIgnoredFiles returns a set of all gitignored files for the repository
 // containing the given directory. It returns a map of absolute paths for efficient lookup.
 func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
-	ignoredFiles := make(map[string]bool)
-
 	// Ensure the provided path is absolute
 	absForDir, err := filepath.Abs(forDir)
 	if err != nil {
-		return ignoredFiles, err
+		return make(map[string]bool), err
 	}
 
 	// Find the root of the git repository for the given directory.
@@ -321,9 +323,17 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 	gitRootOutput, err := gitRootCmd.Output()
 	if err != nil {
 		// This directory is not in a git repository, so no files are gitignored.
-		return ignoredFiles, nil
+		return make(map[string]bool), nil
 	}
 	gitRootPath := strings.TrimSpace(string(gitRootOutput))
+
+	// Check if we have a cached result for this repository
+	if cachedResult, found := m.gitIgnoredCache[gitRootPath]; found {
+		return cachedResult, nil
+	}
+
+	// If not cached, proceed with the original logic
+	ignoredFiles := make(map[string]bool)
 
 	// Get all tracked files to correctly handle cases where an ignored file is explicitly tracked.
 	trackedCmd := exec.Command("git", "ls-files")
@@ -362,6 +372,9 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 		}
 	}
 
+	// Cache the result before returning
+	m.gitIgnoredCache[gitRootPath] = ignoredFiles
+	
 	return ignoredFiles, nil
 }
 
@@ -1494,8 +1507,76 @@ func (m *Manager) ListFiles() ([]string, error) {
 }
 
 // AppendRule adds a new rule to the active rules file.
+// validateRuleSafety checks if a rule is safe to add
+func (m *Manager) validateRuleSafety(rulePath string) error {
+	// Skip validation for exclusion rules
+	if strings.HasPrefix(rulePath, "!") {
+		rulePath = strings.TrimPrefix(rulePath, "!")
+	}
+	
+	// Count parent directory traversals
+	traversalCount := strings.Count(rulePath, "../")
+	if traversalCount > 2 {
+		return fmt.Errorf("rule '%s' contains too many parent directory traversals (max 2 allowed)", rulePath)
+	}
+	
+	// Check for patterns that could match everything
+	if rulePath == "**" || rulePath == "/**" || strings.HasPrefix(rulePath, "../../../") {
+		return fmt.Errorf("rule '%s' is too broad and could include system files", rulePath)
+	}
+	
+	// Resolve the actual path to check boundaries
+	absPath := filepath.Join(m.workDir, rulePath)
+	absPath = filepath.Clean(absPath)
+	
+	// Get home directory for boundary checking
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = ""
+	}
+	
+	// Check if the rule would go above the home directory
+	if homeDir != "" && len(absPath) < len(homeDir) {
+		// Path is shorter than home dir, meaning it's above it
+		homeParts := strings.Split(homeDir, string(filepath.Separator))
+		absParts := strings.Split(absPath, string(filepath.Separator))
+		if len(absParts) < len(homeParts)-1 { // Allow one level above home
+			return fmt.Errorf("rule '%s' would include directories too far above home directory", rulePath)
+		}
+	}
+	
+	// Check against system directories (both Unix and Windows)
+	dangerousPaths := []string{
+		"/etc", "/usr", "/bin", "/sbin", "/System", "/Library",
+		"/var", "/tmp", "/proc", "/sys", "/dev", "/root",
+		"C:\\Windows", "C:\\Program Files", "C:\\ProgramData",
+	}
+	
+	for _, dangerous := range dangerousPaths {
+		if strings.HasPrefix(absPath, dangerous) || strings.HasPrefix(dangerous, absPath) {
+			return fmt.Errorf("rule '%s' would include system directory '%s'", rulePath, dangerous)
+		}
+	}
+	
+	// Check if it's trying to include hidden system directories
+	if strings.Contains(rulePath, "/.") && traversalCount > 0 {
+		// Be extra careful with hidden directories when going up
+		if strings.Contains(rulePath, "/.Trash") || strings.Contains(rulePath, "/.cache") || 
+		   strings.Contains(rulePath, "/.config") {
+			return fmt.Errorf("rule '%s' would include hidden system directories", rulePath)
+		}
+	}
+	
+	return nil
+}
+
 // contextType can be "hot", "cold", or "exclude".
 func (m *Manager) AppendRule(rulePath, contextType string) error {
+	// Validate the rule safety before adding
+	if err := m.validateRuleSafety(rulePath); err != nil {
+		return fmt.Errorf("safety validation failed: %w", err)
+	}
+	
 	// Find or create the rules file
 	rulesFilePath := m.findActiveRulesFile()
 	if rulesFilePath == "" {
@@ -1519,7 +1600,7 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 	// Prepare the new rule
 	var newRule string
 	switch contextType {
-	case "exclude":
+	case "exclude", "exclude-cold":
 		newRule = "!" + rulePath
 	default:
 		newRule = rulePath
@@ -1552,7 +1633,7 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 			// No separator, append to end
 			lines = append(lines, newRule)
 		}
-	case "cold":
+	case "cold", "exclude-cold":
 		if separatorIndex >= 0 {
 			// Append after separator
 			lines = append(lines, newRule)

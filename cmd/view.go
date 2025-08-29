@@ -41,6 +41,13 @@ type ruleChangeResultMsg struct {
 	refreshNeeded bool
 }
 
+type confirmActionMsg struct {
+	action      string // "hot", "cold", "exclude"
+	path        string
+	isDirectory bool
+	warning     string
+}
+
 // viewModel is the model for the interactive tree view
 type viewModel struct {
 	tree          *context.FileNode
@@ -58,6 +65,13 @@ type viewModel struct {
 	showHelp      bool   // Whether to show help popup
 	rulesContent  string // Content of .grove/rules file
 	showGitIgnored bool  // Whether to show gitignored files
+	// Search functionality
+	searchQuery   string // Current search query
+	isSearching   bool   // Whether search mode is active
+	searchResults []int  // Indices of matching visible nodes
+	searchCursor  int    // Current position in search results
+	// Confirmation state
+	pendingConfirm *confirmActionMsg // Pending action awaiting confirmation
 	// Statistics
 	hotFiles     int
 	hotTokens    int
@@ -223,7 +237,12 @@ func (m *viewModel) toggleRuleCmd(path, targetType string, isDirectory bool) tea
 					}
 				}
 				// Add exclusion rule
-				err = manager.AppendRule(path, "exclude")
+				// If the item is currently in cold context, add exclusion to cold section
+				if currentStatus == context.RuleCold {
+					err = manager.AppendRule(path, "exclude-cold")
+				} else {
+					err = manager.AppendRule(path, "exclude")
+				}
 				successMsg = fmt.Sprintf("Excluded %s: %s", itemType, path)
 			case context.RuleExcluded:
 				// Remove exclusion
@@ -240,6 +259,21 @@ func (m *viewModel) toggleRuleCmd(path, targetType string, isDirectory bool) tea
 	}
 }
 
+// performSearch finds all visible nodes that match the search query
+func (m *viewModel) performSearch() {
+	m.searchResults = []int{}
+	if m.searchQuery == "" {
+		return
+	}
+	
+	query := strings.ToLower(m.searchQuery)
+	for i, nl := range m.visibleNodes {
+		if strings.Contains(strings.ToLower(nl.node.Name), query) {
+			m.searchResults = append(m.searchResults, i)
+		}
+	}
+}
+
 // getRelativePath converts node path to relative path suitable for rules file
 // For directories, it returns a glob pattern like "dirname/**" to include all contents
 func (m *viewModel) getRelativePath(node *context.FileNode) (string, error) {
@@ -251,13 +285,9 @@ func (m *viewModel) getRelativePath(node *context.FileNode) (string, error) {
 		return "", err
 	}
 	
-	// If path starts with "..", it's outside workdir, use absolute path
-	var basePath string
-	if strings.HasPrefix(relPath, "..") {
-		basePath = node.Path
-	} else {
-		basePath = relPath
-	}
+	// Always use relative path for safety and portability
+	// Convert to forward slashes for consistency in rules file
+	basePath := filepath.ToSlash(relPath)
 	
 	// For directories, append /** to include all contents recursively
 	if node.IsDir {
@@ -272,11 +302,108 @@ func (m *viewModel) getRelativePath(node *context.FileNode) (string, error) {
 	return basePath, nil
 }
 
+// isPathPotentiallyDangerous checks if a path might be risky to add
+func (m *viewModel) isPathPotentiallyDangerous(path string) (bool, string) {
+	// Count parent traversals
+	traversalCount := strings.Count(path, "../")
+	if traversalCount > 1 {
+		return true, fmt.Sprintf("Path goes up %d directories", traversalCount)
+	}
+	
+	// Check for overly broad patterns
+	if strings.HasPrefix(path, "../**") || strings.HasPrefix(path, "../../**") {
+		return true, "Pattern could include many unintended files"
+	}
+	
+	// Check if it's outside the current directory tree
+	if strings.HasPrefix(path, "..") {
+		return true, "Path is outside current project directory"
+	}
+	
+	return false, ""
+}
+
+// handleRuleAction checks if a path is dangerous and either prompts for confirmation or executes the action
+func (m *viewModel) handleRuleAction(relPath string, action string, isDir bool) tea.Cmd {
+	// Check if path is potentially dangerous
+	isDangerous, warning := m.isPathPotentiallyDangerous(relPath)
+	
+	if isDangerous {
+		// Set up confirmation
+		m.pendingConfirm = &confirmActionMsg{
+			action:      action,
+			path:        relPath,
+			isDirectory: isDir,
+			warning:     warning,
+		}
+		m.statusMessage = fmt.Sprintf("⚠️  %s - Press 'y' to confirm, 'n' to cancel", warning)
+		return nil
+	}
+	
+	// Path is safe, proceed directly
+	return m.toggleRuleCmd(relPath, action, isDir)
+}
+
 // Update handles messages
 func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle help popup keys first
+		// Handle confirmation prompts first
+		if m.pendingConfirm != nil {
+			switch msg.String() {
+			case "y", "Y":
+				// User confirmed, execute the action
+				action := m.pendingConfirm.action
+				path := m.pendingConfirm.path
+				isDir := m.pendingConfirm.isDirectory
+				m.pendingConfirm = nil
+				m.statusMessage = fmt.Sprintf("Adding %s to %s context...", path, action)
+				return m, m.toggleRuleCmd(path, action, isDir)
+			case "n", "N", "esc":
+				// User cancelled
+				m.pendingConfirm = nil
+				m.statusMessage = "Action cancelled"
+				return m, nil
+			default:
+				// Ignore other keys during confirmation
+				return m, nil
+			}
+		}
+		
+		// Handle search mode keys next
+		if m.isSearching {
+			switch msg.String() {
+			case "enter":
+				// Finish search and find results
+				m.isSearching = false
+				m.performSearch()
+				if len(m.searchResults) > 0 {
+					m.searchCursor = 0
+					m.cursor = m.searchResults[0]
+					m.ensureCursorVisible()
+				}
+				return m, nil
+			case "esc":
+				// Cancel search
+				m.isSearching = false
+				m.searchQuery = ""
+				return m, nil
+			case "backspace":
+				// Remove last character from search query
+				if len(m.searchQuery) > 0 {
+					m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+				}
+				return m, nil
+			default:
+				// Add character to search query
+				if len(msg.String()) == 1 {
+					m.searchQuery += msg.String()
+				}
+				return m, nil
+			}
+		}
+		
+		// Handle help popup keys next
 		if m.showHelp {
 			switch msg.String() {
 			case "?", "q", "esc", "ctrl+c":
@@ -344,33 +471,61 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 			}
 			m.ensureCursorVisible()
-		case "A":
-			// Auto-expand all directories
-			m.expandAll()
-		case "a":
-			// Toggle hot context
-			if m.cursor >= len(m.visibleNodes) {
-				break
+		case "z":
+			m.lastKey = "z"
+		case "R":
+			if m.lastKey == "z" {
+				// zR - expand all directories (vim-style)
+				m.expandAll()
+				m.lastKey = ""
 			}
-			node := m.visibleNodes[m.cursor].node
-			relPath, err := m.getRelativePath(node)
-			if err != nil {
-				m.statusMessage = fmt.Sprintf("Error: %v", err)
-				break
+		case "M":
+			if m.lastKey == "z" {
+				// zM - collapse all directories (vim-style)
+				m.collapseAll()
+				m.lastKey = ""
 			}
-			// Create appropriate status message for directories vs files
-			var itemType string
-			if node.IsDir {
-				itemType = "directory tree"
-			} else {
-				itemType = "file"
+		case "o":
+			if m.lastKey == "z" {
+				// zo - open/expand current directory (vim-style)
+				m.expandCurrent()
+				m.lastKey = ""
 			}
-			m.statusMessage = fmt.Sprintf("Toggling hot context for %s %s...", itemType, node.Name)
-			return m, m.toggleRuleCmd(relPath, "hot", node.IsDir)
 		case "c":
-			// Toggle cold context
-			if m.cursor >= len(m.visibleNodes) {
-				break
+			if m.lastKey == "z" {
+				// zc - close/collapse current directory (vim-style)
+				m.collapseCurrent()
+				m.lastKey = ""
+			} else {
+				// Regular 'c' - Toggle cold context
+				if m.cursor >= len(m.visibleNodes) {
+					break
+				}
+				node := m.visibleNodes[m.cursor].node
+				relPath, err := m.getRelativePath(node)
+				if err != nil {
+					m.statusMessage = fmt.Sprintf("Error: %v", err)
+					break
+				}
+				// Create appropriate status message for directories vs files
+				var itemType string
+				if node.IsDir {
+					itemType = "directory tree"
+				} else {
+					itemType = "file"
+				}
+				m.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
+				return m, m.handleRuleAction(relPath, "cold", node.IsDir)
+			}
+		case "a":
+			if m.lastKey == "z" {
+				// za - toggle fold at cursor (vim-style)
+				m.toggleExpanded()
+				m.lastKey = ""
+			} else {
+				// Regular 'a' - Toggle hot context
+				if m.cursor >= len(m.visibleNodes) {
+					break
 			}
 			node := m.visibleNodes[m.cursor].node
 			relPath, err := m.getRelativePath(node)
@@ -385,8 +540,9 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				itemType = "file"
 			}
-			m.statusMessage = fmt.Sprintf("Toggling cold context for %s %s...", itemType, node.Name)
-			return m, m.toggleRuleCmd(relPath, "cold", node.IsDir)
+			m.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
+			return m, m.handleRuleAction(relPath, "hot", node.IsDir)
+			}
 		case "x":
 			// Toggle exclude
 			if m.cursor >= len(m.visibleNodes) {
@@ -405,8 +561,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				itemType = "file"
 			}
-			m.statusMessage = fmt.Sprintf("Toggling exclusion for %s %s...", itemType, node.Name)
-			return m, m.toggleRuleCmd(relPath, "exclude", node.IsDir)
+			m.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
+			return m, m.handleRuleAction(relPath, "exclude", node.IsDir)
 		case "g":
 			if m.lastKey == "g" {
 				// gg - go to top
@@ -446,9 +602,35 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadRulesContent()
 			m.loading = true
 			return m, m.loadTreeCmd()
+		case "/":
+			// Enter search mode
+			m.isSearching = true
+			m.searchQuery = ""
+			m.searchResults = nil
+			m.searchCursor = 0
+			return m, nil
+		case "n":
+			// Navigate to next search result
+			if len(m.searchResults) > 0 {
+				m.searchCursor = (m.searchCursor + 1) % len(m.searchResults)
+				m.cursor = m.searchResults[m.searchCursor]
+				m.ensureCursorVisible()
+			}
+			return m, nil
+		case "N":
+			// Navigate to previous search result
+			if len(m.searchResults) > 0 {
+				m.searchCursor--
+				if m.searchCursor < 0 {
+					m.searchCursor = len(m.searchResults) - 1
+				}
+				m.cursor = m.searchResults[m.searchCursor]
+				m.ensureCursorVisible()
+			}
+			return m, nil
 		default:
 			// Clear lastKey for any other key that's not part of a combo
-			if m.lastKey != "" && msg.String() != "g" {
+			if m.lastKey != "" && msg.String() != "g" && msg.String() != "z" {
 				m.lastKey = ""
 			}
 		}
@@ -517,6 +699,36 @@ func (m *viewModel) expandAll() {
 	}
 	m.expandAllRecursive(m.tree)
 	m.updateVisibleNodes()
+}
+
+// collapseAll collapses all directories in the tree
+func (m *viewModel) collapseAll() {
+	m.expandedPaths = make(map[string]bool)
+	m.updateVisibleNodes()
+}
+
+// expandCurrent expands the currently selected directory
+func (m *viewModel) expandCurrent() {
+	if m.cursor >= len(m.visibleNodes) {
+		return
+	}
+	node := m.visibleNodes[m.cursor].node
+	if node.IsDir && len(node.Children) > 0 {
+		m.expandedPaths[node.Path] = true
+		m.updateVisibleNodes()
+	}
+}
+
+// collapseCurrent collapses the currently selected directory
+func (m *viewModel) collapseCurrent() {
+	if m.cursor >= len(m.visibleNodes) {
+		return
+	}
+	node := m.visibleNodes[m.cursor].node
+	if node.IsDir {
+		delete(m.expandedPaths, node.Path)
+		m.updateVisibleNodes()
+	}
 }
 
 // expandAllRecursive recursively marks all directories as expanded
@@ -753,9 +965,23 @@ func (m *viewModel) View() string {
 	mainContent := lipgloss.JoinHorizontal(lipgloss.Top, treePanel, rightPanel)
 	
 	// Footer with help hint
-	footer := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Render("Press ? for help")
+	// Footer with search bar or help text
+	var footer string
+	if m.isSearching {
+		searchStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("34")).
+			Bold(true)
+		footer = searchStyle.Render(fmt.Sprintf("/%s_", m.searchQuery))
+	} else if len(m.searchResults) > 0 {
+		resultsStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("34"))
+		footer = resultsStyle.Render(fmt.Sprintf("Found %d results (%d of %d) - n/N to navigate", 
+			len(m.searchResults), m.searchCursor+1, len(m.searchResults)))
+	} else {
+		footer = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Render("Press ? for help")
+	}
 
 	// Combine all parts
 	parts := []string{
@@ -798,6 +1024,19 @@ func (m *viewModel) renderNode(index int) string {
 
 	// Style based on status
 	style := m.getStyle(node)
+	
+	// Highlight if this is a search match
+	isSearchMatch := false
+	for _, resultIndex := range m.searchResults {
+		if resultIndex == index {
+			isSearchMatch = true
+			break
+		}
+	}
+	if isSearchMatch && len(m.searchResults) > 0 {
+		// Apply inverted style for search matches
+		style = style.Reverse(true)
+	}
 
 	// Directory expansion indicator
 	expandIndicator := ""
@@ -813,16 +1052,33 @@ func (m *viewModel) renderNode(index int) string {
 
 	// Status symbol
 	statusSymbol := m.getStatusSymbol(node)
+	
+	// Check if this path would be dangerous if added
+	relPath, _ := m.getRelativePath(node)
+	isDangerous, _ := m.isPathPotentiallyDangerous(relPath)
+	dangerSymbol := ""
+	if isDangerous && node.Status == context.StatusOmittedNoMatch {
+		dangerSymbol = " ⚠️"
+	}
 
-	// Token count
+	// Token count with color based on size
 	tokenStr := ""
 	if node.TokenCount > 0 {
-		tokenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // Dim gray
+		var tokenStyle lipgloss.Style
+		if node.TokenCount >= 100000 {
+			tokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red for 100K+
+		} else if node.TokenCount >= 50000 {
+			tokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208")) // Orange for 50K+
+		} else if node.TokenCount >= 10000 {
+			tokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("226")) // Yellow for 10K+
+		} else {
+			tokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // Dim gray for < 10K
+		}
 		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", context.FormatTokenCount(node.TokenCount)))
 	}
 
 	// Combine all parts
-	line := fmt.Sprintf("%s%s%s%s %s%s%s", cursor, indent, expandIndicator, icon, name, statusSymbol, tokenStr)
+	line := fmt.Sprintf("%s%s%s%s %s%s%s%s", cursor, indent, expandIndicator, icon, name, statusSymbol, dangerSymbol, tokenStr)
 	return style.Render(line)
 }
 
@@ -917,12 +1173,25 @@ func (m *viewModel) renderHelp() string {
 		keyStyle.Render("Ctrl-D") + " - Page down",
 		keyStyle.Render("Ctrl-U") + " - Page up",
 		"",
+		"Folding (vim-style):",
+		"",
+		keyStyle.Render("za") + " - Toggle fold",
+		keyStyle.Render("zo") + " - Open fold",
+		keyStyle.Render("zc") + " - Close fold",
+		keyStyle.Render("zR") + " - Open all folds",
+		keyStyle.Render("zM") + " - Close all folds",
+		"",
+		"Search:",
+		"",
+		keyStyle.Render("/") + " - Search for files",
+		keyStyle.Render("n") + " - Next search result",
+		keyStyle.Render("N") + " - Previous search result",
+		"",
 		"Actions:",
 		"",
 		keyStyle.Render("a") + " - Toggle hot context",
 		keyStyle.Render("c") + " - Toggle cold context",
 		keyStyle.Render("x") + " - Toggle exclude",
-		keyStyle.Render("A") + " - Expand all",
 		keyStyle.Render("p") + " - Toggle pruning",
 		keyStyle.Render("./H") + " - Toggle gitignored files",
 		keyStyle.Render("r") + " - Refresh view",
@@ -944,6 +1213,7 @@ func (m *viewModel) renderHelp() string {
 		"  " + keyStyle.Render("❄️") + " - Cold Context",  
 		"  " + keyStyle.Render("🚫") + " - Excluded",
 		"  " + keyStyle.Render("🙈") + " - Git Ignored",
+		"  " + keyStyle.Render("⚠️") + " - Potentially risky path",
 		"  (none) - Omitted",
 		"",
 		"Colors:",
