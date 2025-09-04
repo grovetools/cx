@@ -137,11 +137,13 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	}
 	
 	// Handle case where no rules file exists
-	if len(filesToInclude) == 0 {
+	activeRulesPath := m.findActiveRulesFile()
+	if activeRulesPath == "" {
 		// Print visible warning to stderr
 		fmt.Fprintf(os.Stderr, "\n⚠️  WARNING: No rules file found!\n")
 		fmt.Fprintf(os.Stderr, "⚠️  Create %s with patterns to include files in the context.\n", ActiveRulesFile)
 		fmt.Fprintf(os.Stderr, "⚠️  Generating empty context file.\n\n")
+
 	}
 	
 	// Create context file
@@ -160,7 +162,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	}
 	
 	// If no files to include, write a comment explaining why
-	if len(filesToInclude) == 0 {
+	if len(filesToInclude) == 0 && activeRulesPath == "" {
 		if useXMLFormat {
 			fmt.Fprintf(ctxFile, "    <!-- No rules file found. Create %s with patterns to include files. -->\n", ActiveRulesFile)
 		} else {
@@ -206,35 +208,6 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	
 	fmt.Printf("Generated %s with %d files\n", ContextFile, len(filesToInclude))
 	
-	// Generate cached context file list
-	activeRulesPath := m.findActiveRulesFile()
-	if activeRulesPath == "" {
-		// If no rules file, ensure any old cached list is removed
-		os.Remove(filepath.Join(m.workDir, CachedContextFilesListFile))
-		return nil
-	}
-
-	_, coldPatterns, _, _, _, _, err := m.parseRulesFile(activeRulesPath)
-	if err != nil {
-		return fmt.Errorf("error parsing cold context rules: %w", err)
-	}
-
-	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
-	if err != nil {
-		return fmt.Errorf("error resolving cold context files: %w", err)
-	}
-
-	// Write the list to .grove/cached-context-files
-	cachedListPath := filepath.Join(m.workDir, CachedContextFilesListFile)
-	if err := m.WriteFilesList(cachedListPath, coldFiles); err != nil {
-		return err
-	}
-
-	// Provide user feedback
-	if len(coldFiles) > 0 {
-		fmt.Printf("Generated %s with %d files for cached context\n", CachedContextFilesListFile, len(coldFiles))
-	}
-	
 	return nil
 }
 
@@ -264,7 +237,7 @@ func (m *Manager) GenerateCachedContext() error {
 	// Let's keep the structure for consistency.
 	fmt.Fprintf(cachedFile, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 	fmt.Fprintf(cachedFile, "<context>\n")
-	fmt.Fprintf(cachedFile, "  <cold-context files=\"%d\" description=\"Files to be used for reference/background context to carry out the user's question/task to be provided later\">\n", len(coldFiles))
+	fmt.Fprintf(cachedFile, "  <cold-context files=\"%d\">\n", len(coldFiles))
 	
 	// Write cold context files
 	for _, file := range coldFiles {
@@ -277,6 +250,18 @@ func (m *Manager) GenerateCachedContext() error {
 	fmt.Fprintf(cachedFile, "</context>\n")
 	
 	fmt.Printf("Generated %s with %d cold files\n", CachedContextFile, len(coldFiles))
+	
+	// Write the list to .grove/cached-context-files
+	cachedListPath := filepath.Join(m.workDir, CachedContextFilesListFile)
+	if err := m.WriteFilesList(cachedListPath, coldFiles); err != nil {
+		return err
+	}
+	
+	// Provide user feedback
+	if len(coldFiles) > 0 {
+		fmt.Printf("Generated %s with %d files for cached context\n", CachedContextFilesListFile, len(coldFiles))
+	}
+	
 	return nil
 }
 

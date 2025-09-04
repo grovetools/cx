@@ -55,13 +55,13 @@ src/utils.go
 					return err
 				}
 				if !strings.Contains(mainContent, "src/main.go") {
-					return fmt.Errorf("main context missing 'src/main.go'")
+					return fmt.Errorf("main context missing 'src/main.go'\nExpected file to be in hot context\nActual main context content:\n%s", mainContent)
 				}
 				if !strings.Contains(mainContent, "README.md") {
-					return fmt.Errorf("main context missing 'README.md'")
+					return fmt.Errorf("main context missing 'README.md'\nExpected file to be in hot context\nActual main context content:\n%s", mainContent)
 				}
 				if strings.Contains(mainContent, "src/utils.go") {
-					return fmt.Errorf("main context should not contain 'src/utils.go' due to cold context precedence")
+					return fmt.Errorf("main context should not contain 'src/utils.go' due to cold context precedence\nThis file should be in cached-context only\nActual main context content:\n%s", mainContent)
 				}
 
 				// Verify cached context file (the XML file with cold files)
@@ -71,13 +71,13 @@ src/utils.go
 					return err
 				}
 				if !strings.Contains(cachedContent, "<cold-context files=\"1\">") {
-					return fmt.Errorf("cached context should indicate 1 cold file")
+					return fmt.Errorf("cached context should indicate 1 cold file\nExpected: <cold-context files=\"1\">\nActual cached-context content:\n%s", cachedContent)
 				}
 				if !strings.Contains(cachedContent, "src/utils.go") {
-					return fmt.Errorf("cached context should contain 'src/utils.go'")
+					return fmt.Errorf("cached context should contain 'src/utils.go'\nThis file was marked for cold context in rules\nActual cached-context content:\n%s", cachedContent)
 				}
 				if strings.Contains(cachedContent, "src/main.go") || strings.Contains(cachedContent, "README.md") {
-					return fmt.Errorf("cached context should not contain hot files")
+					return fmt.Errorf("cached context should not contain hot files (src/main.go, README.md)\nThese files belong in main context only\nActual cached-context content:\n%s", cachedContent)
 				}
 				
 				// Also verify the cached-context-files list
@@ -87,7 +87,7 @@ src/utils.go
 					return err
 				}
 				if strings.TrimSpace(cachedFiles) != "src/utils.go" {
-					return fmt.Errorf("cached-context-files should contain only 'src/utils.go', got: %s", cachedFiles)
+					return fmt.Errorf("cached-context-files list mismatch\nExpected: src/utils.go\nActual: %s\nThis file should list all cold context files, one per line", cachedFiles)
 				}
 				return nil
 			}),
@@ -98,10 +98,10 @@ src/utils.go
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
 				if !strings.Contains(result.Stdout, "src/main.go") || !strings.Contains(result.Stdout, "README.md") {
-					return fmt.Errorf("'cx list' output is missing hot context files")
+					return fmt.Errorf("'cx list' output is missing hot context files\nExpected to see: src/main.go and README.md\nActual output:\n%s", result.Stdout)
 				}
 				if strings.Contains(result.Stdout, "src/utils.go") {
-					return fmt.Errorf("'cx list' should not include cold context files")
+					return fmt.Errorf("'cx list' should not include cold context files\nsrc/utils.go is in cold context and should not appear in 'cx list'\nActual output:\n%s", result.Stdout)
 				}
 				return result.Error
 			}),
@@ -113,15 +113,15 @@ src/utils.go
 
 				// Verify Hot Context Statistics
 				if !strings.Contains(result.Stdout, "Hot Context Statistics:") {
-					return fmt.Errorf("output missing 'Hot Context Statistics:' header")
+					return fmt.Errorf("output missing 'Hot Context Statistics:' header\nExpected stats to show both hot and cold sections\nActual output:\n%s", result.Stdout)
 				}
 				if !strings.Contains(result.Stdout, "Total Files:    2") {
-					return fmt.Errorf("hot context should report 2 files, got: %s", result.Stdout)
+					return fmt.Errorf("hot context should report 2 files (src/main.go, README.md)\nExpected: Total Files:    2\nActual output:\n%s", result.Stdout)
 				}
 				
 				// Verify Cold Context Statistics
 				if !strings.Contains(result.Stdout, "Cold (Cached) Context Statistics:") {
-					return fmt.Errorf("output missing 'Cold (Cached) Context Statistics:' header")
+					return fmt.Errorf("output missing 'Cold (Cached) Context Statistics:' header\nExpected stats to show cold context section after hot\nActual output:\n%s", result.Stdout)
 				}
 				
 				// Verify the separator line between contexts
@@ -131,12 +131,12 @@ src/utils.go
 				
 				// Verify hot context contains main.go and README.md
 				if !strings.Contains(result.Stdout, "src/main.go") || !strings.Contains(result.Stdout, "README.md") {
-					return fmt.Errorf("hot context should list src/main.go and README.md in largest files")
+					return fmt.Errorf("hot context should list src/main.go and README.md in largest files\nThese are the hot context files from rules\nActual output:\n%s", result.Stdout)
 				}
 				
 				// Verify cold context contains utils.go
 				if !strings.Contains(result.Stdout, "src/utils.go") {
-					return fmt.Errorf("cold context should list src/utils.go")
+					return fmt.Errorf("cold context should list src/utils.go\nThis is the only cold context file from rules\nActual output:\n%s", result.Stdout)
 				}
 				
 				// Verify language distribution shows both Go and Markdown for hot context
@@ -179,7 +179,7 @@ func NoSeparatorBackwardCompatibilityScenario() *harness.Scenario {
 					return err
 				}
 				if !strings.Contains(mainContent, "main.go") || !strings.Contains(mainContent, "README.md") {
-					return fmt.Errorf("main context should contain both files")
+					return fmt.Errorf("main context should contain both files (main.go and README.md)\nWhen no --- separator exists, all matched files go to hot context\nActual main context content:\n%s", mainContent)
 				}
 
 				// Verify cached context XML file exists with empty cold context (no --- means no cold files)
@@ -187,7 +187,7 @@ func NoSeparatorBackwardCompatibilityScenario() *harness.Scenario {
 				if fs.Exists(cachedContextPath) {
 					cachedContent, _ := fs.ReadString(cachedContextPath)
 					if !strings.Contains(cachedContent, "<cold-context files=\"0\">") {
-						return fmt.Errorf("cached context should indicate 0 cold files when no separator exists")
+						return fmt.Errorf("cached context should indicate 0 cold files when no separator exists\nExpected: <cold-context files=\"0\">\nActual cached-context content:\n%s", cachedContent)
 					}
 				}
 				
@@ -196,7 +196,7 @@ func NoSeparatorBackwardCompatibilityScenario() *harness.Scenario {
 				if fs.Exists(cachedFilesPath) {
 					content, _ := fs.ReadString(cachedFilesPath)
 					if content != "" {
-						return fmt.Errorf("cached-context-files should be empty, but has content")
+						return fmt.Errorf("cached-context-files should be empty when no --- separator exists\nExpected: empty file\nActual content: %s", content)
 					}
 				}
 				return nil
@@ -234,10 +234,10 @@ func EmptyColdContextScenario() *harness.Scenario {
 					return err
 				}
 				if !strings.Contains(mainContent, "main.go") {
-					return fmt.Errorf("main context should contain main.go")
+					return fmt.Errorf("main context should contain main.go\nOnly *.go pattern is in hot section, so README.md should be excluded\nActual main context content:\n%s", mainContent)
 				}
 				if strings.Contains(mainContent, "README.md") {
-					return fmt.Errorf("main context should not contain README.md")
+					return fmt.Errorf("main context should not contain README.md\nREADME.md doesn't match *.go pattern in hot section\nActual main context content:\n%s", mainContent)
 				}
 
 				// Verify cached context XML file exists with empty cold context
@@ -250,10 +250,10 @@ func EmptyColdContextScenario() *harness.Scenario {
 					return err
 				}
 				if !strings.Contains(cachedContent, "<cold-context files=\"0\">") {
-					return fmt.Errorf("cached context should indicate 0 cold files")
+					return fmt.Errorf("cached context should indicate 0 cold files\nEmpty cold section after --- means no files in cached context\nExpected: <cold-context files=\"0\">\nActual cached-context content:\n%s", cachedContent)
 				}
 				if strings.Contains(cachedContent, "main.go") || strings.Contains(cachedContent, "README.md") {
-					return fmt.Errorf("cached context should not contain any hot files")
+					return fmt.Errorf("cached context should not contain any hot files\nEmpty cold section means no files should be in cached-context\nActual cached-context content:\n%s", cachedContent)
 				}
 				
 				// Also verify the cached-context-files list is empty
@@ -266,7 +266,7 @@ func EmptyColdContextScenario() *harness.Scenario {
 					return err
 				}
 				if content != "" {
-					return fmt.Errorf("cached-context-files should be empty, but has content")
+					return fmt.Errorf("cached-context-files should be empty when cold section is empty\nExpected: empty file\nActual content: %s", content)
 				}
 				return nil
 			}),
@@ -329,29 +329,29 @@ go.mod
 				
 				// Should have exactly 3 cold files
 				if !strings.Contains(cachedContent, "<cold-context files=\"3\">") {
-					return fmt.Errorf("cached context should indicate 3 cold files")
+					return fmt.Errorf("cached context should indicate 3 cold files\nExpected: <cold-context files=\"3\"> (config/schema.json, LICENSE, go.mod)\nActual cached-context content:\n%s", cachedContent)
 				}
 				
 				// Should contain all cold files
 				if !strings.Contains(cachedContent, "config/schema.json") {
-					return fmt.Errorf("cached context missing config/schema.json")
+					return fmt.Errorf("cached context missing config/schema.json\nThis file is listed in cold section of rules\nActual cached-context content:\n%s", cachedContent)
 				}
 				if !strings.Contains(cachedContent, "LICENSE") {
-					return fmt.Errorf("cached context missing LICENSE")
+					return fmt.Errorf("cached context missing LICENSE\nThis file is listed in cold section of rules\nActual cached-context content:\n%s", cachedContent)
 				}
 				if !strings.Contains(cachedContent, "go.mod") {
-					return fmt.Errorf("cached context missing go.mod")
+					return fmt.Errorf("cached context missing go.mod\nThis file is listed in cold section of rules\nActual cached-context content:\n%s", cachedContent)
 				}
 				
 				// Should NOT contain any hot files
 				if strings.Contains(cachedContent, "src/main.go") {
-					return fmt.Errorf("cached context should not contain src/main.go (hot file)")
+					return fmt.Errorf("cached context should not contain src/main.go (hot file)\nHot files belong in main context only\nActual cached-context content:\n%s", cachedContent)
 				}
 				if strings.Contains(cachedContent, "src/app.go") {
-					return fmt.Errorf("cached context should not contain src/app.go (hot file)")
+					return fmt.Errorf("cached context should not contain src/app.go (hot file)\nHot files belong in main context only\nActual cached-context content:\n%s", cachedContent)
 				}
 				if strings.Contains(cachedContent, "# Hot README") {
-					return fmt.Errorf("cached context should not contain README.md content (hot file)")
+					return fmt.Errorf("cached context should not contain README.md content (hot file)\nHot files belong in main context only\nActual cached-context content:\n%s", cachedContent)
 				}
 				
 				// Verify the XML structure
