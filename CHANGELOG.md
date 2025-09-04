@@ -1,3 +1,13 @@
+## v0.2.22 (2025-09-04)
+
+### Bug Fixes
+
+* **context:** handle absolute directory paths in rules correctly
+
+### Chores
+
+* **deps:** sync Grove dependencies to latest versions
+
 ## v0.2.21 (2025-08-29)
 
 ### Chores
