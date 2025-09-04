@@ -1,5 +1,21 @@
 ## v0.2.22 (2025-09-04)
 
+### Bug Fixes
+
+* **context:** fix XML format and improve test error messages
+* **context:** handle absolute directory paths in rules correctly
+
+### Documentation
+
+* **changelog:** update CHANGELOG.md for v0.2.22
+* **changelog:** update CHANGELOG.md for v0.2.22
+
+### Chores
+
+* **deps:** sync Grove dependencies to latest versions
+
+## v0.2.22 (2025-09-04)
+
 ### Documentation
 
 * **changelog:** update CHANGELOG.md for v0.2.22
