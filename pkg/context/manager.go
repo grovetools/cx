@@ -592,12 +592,8 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 	return coldFiles, nil
 }
 
-// resolveFilesFromPatterns resolves files from a given set of patterns
-func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) {
-	if len(patterns) == 0 {
-		return []string{}, nil
-	}
-	
+// preProcessPatterns transforms plain directory patterns into recursive globs.
+func (m *Manager) preProcessPatterns(patterns []string) []string {
 	// Pre-process patterns to transform directory patterns into recursive globs
 	processedPatterns := make([]string, 0, len(patterns))
 	for _, pattern := range patterns {
@@ -630,9 +626,17 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		// Keep pattern as-is
 		processedPatterns = append(processedPatterns, pattern)
 	}
+	return processedPatterns
+}
+
+// resolveFilesFromPatterns resolves files from a given set of patterns
+func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) {
+	if len(patterns) == 0 {
+		return []string{}, nil
+	}
 	
 	// Use processed patterns for the rest of the logic
-	patterns = processedPatterns
+	patterns = m.preProcessPatterns(patterns)
 	
 	// Get gitignored files for the current working directory for handling relative patterns.
 	gitIgnoredForCWD, err := m.getGitIgnoredFiles(m.workDir)
@@ -748,8 +752,25 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			gitIgnoredForAbsPath = make(map[string]bool)
 		}
 
+		// Adjust patterns to be relative to the absPath we're walking
+		adjustedPatterns := make([]string, 0, len(pathPatterns))
+		for _, pattern := range pathPatterns {
+			if strings.HasPrefix(pattern, absPath) {
+				// Remove the absPath prefix to make the pattern relative
+				relPattern := strings.TrimPrefix(pattern, absPath)
+				relPattern = strings.TrimPrefix(relPattern, "/")
+				if relPattern == "" {
+					relPattern = "**" // If the pattern was just the directory itself, match everything
+				}
+				adjustedPatterns = append(adjustedPatterns, relPattern)
+			} else {
+				// Keep the pattern as-is if it doesn't start with absPath
+				adjustedPatterns = append(adjustedPatterns, pattern)
+			}
+		}
+		
 		// Walk the path and apply its patterns and gitignore rules.
-		err = m.walkAndMatchPatterns(absPath, pathPatterns, gitIgnoredForAbsPath, uniqueFiles, false)
+		err = m.walkAndMatchPatterns(absPath, adjustedPatterns, gitIgnoredForAbsPath, uniqueFiles, false)
 		if err != nil {
 			fmt.Printf("Warning: error walking absolute path %s: %v\n", absPath, err)
 		}
@@ -832,6 +853,10 @@ func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus,
 	// Combine all patterns for classification
 	allPatterns := append([]string{}, mainPatterns...)
 	allPatterns = append(allPatterns, coldPatterns...)
+	
+	// Pre-process patterns to ensure plain directories are handled as recursive globs.
+	// This is critical for `extractRootPaths` to identify absolute directories.
+	allPatterns = m.preProcessPatterns(allPatterns)
 	
 	// Resolve hot context files
 	hotFiles := make(map[string]bool)
