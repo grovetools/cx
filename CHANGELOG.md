@@ -1,3 +1,9 @@
+## v0.2.23 (2025-09-06)
+
+### Bug Fixes
+
+* **context:** resolve absolute file paths correctly in rules
+
 ## v0.2.22 (2025-09-04)
 
 ### Bug Fixes
