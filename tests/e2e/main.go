@@ -35,6 +35,7 @@ func main() {
         ExclusionPatternsScenario(),
         WorktreeExclusionScenario(),
         AbsolutePathDirectoryPatternScenario(),
+        AbsolutePathFilePatternScenario(),
     }
 
     // Setup signal handling for graceful shutdown.

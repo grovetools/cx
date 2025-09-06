@@ -678,10 +678,16 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 				basePath = strings.TrimSuffix(basePath, "/")
 			} else {
 				// Could be a file or directory - check what it is
-				if info, err := os.Stat(basePath); err == nil && info.IsDir() {
-					// It's a directory, use as is
+				if info, err := os.Stat(basePath); err == nil {
+					if info.IsDir() {
+						// It's a directory, use as is
+					} else {
+						// It's a file, use its directory for walking
+						basePath = filepath.Dir(basePath)
+					}
 				} else {
-					// File pattern or non-existent path - use directory part
+					// Non-existent path - could be a file pattern that doesn't exist yet
+					// Use directory part for walking
 					basePath = filepath.Dir(basePath)
 				}
 			}
@@ -740,6 +746,9 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		// Adjust patterns to be relative to the absPath we're walking
 		adjustedPatterns := make([]string, 0, len(pathPatterns))
 		for _, pattern := range pathPatterns {
+			isGlob := strings.ContainsAny(pattern, "*?")
+			
+			// For patterns that start with the absPath we're walking, make them relative
 			if strings.HasPrefix(pattern, absPath) {
 				// Remove the absPath prefix to make the pattern relative
 				relPattern := strings.TrimPrefix(pattern, absPath)
@@ -748,6 +757,9 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 					relPattern = "**" // If the pattern was just the directory itself, match everything
 				}
 				adjustedPatterns = append(adjustedPatterns, relPattern)
+			} else if !isGlob && filepath.IsAbs(pattern) {
+				// For absolute file paths that don't start with absPath, keep them absolute
+				adjustedPatterns = append(adjustedPatterns, pattern)
 			} else {
 				// Keep the pattern as-is if it doesn't start with absPath
 				adjustedPatterns = append(adjustedPatterns, pattern)
@@ -1002,7 +1014,15 @@ func (m *Manager) extractRootPaths(patterns []string) []string {
 					break
 				}
 			}
-			if basePath != "" && basePath != pattern {
+			
+			// If pattern is a file path (no glob), use its directory
+			if basePath == pattern && !strings.ContainsAny(pattern, "*?[") {
+				if stat, err := os.Stat(pattern); err == nil && !stat.IsDir() {
+					basePath = filepath.Dir(pattern)
+				}
+			}
+			
+			if basePath != "" {
 				rootsMap[basePath] = true
 			}
 		} else if strings.HasPrefix(pattern, "../") {
