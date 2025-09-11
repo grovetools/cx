@@ -1,3 +1,9 @@
+## v0.2.24 (2025-09-11)
+
+### Bug Fixes
+
+* **view:** use absolute paths for external files to prevent false safety warnings
+
 ## v0.2.23 (2025-09-06)
 
 ### Bug Fixes
