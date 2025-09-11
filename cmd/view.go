@@ -278,16 +278,19 @@ func (m *viewModel) performSearch() {
 // For directories, it returns a glob pattern like "dirname/**" to include all contents
 func (m *viewModel) getRelativePath(node *context.FileNode) (string, error) {
 	manager := context.NewManager("")
+	workDir := manager.GetWorkDir()
 	
 	// Get relative path from current working directory
-	relPath, err := filepath.Rel(manager.GetWorkDir(), node.Path)
-	if err != nil {
-		return "", err
-	}
+	relPath, err := filepath.Rel(workDir, node.Path)
 	
-	// Always use relative path for safety and portability
-	// Convert to forward slashes for consistency in rules file
-	basePath := filepath.ToSlash(relPath)
+	var basePath string
+	if err == nil && !strings.HasPrefix(relPath, "..") {
+		// Path is inside the project, use relative path for portability
+		basePath = filepath.ToSlash(relPath)
+	} else {
+		// Path is outside the project, use absolute path to avoid "../" issues
+		basePath = filepath.ToSlash(node.Path)
+	}
 	
 	// For directories, append /** to include all contents recursively
 	if node.IsDir {
