@@ -7,9 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+	
+	"github.com/mattsolo1/grove-context/pkg/repo"
 )
 
 // NodeStatus represents the classification of a file in the context
@@ -415,6 +418,12 @@ func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns [
 	}
 	defer file.Close()
 
+	// Create repo manager for processing Git URLs
+	repoManager, repoErr := repo.NewManager()
+	if repoErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not create repository manager: %v\n", repoErr)
+	}
+
 	inColdSection := false
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -448,10 +457,35 @@ func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns [
 			continue
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
+			// Process Git URLs
+			processedLine := line
+			if repoManager != nil {
+				isExclude := strings.HasPrefix(line, "!")
+				cleanLine := line
+				if isExclude {
+					cleanLine = strings.TrimPrefix(line, "!")
+				}
+				
+				if isGitURL, repoURL, version := m.parseGitRule(cleanLine); isGitURL {
+					// Clone/update the repository
+					localPath, _, cloneErr := repoManager.Ensure(repoURL, version)
+					if cloneErr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: could not clone repository %s: %v\n", repoURL, cloneErr)
+						continue
+					}
+					
+					// Replace the Git URL with the local path pattern
+					processedLine = localPath + "/**"
+					if isExclude {
+						processedLine = "!" + processedLine
+					}
+				}
+			}
+			
 			if inColdSection {
-				coldPatterns = append(coldPatterns, line)
+				coldPatterns = append(coldPatterns, processedLine)
 			} else {
-				mainPatterns = append(mainPatterns, line)
+				mainPatterns = append(mainPatterns, processedLine)
 			}
 		}
 	}
@@ -575,6 +609,46 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 	// Sort for consistent output
 	sort.Strings(coldFiles)
 	return coldFiles, nil
+}
+
+// parseGitRule checks if a rule is a Git URL and extracts the URL and optional version
+func (m *Manager) parseGitRule(rule string) (isGitURL bool, repoURL, version string) {
+	// Remove exclusion prefix if present
+	if strings.HasPrefix(rule, "!") {
+		rule = strings.TrimPrefix(rule, "!")
+	}
+	
+	// Check for common Git URL patterns
+	gitURLPattern := regexp.MustCompile(`^(https?://|git@|github\.com/|gitlab\.com/|bitbucket\.org/)`)
+	if !gitURLPattern.MatchString(rule) {
+		return false, "", ""
+	}
+	
+	// Parse version if present (format: url@version)
+	parts := strings.SplitN(rule, "@", 2)
+	repoURL = parts[0]
+	
+	// Ensure proper URL format
+	if !strings.HasPrefix(repoURL, "http://") && !strings.HasPrefix(repoURL, "https://") {
+		if strings.HasPrefix(repoURL, "github.com/") {
+			repoURL = "https://" + repoURL
+		} else if strings.HasPrefix(repoURL, "gitlab.com/") {
+			repoURL = "https://" + repoURL
+		} else if strings.HasPrefix(repoURL, "bitbucket.org/") {
+			repoURL = "https://" + repoURL
+		} else if strings.HasPrefix(repoURL, "git@") {
+			// Convert SSH URL to HTTPS
+			repoURL = strings.Replace(repoURL, "git@github.com:", "https://github.com/", 1)
+			repoURL = strings.Replace(repoURL, "git@gitlab.com:", "https://gitlab.com/", 1)
+			repoURL = strings.Replace(repoURL, "git@bitbucket.org:", "https://bitbucket.org/", 1)
+		}
+	}
+	
+	if len(parts) > 1 {
+		version = parts[1]
+	}
+	
+	return true, repoURL, version
 }
 
 // preProcessPatterns transforms plain directory patterns into recursive globs.

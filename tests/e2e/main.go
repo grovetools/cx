@@ -36,6 +36,9 @@ func main() {
         WorktreeExclusionScenario(),
         AbsolutePathDirectoryPatternScenario(),
         AbsolutePathFilePatternScenario(),
+        
+        // Git Repository Scenarios
+        GitRepositoryCloneScenario(),
     }
 
     // Setup signal handling for graceful shutdown.

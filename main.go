@@ -29,6 +29,7 @@ func main() {
     rootCmd.AddCommand(cmd.NewFromGitCmd())
     rootCmd.AddCommand(cmd.NewViewCmd())
     rootCmd.AddCommand(cmd.NewVersionCmd())
+    rootCmd.AddCommand(cmd.NewRepoCmd())
     
     if err := rootCmd.Execute(); err != nil {
         os.Exit(1)
