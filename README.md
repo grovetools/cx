@@ -1,5 +1,6 @@
 # Grove Context (cx)
-<img src="https://github.com/user-attachments/assets/f0f527de-ac59-41bf-b25f-a8bc138d7f1b" height=500 />
+<img src="https://github.com/user-attachments/assets/fc7e287a-33e5-4146-9c1b-14b77c99bdba" width="60%" />
+
 
 `grove-context` (`cx`) is a, rule-based tool for dynamically managing the file-based context provided to Large Language Models (LLMs).
 
