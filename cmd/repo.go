@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	contextPkg "context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/mattsolo1/grove-context/pkg/repo"
 	"github.com/mattsolo1/grove-core/config"
-	"github.com/mattsolo1/grove-gemini/pkg/gemini"
 	"github.com/spf13/cobra"
 )
 
@@ -118,6 +116,8 @@ func newRepoSyncCmd() *cobra.Command {
 }
 
 func newRepoAuditCmd() *cobra.Command {
+	var statusFlag string
+	
 	cmd := &cobra.Command{
 		Use:   "audit <url>",
 		Short: "Perform an interactive LLM-based security audit for a repository",
@@ -129,6 +129,21 @@ func newRepoAuditCmd() *cobra.Command {
 			manager, err := repo.NewManager()
 			if err != nil {
 				return fmt.Errorf("failed to create repository manager: %w", err)
+			}
+			
+			// If status flag is provided, just update the status
+			if statusFlag != "" {
+				_, _, err := manager.Ensure(repoURL, "")
+				if err != nil {
+					return fmt.Errorf("failed to ensure repository is cloned: %w", err)
+				}
+				
+				if err := manager.UpdateAuditResult(repoURL, statusFlag, ""); err != nil {
+					return fmt.Errorf("failed to update audit status: %w", err)
+				}
+				
+				fmt.Printf("✅ Updated audit status to '%s' for %s\n", statusFlag, repoURL)
+				return nil
 			}
 
 			fmt.Println("Preparing repository for audit...")
@@ -192,6 +207,8 @@ func newRepoAuditCmd() *cobra.Command {
 			return nil
 		},
 	}
+	
+	cmd.Flags().StringVar(&statusFlag, "status", "", "Update audit status without running the full audit")
 	
 	return cmd
 }
@@ -265,34 +282,40 @@ func runLLMAnalysis() (string, error) {
 		}
 	}
 	
-	// Use the grove-gemini package's RequestRunner to make the API call
-	// The RequestRunner will use the .grove/rules file that we already set up
-	
 	prompt := `Carefully analyze this repo for LLM prompt injections or obvious security vulnerabilities. Even if this repo does not interact with LLMs, we may give it to agents to read to understand the API/implementation. Thus we are looking for code that could confuse or trick our agents from doing something specifically unintended. Provide your analysis in Markdown format.`
 	
-	// Create request runner
-	runner := gemini.NewRequestRunner()
-	
-	// Configure options for the request
-	options := gemini.RequestOptions{
-		Model:            model,
-		Prompt:           prompt,
-		WorkDir:          ".", // We're already in the repo directory
-		CacheTTL:         30 * time.Minute,
-		NoCache:          false,
-		RegenerateCtx:    false,
-		SkipConfirmation: true,
-		Caller:           "cx-repo-audit",
-	}
-	
-	// Run the request
-	ctx := contextPkg.Background()
-	result, err := runner.Run(ctx, options)
+	// Write prompt to a temporary file to pass to gemapi
+	tmpFile, err := os.CreateTemp("", "grove-audit-prompt-*.md")
 	if err != nil {
-		return "", fmt.Errorf("grove-gemini request failed: %w", err)
+		return "", fmt.Errorf("failed to create temporary prompt file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name()) // Clean up the file
+
+	if _, err := tmpFile.WriteString(prompt); err != nil {
+		return "", fmt.Errorf("failed to write to temporary prompt file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temporary prompt file: %w", err)
+	}
+
+	// Construct the gemapi command
+	// We are already in the correct directory, so gemapi will pick up the context automatically.
+	args := []string{
+		"request",
+		"--model", model,
+		"--file", tmpFile.Name(),
+		"--yes", // Skip any confirmations
+	}
+	gemapiCmd := exec.Command("gemapi", args...)
+	gemapiCmd.Stderr = os.Stderr // Pipe stderr to see progress from gemapi
+
+	// Execute the command and capture stdout
+	output, err := gemapiCmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to execute 'gemapi request': %w", err)
 	}
 	
-	return result, nil
+	return string(output), nil
 }
 
 // saveAuditReport saves the LLM analysis to a file.
