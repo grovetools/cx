@@ -32,6 +32,7 @@ type AuditInfo struct {
 	Status        string    `json:"status"`
 	AuditedAt     time.Time `json:"audited_at"`
 	AuditedCommit string    `json:"audited_commit"`
+	ReportPath    string    `json:"report_path,omitempty"`
 }
 
 type Manifest struct {
@@ -187,6 +188,29 @@ func (m *Manager) UpdateAuditStatus(repoURL, status string) error {
 	return m.saveManifest(manifest)
 }
 
+func (m *Manager) UpdateAuditResult(repoURL, status, reportPath string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	manifest, err := m.loadManifest()
+	if err != nil {
+		return fmt.Errorf("loading manifest: %w", err)
+	}
+
+	info, exists := manifest.Repositories[repoURL]
+	if !exists {
+		return fmt.Errorf("repository %s not found in manifest", repoURL)
+	}
+
+	info.Audit.Status = status
+	info.Audit.AuditedAt = time.Now()
+	info.Audit.AuditedCommit = info.ResolvedCommit
+	info.Audit.ReportPath = reportPath
+	manifest.Repositories[repoURL] = info
+
+	return m.saveManifest(manifest)
+}
+
 func (m *Manager) getLocalPath(repoURL string) string {
 	url := strings.TrimPrefix(repoURL, "https://")
 	url = strings.TrimPrefix(url, "http://")
@@ -235,6 +259,12 @@ func (m *Manager) getResolvedCommit(localPath string) (string, error) {
 		return "", fmt.Errorf("git rev-parse failed: %w", err)
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+func (m *Manager) LoadManifest() (*Manifest, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.loadManifest()
 }
 
 func (m *Manager) loadManifest() (*Manifest, error) {
