@@ -1,3 +1,15 @@
+## v0.2.25 (2025-09-12)
+
+### Chores
+
+* **deps:** bump dependencies
+* rm indirect deps
+
+### Features
+
+* **repo:** implement interactive LLM-powered security audit workflow
+* **repo:** add Git repository cloning and management functionality
+
 ## v0.2.24 (2025-09-11)
 
 ### Bug Fixes
