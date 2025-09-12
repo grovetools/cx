@@ -1,3 +1,9 @@
+## v0.2.26 (2025-09-12)
+
+### Bug Fixes
+
+* disable GitRepositoryCloneScenario, fails on ci
+
 ## v0.2.25 (2025-09-12)
 
 ### Chores
