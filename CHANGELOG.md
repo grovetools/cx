@@ -1,3 +1,9 @@
+## v0.2.27 (2025-09-12)
+
+### Bug Fixes
+
+* remove circular dependency by calling gemapi binary instead of importing library
+
 ## v0.2.26 (2025-09-12)
 
 ### Bug Fixes
