@@ -1166,8 +1166,8 @@ func (m *Manager) walkAndClassifyFiles(rootPath string, patterns []string, gitIg
 		// Note: We don't skip git-ignored files anymore, we classify them
 		// so they can optionally be shown in cx view
 		
-		// Always skip .git, .grove, and .grove-worktrees directories
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".grove" || d.Name() == ".grove-worktrees") {
+		// Always skip .git and .grove directories
+		if d.IsDir() && (d.Name() == ".git" || d.Name() == ".grove") {
 			return filepath.SkipDir
 		}
 		
@@ -1307,12 +1307,18 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 	// Pre-process patterns to identify directory exclusions and special flags
 	dirExclusions := make(map[string]bool)
 	includeBinary := false
+	hasExplicitWorktreePattern := false
 	
 	for _, pattern := range patterns {
 		// Check for special pattern to include binary files
 		if pattern == "!binary:exclude" || pattern == "binary:include" {
 			includeBinary = true
 			continue
+		}
+		
+		// Check if any pattern explicitly includes .grove-worktrees
+		if !strings.HasPrefix(pattern, "!") && strings.Contains(pattern, ".grove-worktrees") {
+			hasExplicitWorktreePattern = true
 		}
 		
 		if strings.HasPrefix(pattern, "!") {
@@ -1354,9 +1360,18 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 			return nil // Skip ignored files.
 		}
 
-		// Always prune .git, .grove, and .grove-worktrees directories from the walk.
+		// Always prune .git and .grove directories from the walk.
+		// Only prune .grove-worktrees if no pattern explicitly includes it AND we're not already inside one
 		if d.IsDir() {
-			if d.Name() == ".git" || d.Name() == ".grove" || d.Name() == ".grove-worktrees" {
+			if d.Name() == ".git" || d.Name() == ".grove" {
+				return filepath.SkipDir
+			}
+			// Skip .grove-worktrees directories UNLESS:
+			// 1. We have an explicit pattern that includes .grove-worktrees, OR
+			// 2. We're already walking inside a .grove-worktrees directory (rootPath contains it)
+			if d.Name() == ".grove-worktrees" && 
+			   !hasExplicitWorktreePattern && 
+			   !strings.Contains(rootPath, string(filepath.Separator)+".grove-worktrees"+string(filepath.Separator)) {
 				return filepath.SkipDir
 			}
 			
@@ -1465,12 +1480,31 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 		}
 
 		if isIncluded {
-			// Exclude files in .grove-worktrees directories, but only if the .grove-worktrees
-			// is a descendant of the working directory (not an ancestor)
-			relPath, err := filepath.Rel(m.workDir, path)
-			if err == nil && strings.Contains(relPath, ".grove-worktrees") {
-				// The .grove-worktrees is within our working directory, exclude it
-				return nil
+			// Special handling for .grove-worktrees: by default, we exclude files inside these directories
+			// because they often contain temporary or project-specific artifacts.
+			// This exclusion is bypassed if any inclusion rule explicitly contains ".grove-worktrees",
+			// indicating the user intentionally wants to include content from them.
+			if strings.Contains(path, string(filepath.Separator)+".grove-worktrees"+string(filepath.Separator)) {
+				isExplicitlyIncludedByRule := false
+				for _, pattern := range patterns {
+					if !strings.HasPrefix(pattern, "!") && strings.Contains(pattern, ".grove-worktrees") {
+						isExplicitlyIncludedByRule = true
+						break
+					}
+				}
+				// Also check if we're walking from a root that contains .grove-worktrees
+				if !isExplicitlyIncludedByRule && strings.Contains(rootPath, string(filepath.Separator)+".grove-worktrees"+string(filepath.Separator)) {
+					isExplicitlyIncludedByRule = true
+				}
+				if !isExplicitlyIncludedByRule {
+					// Only exclude if .grove-worktrees is a descendant of the working directory
+					relPath, err := filepath.Rel(m.workDir, path)
+					if err == nil && strings.Contains(relPath, ".grove-worktrees") {
+						// The .grove-worktrees is within our working directory, exclude it
+						return nil
+					}
+				}
+				// If explicitly included, don't exclude it
 			}
 			
 			// Determine the final path to store

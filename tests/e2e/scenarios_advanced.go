@@ -582,3 +582,59 @@ func WorktreeExclusionScenario() *harness.Scenario {
 		},
 	}
 }
+
+// ExplicitWorktreeInclusionScenario tests that an explicit rule can bypass the .grove-worktrees exclusion.
+func ExplicitWorktreeInclusionScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-explicit-worktree-inclusion",
+		Description: "Ensures an explicit rule for a .grove-worktrees path includes the files.",
+		Tags:        []string{"cx", "rules", "worktree", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup sibling project with a worktree", func(ctx *harness.Context) error {
+				// Create a directory outside the test's RootDir to simulate a real absolute path.
+				externalDir, err := os.MkdirTemp("", "grove-e2e-abs-worktree-")
+				if err != nil {
+					return fmt.Errorf("failed to create external temp dir: %w", err)
+				}
+				ctx.Set("externalDir", externalDir) // Save for later steps and cleanup
+
+				// Create a file in a worktree that we want to explicitly include
+				worktreePath := filepath.Join(externalDir, "project-meta", ".grove-worktrees", "feature-branch")
+				fs.CreateDir(worktreePath)
+				fs.WriteString(filepath.Join(worktreePath, "feature.go"), "package feature")
+
+				// Create a file that should be ignored by the rule
+				fs.WriteString(filepath.Join(worktreePath, "README.md"), "ignore this")
+				return nil
+			}),
+			harness.NewStep("Create rules to include the worktree directory", func(ctx *harness.Context) error {
+				externalDir := ctx.Get("externalDir").(string)
+				// This is an explicit rule that contains `.grove-worktrees`.
+				// It should bypass the default exclusion.
+				worktreePath := filepath.Join(externalDir, "project-meta", ".grove-worktrees", "feature-branch")
+				rules := fmt.Sprintf("%s/**/*.go", worktreePath)
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx list' and verify inclusion", func(ctx *harness.Context) error {
+				externalDir := ctx.Get("externalDir").(string)
+				defer os.RemoveAll(externalDir) // Cleanup after the test
+
+				cx, _ := FindProjectBinary()
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+				
+				// Check if the output contains the worktree file
+				if !strings.Contains(output, "feature.go") {
+					return fmt.Errorf("list output is missing the explicitly included worktree file 'feature.go'")
+				}
+				return nil
+			}),
+		},
+	}
+}

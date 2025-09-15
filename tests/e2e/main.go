@@ -35,6 +35,7 @@ func main() {
 		ExclusionPatternsScenario(),
 		WorktreeExclusionScenario(),
 		AbsolutePathDirectoryPatternScenario(),
+		ExplicitWorktreeInclusionScenario(),
 		AbsolutePathFilePatternScenario(),
 
 		// Git Repository Scenarios
