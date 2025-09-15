@@ -1630,13 +1630,24 @@ func (m *Manager) ListFiles() ([]string, error) {
 		return nil, fmt.Errorf("error resolving files from rules: %w", err)
 	}
 	
-	// Convert to absolute paths
+	// Convert to absolute paths and deduplicate based on canonical paths
+	// Use a map to track seen paths (normalized for case-insensitive filesystems)
+	seenPaths := make(map[string]string) // normalized -> original
 	var absPaths []string
+	
 	for _, file := range files {
 		absPath, err := filepath.Abs(file)
 		if err != nil {
 			absPaths = append(absPaths, file + " (error getting absolute path)")
-		} else {
+			continue
+		}
+		
+		// On case-insensitive filesystems, normalize to lowercase for comparison
+		normalizedKey := strings.ToLower(absPath)
+		
+		// Only add if we haven't seen this normalized path before
+		if _, seen := seenPaths[normalizedKey]; !seen {
+			seenPaths[normalizedKey] = absPath
 			absPaths = append(absPaths, absPath)
 		}
 	}

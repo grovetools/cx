@@ -7,6 +7,15 @@ import (
 	"strings"
 )
 
+// normalizePathKey returns a normalized version of the path for use as a map key
+// to handle case-insensitive filesystems. It doesn't change the actual path,
+// just provides a consistent key for deduplication.
+func normalizePathKey(path string) string {
+	// Clean the path and convert to lowercase for consistent map keys
+	// This prevents duplicate entries on case-insensitive filesystems
+	return strings.ToLower(filepath.Clean(path))
+}
+
 type FileNode struct {
 	Path       string
 	Name       string
@@ -53,7 +62,9 @@ func (m *Manager) AnalyzeProjectTree(prune bool, showGitIgnored bool) (*FileNode
 	}
 	
 	// Build FileNode map from the classifications
+	// Use normalized paths as keys to handle case-insensitive filesystems
 	nodes := make(map[string]*FileNode)
+	pathMapping := make(map[string]string) // normalized -> original path
 	hasExternalFiles := false
 	
 	for path, status := range fileStatuses {
@@ -61,6 +72,18 @@ func (m *Manager) AnalyzeProjectTree(prune bool, showGitIgnored bool) (*FileNode
 		if status == StatusIgnoredByGit && !showGitIgnored {
 			continue
 		}
+		
+		// Get a normalized key for deduplication
+		normalizedKey := normalizePathKey(path)
+		
+		// Skip if we've already seen this path (different case)
+		if existing, seen := pathMapping[normalizedKey]; seen {
+			// If we've seen this path with a different case, skip it
+			if existing != path {
+				continue
+			}
+		}
+		pathMapping[normalizedKey] = path
 		
 		// Check if this is an external file that is actually included (hot or cold context)
 		relPath, err := filepath.Rel(m.workDir, path)
@@ -95,17 +118,19 @@ func (m *Manager) AnalyzeProjectTree(prune bool, showGitIgnored bool) (*FileNode
 			TokenCount: tokenCount,
 			Children:   []*FileNode{},
 		}
-		nodes[path] = node
+		// Use normalized key to prevent duplicates on case-insensitive filesystems
+		nodeKey := normalizePathKey(path)
+		nodes[nodeKey] = node
 	}
 	
 	// If no external files are included, remove external directory nodes
 	if !hasExternalFiles {
 		filteredNodes := make(map[string]*FileNode)
-		for path, node := range nodes {
-			relPath, err := filepath.Rel(m.workDir, path)
+		for nodeKey, node := range nodes {
+			relPath, err := filepath.Rel(m.workDir, node.Path)
 			isExternal := err != nil || strings.HasPrefix(relPath, "..")
 			if !isExternal {
-				filteredNodes[path] = node
+				filteredNodes[nodeKey] = node
 			}
 		}
 		nodes = filteredNodes
@@ -142,30 +167,30 @@ func buildTreeWithSyntheticRoot(workDir string, nodes map[string]*FileNode) *Fil
 	}
 	
 	// First, ensure all directory nodes exist
-	for path := range nodes {
-		ensureParentNodes("", path, nodes)
+	for _, node := range nodes {
+		ensureParentNodes("", node.Path, nodes)
 	}
 	
 	// Build parent-child relationships
-	for path, node := range nodes {
-		parentPath := filepath.Dir(path)
+	for _, node := range nodes {
+		parentPath := filepath.Dir(node.Path)
+		parentKey := normalizePathKey(parentPath)
 		
-		if parent, exists := nodes[parentPath]; exists {
+		if parent, exists := nodes[parentKey]; exists {
 			parent.Children = append(parent.Children, node)
 		}
 	}
 	
 	// Mark the CWD node with (CWD) suffix to make it clear
-	if cwdNode, exists := nodes[workDir]; exists {
+	workDirKey := normalizePathKey(workDir)
+	if cwdNode, exists := nodes[workDirKey]; exists {
 		cwdNode.Name = filepath.Base(workDir) + " (CWD)"
 	}
 	
 	// Add /Users as the only child of synthetic root
-	for path, node := range nodes {
-		if path == "/Users" {
-			syntheticRoot.Children = append(syntheticRoot.Children, node)
-			break
-		}
+	usersKey := normalizePathKey("/Users")
+	if usersNode, exists := nodes[usersKey]; exists {
+		syntheticRoot.Children = append(syntheticRoot.Children, usersNode)
 	}
 	
 	// Sort children at each level
@@ -178,7 +203,8 @@ func buildTreeWithSyntheticRoot(workDir string, nodes map[string]*FileNode) *Fil
 // buildTreeWithExternals constructs a hierarchical tree that includes external directories
 func buildTreeWithExternals(rootPath string, nodes map[string]*FileNode) *FileNode {
 	// Get the root node from nodes map, or create it
-	root, exists := nodes[rootPath]
+	rootKey := normalizePathKey(rootPath)
+	root, exists := nodes[rootKey]
 	if !exists {
 		root = &FileNode{
 			Path:     rootPath,
@@ -187,23 +213,24 @@ func buildTreeWithExternals(rootPath string, nodes map[string]*FileNode) *FileNo
 			IsDir:    true,
 			Children: []*FileNode{},
 		}
-		nodes[rootPath] = root
+		nodes[rootKey] = root
 	}
 	
 	// First, ensure all directory nodes exist
-	for path := range nodes {
-		ensureParentNodes("", path, nodes)
+	for _, node := range nodes {
+		ensureParentNodes("", node.Path, nodes)
 	}
 
 	// Build parent-child relationships
-	for path, node := range nodes {
-		if path == rootPath {
+	for _, node := range nodes {
+		if node.Path == rootPath {
 			continue // Skip the root itself
 		}
 		
-		parentPath := filepath.Dir(path)
+		parentPath := filepath.Dir(node.Path)
+		parentKey := normalizePathKey(parentPath)
 		
-		if parent, exists := nodes[parentPath]; exists {
+		if parent, exists := nodes[parentKey]; exists {
 			// Node has a parent in our set, add it as a child
 			parent.Children = append(parent.Children, node)
 		}
@@ -226,14 +253,15 @@ func ensureParentNodes(rootPath string, path string, nodes map[string]*FileNode)
 	}
 
 	parentPath := filepath.Dir(path)
-	if _, exists := nodes[parentPath]; !exists {
+	parentKey := normalizePathKey(parentPath)
+	if _, exists := nodes[parentKey]; !exists {
 		// Don't create parent if we've reached the rootPath
 		if rootPath != "" && parentPath == rootPath {
 			return
 		}
 		
 		// Create the parent node
-		nodes[parentPath] = &FileNode{
+		nodes[parentKey] = &FileNode{
 			Path:     parentPath,
 			Name:     filepath.Base(parentPath),
 			Status:   StatusDirectory,
