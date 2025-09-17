@@ -1,3 +1,23 @@
+## v0.3.0 (2025-09-17)
+
+This release introduces a context repository management TUI designed to streamline context management across multiple projects and reference repositories from Github (008b68b), available by running `cx view` and pressint `Tab`. Users can add/remove everything `grove repo list` and `grove ws list`, including worktrees, from the TUI. It also displays audit status and version information for cloned repositories. 
+
+### File Changes
+
+```
+ CHANGELOG.md               |   41 ++
+ cmd/test_discovery/main.go |   78 +++
+ cmd/view.go                | 1240 +++++++++++++++++++++++++++++++++++++++++++-
+ go.mod                     |    3 +
+ go.sum                     |    6 +
+ pkg/context/manager.go     |   86 ++-
+ pkg/discovery/cloned.go    |   51 ++
+ pkg/discovery/discover.go  |   37 ++
+ pkg/discovery/repo.go      |   20 +
+ pkg/discovery/workspace.go |  164 ++++++
+ 10 files changed, 1692 insertions(+), 34 deletions(-)
+```
+
 ## v0.2.29 (2025-09-17)
 
 The `cx view` command has been significantly enhanced with a new repository management interface, accessible via the `Tab` key (166e0fb). This new view provides a comprehensive list of discovered and cloned repositories, displaying their version and color-coded audit status (5fe09bc). Users can now directly manage a repository's inclusion in the hot or cold context using hotkeys, view audit reports, and filter the repository list (166e0fb, 04abe41).
