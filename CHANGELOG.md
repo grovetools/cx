@@ -1,3 +1,14 @@
+## v0.2.29 (2025-09-17)
+
+### Chores
+
+* bump dependencies
+
+### Bug Fixes
+
+* deduplicate paths with different cases in cx view and cx list
+* allow explicit inclusion of .grove-worktrees directories in rules
+
 ## v0.2.28 (2025-09-13)
 
 ### Chores
