@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-context/pkg/discovery"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +22,21 @@ func NewViewCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m := newViewModel()
 			p := tea.NewProgram(m, tea.WithAltScreen())
-			_, err := p.Run()
-			return err
+			finalModel, err := p.Run()
+			if err != nil {
+				return err
+			}
+			
+			// Check if we need to launch audit after exit
+			if viewModel, ok := finalModel.(*viewModel); ok && viewModel.auditRepoURL != "" {
+				fmt.Printf("\nLaunching audit for %s...\n", viewModel.auditRepoURL)
+				// Execute cx repo audit command
+				auditCmd := newRepoAuditCmd()
+				auditCmd.SetArgs([]string{viewModel.auditRepoURL})
+				return auditCmd.Execute()
+			}
+			
+			return nil
 		},
 	}
 
@@ -47,6 +61,19 @@ type confirmActionMsg struct {
 	isDirectory bool
 	warning     string
 }
+
+type reposLoadedMsg struct {
+	repos *discovery.DiscoveredRepos
+	err   error
+}
+
+type viewMode int
+
+const (
+	modeTree viewMode = iota
+	modeRepoSelect
+	modeReportView
+)
 
 // viewModel is the model for the interactive tree view
 type viewModel struct {
@@ -79,6 +106,24 @@ type viewModel struct {
 	coldTokens   int
 	totalFiles   int
 	totalTokens  int
+	// Repository selection
+	mode            viewMode
+	discoveredRepos *discovery.DiscoveredRepos
+	filteredRepos   []discovery.Repo  // Filtered list of repos
+	repoCursor      int                // Current selection in repo list
+	repoScrollOffset int               // Scroll offset for repo list
+	repoFilter      string             // Filter string for repos
+	repoFiltering   bool               // Whether we're actively filtering
+	workDir         string
+	// Audit request
+	auditRepoURL    string             // URL of repository to audit after exit
+	// Report viewing
+	reportContent   string             // Content of the audit report
+	reportTitle     string             // Title/path of the report being viewed
+	reportScrollOffset int            // Scroll offset for report viewing
+	// Rules parsing
+	hotRules        []string           // Rules in hot context section
+	coldRules       []string           // Rules in cold context section
 }
 
 // nodeWithLevel stores a node with its display level
@@ -89,11 +134,14 @@ type nodeWithLevel struct {
 
 // newViewModel creates a new view model
 func newViewModel() *viewModel {
+	workDir, _ := os.Getwd()
 	return &viewModel{
 		expandedPaths:  make(map[string]bool),
 		loading:        true,
 		pruning:        false,
 		showGitIgnored: false,
+		mode:           modeTree,
+		workDir:        workDir,
 	}
 }
 
@@ -113,8 +161,17 @@ func (m *viewModel) loadTreeCmd() tea.Cmd {
 	}
 }
 
-// loadRulesContent loads the content of .grove/rules file
+// loadRulesContent loads the content of .grove/rules file and parses rules
 func (m *viewModel) loadRulesContent() {
+	m.loadAndParseRules()
+}
+
+// loadAndParseRules reads the .grove/rules file and populates hotRules and coldRules
+func (m *viewModel) loadAndParseRules() {
+	// Clear existing rules
+	m.hotRules = []string{}
+	m.coldRules = []string{}
+	
 	rulesPath := filepath.Join(".grove", "rules")
 	content, err := os.ReadFile(rulesPath)
 	if err != nil {
@@ -123,10 +180,38 @@ func (m *viewModel) loadRulesContent() {
 		} else {
 			m.rulesContent = fmt.Sprintf("# Error reading rules file:\n# %v", err)
 		}
-	} else {
-		m.rulesContent = string(content)
-		if m.rulesContent == "" {
-			m.rulesContent = "# Empty rules file"
+		return
+	}
+	
+	m.rulesContent = string(content)
+	if m.rulesContent == "" {
+		m.rulesContent = "# Empty rules file"
+		return
+	}
+	
+	// Parse the rules
+	lines := strings.Split(m.rulesContent, "\n")
+	inColdSection := false
+	
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		
+		// Check for separator
+		if trimmed == "---" {
+			inColdSection = true
+			continue
+		}
+		
+		// Skip empty lines and comments
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "@") {
+			continue
+		}
+		
+		// Add rule to appropriate section
+		if inColdSection {
+			m.coldRules = append(m.coldRules, trimmed)
+		} else {
+			m.hotRules = append(m.hotRules, trimmed)
 		}
 	}
 }
@@ -347,6 +432,557 @@ func (m *viewModel) handleRuleAction(relPath string, action string, isDir bool) 
 	return m.toggleRuleCmd(relPath, action, isDir)
 }
 
+// discoverReposCmd returns a command to discover available repositories
+func (m *viewModel) discoverReposCmd() tea.Cmd {
+	return func() tea.Msg {
+		repos, err := discovery.DiscoverAllRepos()
+		return reposLoadedMsg{repos: repos, err: err}
+	}
+}
+
+// filterRepos filters the repository list based on the current filter string
+func (m *viewModel) filterRepos() {
+	if m.repoFilter == "" {
+		// No filter, show all
+		m.filteredRepos = []discovery.Repo{}
+		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.WorkspaceRepos...)
+		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.ClonedRepos...)
+	} else {
+		// Apply filter
+		m.filteredRepos = []discovery.Repo{}
+		filter := strings.ToLower(m.repoFilter)
+		
+		for _, repo := range m.discoveredRepos.WorkspaceRepos {
+			if strings.Contains(strings.ToLower(repo.Name), filter) ||
+			   strings.Contains(strings.ToLower(repo.Path), filter) ||
+			   strings.Contains(strings.ToLower(repo.Branch), filter) {
+				m.filteredRepos = append(m.filteredRepos, repo)
+			}
+		}
+		
+		for _, repo := range m.discoveredRepos.ClonedRepos {
+			if strings.Contains(strings.ToLower(repo.Name), filter) ||
+			   strings.Contains(strings.ToLower(repo.Path), filter) {
+				m.filteredRepos = append(m.filteredRepos, repo)
+			}
+		}
+	}
+	
+	// Reset cursor if it's out of bounds
+	if m.repoCursor >= len(m.filteredRepos) {
+		m.repoCursor = len(m.filteredRepos) - 1
+		if m.repoCursor < 0 {
+			m.repoCursor = 0
+		}
+	}
+	m.ensureRepoCursorVisible()
+}
+
+// ensureRepoCursorVisible ensures the repo cursor is visible
+func (m *viewModel) ensureRepoCursorVisible() {
+	viewportHeight := m.height - 8 // Leave room for header and help
+	if viewportHeight < 5 {
+		viewportHeight = 5
+	}
+	
+	if m.repoCursor < m.repoScrollOffset {
+		m.repoScrollOffset = m.repoCursor
+	} else if m.repoCursor >= m.repoScrollOffset + viewportHeight {
+		m.repoScrollOffset = m.repoCursor - viewportHeight + 1
+	}
+	
+	if m.repoScrollOffset < 0 {
+		m.repoScrollOffset = 0
+	}
+}
+
+// getPathForRule determines whether to use relative or absolute path for a repository
+func (m *viewModel) getPathForRule(repoPath string) string {
+	// Try to get relative path
+	relPath, err := filepath.Rel(m.workDir, repoPath)
+	if err != nil {
+		// If we can't get relative path, use absolute
+		return repoPath
+	}
+	
+	// Count parent directory traversals
+	traversalCount := strings.Count(relPath, "../")
+	if traversalCount > 2 {
+		// Too many traversals, use absolute path
+		return repoPath
+	}
+	
+	// Safe to use relative path
+	return relPath
+}
+
+// getRepoStatus checks if a repository path matches any rule in hot or cold context
+func (m *viewModel) getRepoStatus(repo discovery.Repo) string {
+	// Get the path we'll check against rules
+	repoPath := m.getPathForRule(repo.Path)
+	
+	// Check hot rules
+	for _, rule := range m.hotRules {
+		// Clean the rule
+		cleanRule := strings.TrimSpace(rule)
+		
+		// Skip exclusion rules
+		if strings.HasPrefix(cleanRule, "!") {
+			continue
+		}
+		
+		// Check if this rule matches the repository path
+		if m.ruleMatchesPath(cleanRule, repoPath) {
+			return "hot"
+		}
+	}
+	
+	// Check cold rules
+	for _, rule := range m.coldRules {
+		// Clean the rule
+		cleanRule := strings.TrimSpace(rule)
+		
+		// Skip exclusion rules
+		if strings.HasPrefix(cleanRule, "!") {
+			continue
+		}
+		
+		// Check if this rule matches the repository path
+		if m.ruleMatchesPath(cleanRule, repoPath) {
+			return "cold"
+		}
+	}
+	
+	return "none"
+}
+
+// isRepoExcluded checks if a repository is explicitly excluded
+func (m *viewModel) isRepoExcluded(repo discovery.Repo) bool {
+	repoPath := m.getPathForRule(repo.Path)
+	
+	// Check all rules for exclusion patterns
+	allRules := append(m.hotRules, m.coldRules...)
+	for _, rule := range allRules {
+		if strings.HasPrefix(rule, "!") {
+			excludePattern := strings.TrimPrefix(rule, "!")
+			if m.ruleMatchesPath(excludePattern, repoPath) {
+				return true
+			}
+		}
+	}
+	
+	return false
+}
+
+// ruleMatchesPath checks if a rule pattern matches a repository path
+func (m *viewModel) ruleMatchesPath(rule, path string) bool {
+	// Normalize paths for comparison
+	rule = strings.TrimSpace(rule)
+	path = strings.TrimSpace(path)
+	
+	// Remove trailing slashes for consistent comparison
+	rule = strings.TrimSuffix(rule, "/")
+	path = strings.TrimSuffix(path, "/")
+	
+	// Direct match
+	if rule == path {
+		return true
+	}
+	
+	// Check if rule with /** matches
+	if strings.HasSuffix(rule, "/**") {
+		baseRule := strings.TrimSuffix(rule, "/**")
+		if baseRule == path {
+			return true
+		}
+	}
+	
+	// Check if path matches a directory rule
+	if rule+"/**" == path+"/**" {
+		return true
+	}
+	
+	// Check with ./ prefix variations
+	if "./"+rule == path || rule == "./"+path {
+		return true
+	}
+	
+	return false
+}
+
+// getAuditStatusStyle returns the appropriate style for an audit status
+func (m *viewModel) getAuditStatusStyle(status string) lipgloss.Style {
+	switch status {
+	case "passed", "audited":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("34")) // Green
+	case "failed":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red
+	case "not_audited":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("243")) // Gray
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // Yellow/Orange
+	}
+}
+
+// renderRepoSelect renders the repository selection view in compact tabular format
+func (m *viewModel) renderRepoSelect() string {
+	// Show help popup if active
+	if m.showHelp {
+		return m.renderRepoHelp()
+	}
+	
+	// Header
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("12")).
+		MarginBottom(1)
+	header := headerStyle.Render("Select Repository")
+	
+	// Filter display
+	if m.repoFilter != "" {
+		filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+		header += filterStyle.Render(fmt.Sprintf(" (filter: %s)", m.repoFilter))
+	}
+	
+	// Calculate dimensions (matching tree view layout exactly)
+	viewportHeight := m.height - 6 // Account for header, footer, and margins
+	rulesWidth := int(float64(m.width) * 0.4)      // Right panel is 40% of width (was 33%)
+	repoListWidth := m.width - rulesWidth - 2 // Left panel gets the rest
+	
+	// Split the right panel height for rules and stats (make them smaller)
+	rulesHeight := (viewportHeight * 2 / 3) - 2  // Reduce by 2 for padding
+	statsHeight := viewportHeight - rulesHeight - 1 // Account for gap between panels
+	
+	// Build the repository list (left panel)
+	var b strings.Builder
+	
+	// Styles for repo list
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("170")).
+		Bold(true)
+	normalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+	pathStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241"))
+	worktreeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243"))
+	clonedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("214"))
+	
+	// Calculate visible range for repo list (use a smaller height for the actual list)
+	listHeight := viewportHeight - 2 // Leave some space
+	visibleEnd := m.repoScrollOffset + listHeight
+	if visibleEnd > len(m.filteredRepos) {
+		visibleEnd = len(m.filteredRepos)
+	}
+	
+	// Find max name width for alignment
+	maxNameWidth := 20
+	for _, repo := range m.filteredRepos {
+		nameLen := len(repo.Name)
+		if repo.IsWorktree {
+			nameLen += 3 // Account for "└─ " prefix
+		}
+		if nameLen > maxNameWidth && nameLen < 40 {
+			maxNameWidth = nameLen
+		}
+	}
+	
+	currentIsWorkspace := false
+	
+	for i := m.repoScrollOffset; i < visibleEnd; i++ {
+		repo := m.filteredRepos[i]
+		
+		// Check if we're transitioning from workspace to cloned repos
+		isWorkspace := false
+		for _, wsRepo := range m.discoveredRepos.WorkspaceRepos {
+			if wsRepo.Path == repo.Path {
+				isWorkspace = true
+				break
+			}
+		}
+		
+		// Add section separator BEFORE the line when transitioning
+		if i > m.repoScrollOffset && currentIsWorkspace && !isWorkspace {
+			// Add separator as a separate line with no cursor indicator
+			separatorLine := "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("238")).
+				Render("─────────────────────────────────────────────────")
+			b.WriteString(separatorLine + "\n")
+			// Add header for cloned repos section
+			headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Bold(true)
+			b.WriteString("  " + headerStyle.Render("URL                                      VERSION  COMMIT   STATUS       REPORT") + "\n")
+		}
+		currentIsWorkspace = isWorkspace
+		
+		// Build the line
+		var line string
+		
+		// Status indicator with colors matching main cx view
+		status := m.getRepoStatus(repo)
+		isExcluded := m.isRepoExcluded(repo)
+		
+		if isExcluded {
+			// Red exclude symbol
+			excludeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+			line += excludeStyle.Render("🚫") + " "
+		} else {
+			switch status {
+			case "hot":
+				// Green checkmark for hot context
+				hotStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+				line += hotStyle.Render("✓") + " "
+			case "cold":
+				// Light blue snowflake for cold context
+				coldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+				line += coldStyle.Render("❄️") + " "
+			default:
+				line += "  " // Empty space for none
+			}
+		}
+		
+		// Cursor indicator
+		if i == m.repoCursor {
+			line += "▶ "
+		} else {
+			line += "  "
+		}
+		
+		if isWorkspace {
+			// Workspace repos - render as before
+			name := repo.Name
+			if repo.IsWorktree {
+				name = "└─ " + name
+			}
+			
+			var nameStyled string
+			if i == m.repoCursor {
+				nameStyled = selectedStyle.Render(fmt.Sprintf("%-*s", maxNameWidth, name))
+			} else if repo.IsWorktree {
+				nameStyled = worktreeStyle.Render(fmt.Sprintf("%-*s", maxNameWidth, name))
+			} else {
+				nameStyled = normalStyle.Render(fmt.Sprintf("%-*s", maxNameWidth, name))
+			}
+			line += nameStyled + "  "
+			
+			// Path (truncated if needed)
+			path := repo.Path
+			if repo.IsWorktree && repo.ParentPath != "" {
+				// Show relative path for worktrees
+				if rel, err := filepath.Rel(repo.ParentPath, repo.Path); err == nil {
+					path = "./" + rel
+				}
+			}
+			
+			// Truncate path if it's too long
+			maxPathWidth := m.width - maxNameWidth - 10
+			if maxPathWidth < 20 {
+				maxPathWidth = 20
+			}
+			if len(path) > maxPathWidth {
+				path = "..." + path[len(path)-maxPathWidth+3:]
+			}
+			
+			line += pathStyle.Render(path)
+		} else {
+			// Cloned repos - render in tabular format matching cx repo list
+			url := repo.Name
+			if len(url) > 40 {
+				url = url[:37] + "..."
+			}
+			
+			var urlStyled string
+			if i == m.repoCursor {
+				urlStyled = selectedStyle.Render(fmt.Sprintf("%-40s", url))
+			} else {
+				urlStyled = clonedStyle.Render(fmt.Sprintf("%-40s", url))
+			}
+			line += urlStyled + "  "
+			
+			// Version column
+			version := repo.Version
+			if version == "" {
+				version = "default"
+			}
+			if len(version) > 7 {
+				version = version[:7]
+			}
+			if i == m.repoCursor {
+				line += selectedStyle.Render(fmt.Sprintf("%-7s", version)) + "  "
+			} else {
+				line += normalStyle.Render(fmt.Sprintf("%-7s", version)) + "  "
+			}
+			
+			// Commit column
+			commit := repo.Commit
+			if commit == "" {
+				commit = "-"
+			}
+			if i == m.repoCursor {
+				line += selectedStyle.Render(fmt.Sprintf("%-7s", commit)) + "  "
+			} else {
+				line += normalStyle.Render(fmt.Sprintf("%-7s", commit)) + "  "
+			}
+			
+			// Status column
+			status := repo.AuditStatus
+			if status == "" {
+				status = "not_audited"
+			}
+			statusStyle := m.getAuditStatusStyle(status)
+			if i == m.repoCursor {
+				// When selected, use selected style
+				statusStyled := selectedStyle.Render(fmt.Sprintf("%-11s", status))
+				line += statusStyled + "  "
+			} else {
+				line += statusStyle.Render(fmt.Sprintf("%-11s", status)) + "  "
+			}
+			
+			// Report column
+			reportIndicator := ""
+			if repo.ReportPath != "" {
+				reportIndicator = "✓"
+			}
+			if i == m.repoCursor {
+				line += selectedStyle.Render(fmt.Sprintf("%-6s", reportIndicator))
+			} else if reportIndicator != "" {
+				line += lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Render(reportIndicator)
+			} else {
+				line += fmt.Sprintf("%-6s", reportIndicator)
+			}
+		}
+		
+		b.WriteString(line + "\n")
+	}
+	
+	// Show scroll indicator if needed
+	if len(m.filteredRepos) > listHeight {
+		scrollInfo := fmt.Sprintf("\n[%d-%d of %d]", 
+			m.repoScrollOffset+1, 
+			visibleEnd, 
+			len(m.filteredRepos))
+		b.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Render(scrollInfo))
+	}
+	
+	// Create the left panel (repository list)
+	repoPanel := lipgloss.NewStyle().
+		Width(repoListWidth).
+		Height(viewportHeight - 1). // Reduce height slightly
+		Padding(0, 1).
+		Render(b.String())
+	
+	// Create the right panel with rules and stats (exactly like tree view)
+	// Rules panel (top part of right panel)
+	rulesStyle := lipgloss.NewStyle().
+		Width(rulesWidth).
+		Height(rulesHeight).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("241")).
+		Padding(0, 1)
+	
+	rulesPanel := rulesStyle.Render(m.renderRules())
+	
+	// Stats panel (bottom part of right panel)
+	statsStyle := lipgloss.NewStyle().
+		Width(rulesWidth).
+		Height(statsHeight).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("241")).
+		Padding(0, 1)
+	
+	statsPanel := statsStyle.Render(m.renderStats())
+	
+	// Combine rules and stats vertically for right panel
+	rightPanel := lipgloss.JoinVertical(lipgloss.Left, rulesPanel, statsPanel)
+	
+	// Combine left and right panels horizontally
+	mainContent := lipgloss.JoinHorizontal(lipgloss.Top, repoPanel, rightPanel)
+	
+	// Footer with help hint or status message
+	var footer string
+	if m.statusMessage != "" {
+		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+		footer = statusStyle.Render(m.statusMessage)
+	} else {
+		footer = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Render("Press ? for help • Tab for tree view")
+	}
+	
+	// Combine all parts
+	parts := []string{
+		header,
+		mainContent,
+		footer,
+	}
+	
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderReportView renders the audit report view
+func (m *viewModel) renderReportView() string {
+	var b strings.Builder
+	
+	// Header
+	headerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("12")).
+		Bold(true)
+	b.WriteString(headerStyle.Render(m.reportTitle))
+	b.WriteString("\n")
+	
+	// Separator
+	b.WriteString(strings.Repeat("─", m.width))
+	b.WriteString("\n")
+	
+	// Calculate viewport
+	viewportHeight := m.height - 5 // Leave room for header and help
+	if viewportHeight < 5 {
+		viewportHeight = 5
+	}
+	
+	// Split content into lines
+	lines := strings.Split(m.reportContent, "\n")
+	
+	// Display lines within viewport
+	end := m.reportScrollOffset + viewportHeight
+	if end > len(lines) {
+		end = len(lines)
+	}
+	
+	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	for i := m.reportScrollOffset; i < end; i++ {
+		b.WriteString(contentStyle.Render(lines[i]))
+		b.WriteString("\n")
+	}
+	
+	// Fill remaining space if needed
+	displayedLines := end - m.reportScrollOffset
+	for i := displayedLines; i < viewportHeight; i++ {
+		b.WriteString("\n")
+	}
+	
+	// Show scroll indicator if needed
+	if len(lines) > viewportHeight {
+		scrollInfo := fmt.Sprintf("[Lines %d-%d of %d]", 
+			m.reportScrollOffset+1, 
+			end, 
+			len(lines))
+		b.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Render(scrollInfo))
+		b.WriteString("\n")
+	}
+	
+	// Help text
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	help := "↑/↓ scroll • C-d/u half page • q/esc back • g/G top/bottom"
+	b.WriteString(helpStyle.Render(help))
+	
+	return b.String()
+}
+
+
 // Update handles messages
 func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -373,8 +1009,362 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		
-		// Handle search mode keys next
-		if m.isSearching {
+		// Handle different modes
+		switch m.mode {
+		case modeRepoSelect:
+			// Handle help popup first
+			if m.showHelp {
+				switch msg.String() {
+				case "?", "q", "esc", "ctrl+c":
+					m.showHelp = false
+					return m, nil
+				default:
+					return m, nil
+				}
+			}
+			
+			switch keypress := msg.String(); keypress {
+			case "?":
+				m.showHelp = true
+				return m, nil
+			case "R":
+				// View audit report - only works for audited repos
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+					repo := m.filteredRepos[m.repoCursor]
+					if repo.ReportPath != "" {
+						// Check if report file exists and load it
+						content, err := os.ReadFile(repo.ReportPath)
+						if err == nil {
+							m.mode = modeReportView
+							m.reportContent = string(content)
+							m.reportTitle = fmt.Sprintf("Audit Report: %s", repo.Name)
+							m.reportScrollOffset = 0
+							return m, nil
+						} else {
+							m.statusMessage = "Could not read audit report file"
+						}
+					} else if repo.AuditStatus == "not_audited" || repo.AuditStatus == "" {
+						m.statusMessage = "No audit report available - repository has not been audited"
+					} else {
+						m.statusMessage = "Audit report path not available"
+					}
+				}
+			case "r":
+				// Refresh repository list, rules, and stats
+				m.statusMessage = "Refreshing..."
+				// Reload rules
+				m.loadAndParseRules()
+				// Clear and rediscover repos
+				m.discoveredRepos = nil
+				m.filteredRepos = nil
+				m.repoFilter = ""
+				m.repoFiltering = false
+				// Trigger tree reload in background to update stats
+				return m, tea.Batch(
+					m.discoverReposCmd(),
+					m.loadTreeCmd(),
+				)
+			case "A":
+				// Audit repository - only works for cloned repos
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+					repo := m.filteredRepos[m.repoCursor]
+					// Check if it's a cloned repo (not a workspace repo)
+					isCloned := false
+					for _, clonedRepo := range m.discoveredRepos.ClonedRepos {
+						if clonedRepo.Path == repo.Path {
+							isCloned = true
+							break
+						}
+					}
+					if isCloned {
+						// Set the audit URL and quit to trigger audit
+						m.auditRepoURL = repo.Name // repo.Name contains the URL for cloned repos
+						return m, tea.Quit
+					} else {
+						m.statusMessage = "Audit is only available for cloned repositories"
+					}
+				}
+			case "h":
+				// Toggle hot context
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+					repo := m.filteredRepos[m.repoCursor]
+					path := m.getPathForRule(repo.Path) + "/**" // Add /** for directory inclusion
+					manager := context.NewManager("")
+					
+					// Check current status
+					status := m.getRepoStatus(repo)
+					
+					if status == "hot" {
+						// Remove from hot context
+						m.statusMessage = fmt.Sprintf("Removing %s from hot context...", repo.Name)
+						if err := manager.RemoveRuleForPath(path); err != nil {
+							m.statusMessage = fmt.Sprintf("Error: %v", err)
+							return m, nil
+						}
+					} else {
+						// Add to hot context
+						m.statusMessage = fmt.Sprintf("Adding %s to hot context...", repo.Name)
+						if err := manager.AppendRule(path, "hot"); err != nil {
+							m.statusMessage = fmt.Sprintf("Error: %v", err)
+							return m, nil
+						}
+					}
+					
+					// Reload rules to reflect changes
+					m.loadAndParseRules()
+					// Trigger background tree reload to update stats
+					return m, m.loadTreeCmd()
+				}
+			case "c":
+				// Toggle cold context
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+					repo := m.filteredRepos[m.repoCursor]
+					path := m.getPathForRule(repo.Path) + "/**" // Add /** for directory inclusion
+					manager := context.NewManager("")
+					
+					// Check current status
+					status := m.getRepoStatus(repo)
+					
+					if status == "cold" {
+						// Remove from cold context
+						m.statusMessage = fmt.Sprintf("Removing %s from cold context...", repo.Name)
+						if err := manager.RemoveRuleForPath(path); err != nil {
+							m.statusMessage = fmt.Sprintf("Error: %v", err)
+							return m, nil
+						}
+					} else {
+						// Add to cold context
+						m.statusMessage = fmt.Sprintf("Adding %s to cold context...", repo.Name)
+						if err := manager.AppendRule(path, "cold"); err != nil {
+							m.statusMessage = fmt.Sprintf("Error: %v", err)
+							return m, nil
+						}
+					}
+					
+					// Reload rules to reflect changes
+					m.loadAndParseRules()
+					// Trigger background tree reload to update stats
+					return m, m.loadTreeCmd()
+				}
+			case "x":
+				// Toggle exclude - add exclusion rule or remove it
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+					repo := m.filteredRepos[m.repoCursor]
+					path := m.getPathForRule(repo.Path) + "/**"
+					manager := context.NewManager("")
+					
+					// Check if already excluded
+					isExcluded := false
+					for _, rule := range m.hotRules {
+						if rule == "!"+path || rule == "!"+m.getPathForRule(repo.Path) {
+							isExcluded = true
+							break
+						}
+					}
+					if !isExcluded {
+						for _, rule := range m.coldRules {
+							if rule == "!"+path || rule == "!"+m.getPathForRule(repo.Path) {
+								isExcluded = true
+								break
+							}
+						}
+					}
+					
+					if isExcluded {
+						// Remove exclusion
+						m.statusMessage = fmt.Sprintf("Removing exclusion for %s...", repo.Name)
+						if err := manager.RemoveRuleForPath(path); err != nil {
+							m.statusMessage = fmt.Sprintf("Error: %v", err)
+							return m, nil
+						}
+					} else {
+						// Add exclusion
+						m.statusMessage = fmt.Sprintf("Excluding %s...", repo.Name)
+						if err := manager.AppendRule(path, "exclude"); err != nil {
+							m.statusMessage = fmt.Sprintf("Error: %v", err)
+							return m, nil
+						}
+					}
+					
+					// Reload rules to reflect changes
+					m.loadAndParseRules()
+					// Trigger background tree reload to update stats
+					return m, m.loadTreeCmd()
+				}
+			case "tab":
+				// Toggle back to tree view
+				m.mode = modeTree
+				m.statusMessage = ""
+				m.repoFilter = ""
+				m.repoFiltering = false
+				// Reload rules and refresh tree in case they changed
+				m.loadAndParseRules()
+				// Trigger tree refresh to show updated context
+				m.loading = true
+				return m, m.loadTreeCmd()
+			case "esc":
+				// Handled in escape case above
+			case "q":
+				// Quit the entire cx view tool
+				return m, tea.Quit
+			case "up", "k":
+				if m.repoCursor > 0 {
+					m.repoCursor--
+					m.ensureRepoCursorVisible()
+				}
+			case "down", "j":
+				if m.repoCursor < len(m.filteredRepos)-1 {
+					m.repoCursor++
+					m.ensureRepoCursorVisible()
+				}
+			case "pgup":
+				m.repoCursor -= 10
+				if m.repoCursor < 0 {
+					m.repoCursor = 0
+				}
+				m.ensureRepoCursorVisible()
+			case "pgdown":
+				m.repoCursor += 10
+				if m.repoCursor >= len(m.filteredRepos) {
+					m.repoCursor = len(m.filteredRepos) - 1
+				}
+				m.ensureRepoCursorVisible()
+			case "ctrl+u":
+				// Scroll up half page
+				viewportHeight := m.height - 8 // Match the viewport calculation
+				if viewportHeight < 5 {
+					viewportHeight = 5
+				}
+				m.repoCursor -= viewportHeight / 2
+				if m.repoCursor < 0 {
+					m.repoCursor = 0
+				}
+				m.ensureRepoCursorVisible()
+			case "ctrl+d":
+				// Scroll down half page
+				viewportHeight := m.height - 8 // Match the viewport calculation
+				if viewportHeight < 5 {
+					viewportHeight = 5
+				}
+				m.repoCursor += viewportHeight / 2
+				if m.repoCursor >= len(m.filteredRepos) {
+					m.repoCursor = len(m.filteredRepos) - 1
+				}
+				m.ensureRepoCursorVisible()
+			case "home", "g":
+				m.repoCursor = 0
+				m.repoScrollOffset = 0
+			case "end", "G":
+				m.repoCursor = len(m.filteredRepos) - 1
+				m.ensureRepoCursorVisible()
+			case "/":
+				// Start filtering
+				m.repoFiltering = true
+				m.repoFilter = ""
+				m.statusMessage = "Type to filter repositories (ESC to clear)..."
+			case "backspace":
+				if m.repoFiltering && len(m.repoFilter) > 0 {
+					m.repoFilter = m.repoFilter[:len(m.repoFilter)-1]
+					m.filterRepos()
+					if m.repoFilter == "" {
+						m.statusMessage = "Type to filter repositories (ESC to clear)..."
+					}
+				}
+			case "escape":
+				if m.repoFiltering {
+					// Clear filter and exit filtering mode
+					m.repoFiltering = false
+					m.repoFilter = ""
+					m.filterRepos()
+					m.statusMessage = ""
+				} else {
+					// Normal escape behavior - return to tree view
+					m.mode = modeTree
+					m.statusMessage = "Repository selection cancelled."
+					m.repoFilter = ""
+					m.repoFiltering = false
+					return m, nil
+				}
+			default:
+				// Only add character to filter if we're in filtering mode
+				if m.repoFiltering && len(keypress) == 1 {
+					m.repoFilter += keypress
+					m.filterRepos()
+					m.statusMessage = fmt.Sprintf("Filter: %s", m.repoFilter)
+				}
+			}
+			return m, nil
+		
+		case modeReportView:
+			// Handle report viewing mode
+			switch keypress := msg.String(); keypress {
+			case "q", "esc":
+				// Return to repository selection
+				m.mode = modeRepoSelect
+				m.reportContent = ""
+				m.reportTitle = ""
+				m.reportScrollOffset = 0
+				return m, nil
+			case "up", "k":
+				if m.reportScrollOffset > 0 {
+					m.reportScrollOffset--
+				}
+			case "down", "j":
+				lines := strings.Split(m.reportContent, "\n")
+				maxScroll := len(lines) - (m.height - 5)
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.reportScrollOffset < maxScroll {
+					m.reportScrollOffset++
+				}
+			case "ctrl+u":
+				// Scroll up half page
+				m.reportScrollOffset -= (m.height - 5) / 2
+				if m.reportScrollOffset < 0 {
+					m.reportScrollOffset = 0
+				}
+			case "ctrl+d":
+				// Scroll down half page
+				lines := strings.Split(m.reportContent, "\n")
+				m.reportScrollOffset += (m.height - 5) / 2
+				maxScroll := len(lines) - (m.height - 5)
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.reportScrollOffset > maxScroll {
+					m.reportScrollOffset = maxScroll
+				}
+			case "pgup":
+				m.reportScrollOffset -= m.height - 5
+				if m.reportScrollOffset < 0 {
+					m.reportScrollOffset = 0
+				}
+			case "pgdown":
+				lines := strings.Split(m.reportContent, "\n")
+				m.reportScrollOffset += m.height - 5
+				maxScroll := len(lines) - (m.height - 5)
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.reportScrollOffset > maxScroll {
+					m.reportScrollOffset = maxScroll
+				}
+			case "home", "g":
+				m.reportScrollOffset = 0
+			case "end", "G":
+				lines := strings.Split(m.reportContent, "\n")
+				maxScroll := len(lines) - (m.height - 5)
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				m.reportScrollOffset = maxScroll
+			}
+			return m, nil
+		
+		case modeTree:
+			// Handle search mode keys next
+			if m.isSearching {
 			switch msg.String() {
 			case "enter":
 				// Finish search and find results
@@ -520,15 +1510,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
 				return m, m.handleRuleAction(relPath, "cold", node.IsDir)
 			}
-		case "a":
-			if m.lastKey == "z" {
-				// za - toggle fold at cursor (vim-style)
-				m.toggleExpanded()
-				m.lastKey = ""
-			} else {
-				// Regular 'a' - Toggle hot context
-				if m.cursor >= len(m.visibleNodes) {
-					break
+		case "h":
+			// Toggle hot context
+			if m.cursor >= len(m.visibleNodes) {
+				break
 			}
 			node := m.visibleNodes[m.cursor].node
 			relPath, err := m.getRelativePath(node)
@@ -536,7 +1521,6 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
 			}
-			// Create appropriate status message for directories vs files
 			var itemType string
 			if node.IsDir {
 				itemType = "directory tree"
@@ -545,7 +1529,34 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
 			return m, m.handleRuleAction(relPath, "hot", node.IsDir)
+		case "a":
+			if m.lastKey == "z" {
+				// za - toggle fold at cursor (vim-style)
+				m.toggleExpanded()
+				m.lastKey = ""
+			} else {
+				// Clear lastKey if 'a' pressed without 'z'
+				m.lastKey = ""
 			}
+		case "tab":
+			// Tab - Toggle to repository selection view
+			m.mode = modeRepoSelect
+			// Only discover repos if we haven't already
+			if m.discoveredRepos == nil {
+				m.statusMessage = "Discovering repositories..."
+				return m, m.discoverReposCmd()
+			} else {
+				// Repos already discovered, just switch view
+				m.statusMessage = ""
+				// Reload rules to ensure status indicators are current
+				m.loadAndParseRules()
+				return m, nil
+			}
+		case "A":
+			// 'A' - Add repository (same as Tab but always rediscovers)
+			m.mode = modeRepoSelect
+			m.statusMessage = "Discovering repositories..."
+			return m, m.discoverReposCmd()
 		case "x":
 			// Toggle exclude
 			if m.cursor >= len(m.visibleNodes) {
@@ -602,7 +1613,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			// Refresh both tree and rules
 			m.statusMessage = "Refreshing..."
-			m.loadRulesContent()
+			m.loadAndParseRules()
 			m.loading = true
 			return m, m.loadTreeCmd()
 		case "/":
@@ -637,6 +1648,35 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.lastKey = ""
 			}
 		}
+	}
+
+	case reposLoadedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.mode = modeTree
+			return m, nil
+		}
+		m.discoveredRepos = msg.repos
+		m.statusMessage = ""
+		
+		// Build combined list of all repos
+		m.filteredRepos = []discovery.Repo{}
+		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.WorkspaceRepos...)
+		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.ClonedRepos...)
+		
+		if len(m.filteredRepos) == 0 {
+			m.statusMessage = "No repositories found. Returning to tree view."
+			m.mode = modeTree
+			return m, nil
+		}
+		
+		// Reset cursor and scroll
+		m.repoCursor = 0
+		m.repoScrollOffset = 0
+		m.repoFilter = ""
+		m.repoFiltering = false
+		
+		return m, nil
 
 	case ruleChangeResultMsg:
 		if msg.err != nil {
@@ -669,7 +1709,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Auto-expand paths to content
 		m.autoExpandToContent(m.tree)
 		m.updateVisibleNodes()
-		// Load rules content
+		// Load rules content (this also parses them)
 		m.loadRulesContent()
 		// Calculate statistics
 		m.calculateStats()
@@ -847,7 +1887,16 @@ func (m *viewModel) View() string {
 			Render(fmt.Sprintf("Error: %v", m.err))
 	}
 
-	// Show help popup if active
+	// Show repository selection if active (check this first)
+	if m.mode == modeRepoSelect {
+		if m.discoveredRepos == nil {
+			return "Discovering repositories..."
+		}
+		// renderRepoSelect handles its own help popup
+		return m.renderRepoSelect()
+	}
+
+	// Show help popup if active (for tree view)
 	if m.showHelp {
 		helpView := m.renderHelp()
 		return lipgloss.NewStyle().
@@ -855,6 +1904,11 @@ func (m *viewModel) View() string {
 			Height(m.height).
 			Align(lipgloss.Center, lipgloss.Center).
 			Render(helpView)
+	}
+	
+	// Show report view if active
+	if m.mode == modeReportView {
+		return m.renderReportView()
 	}
 
 	// Header
@@ -983,7 +2037,7 @@ func (m *viewModel) View() string {
 	} else {
 		footer = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
-			Render("Press ? for help")
+			Render("Press ? for help • Tab for repository view")
 	}
 
 	// Combine all parts
@@ -1142,6 +2196,129 @@ func (m *viewModel) getStyle(node *context.FileNode) lipgloss.Style {
 	return style
 }
 
+// renderRepoHelp renders the help popup for repository selection mode
+// equalizeColumnHeights ensures all column arrays have the same length by padding with empty strings
+func equalizeColumnHeights(cols ...[]string) [][]string {
+	// Find the maximum height
+	maxHeight := 0
+	for _, col := range cols {
+		if len(col) > maxHeight {
+			maxHeight = len(col)
+		}
+	}
+	
+	// Pad all columns to the same height
+	result := make([][]string, len(cols))
+	for i, col := range cols {
+		result[i] = make([]string, maxHeight)
+		copy(result[i], col)
+		// Fill remaining with empty strings (already done by make)
+	}
+	
+	return result
+}
+
+func (m *viewModel) renderRepoHelp() string {
+	// Create styles
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("241")).
+		Padding(2, 3).
+		Width(80).
+		Align(lipgloss.Center)
+	
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("12")).
+		MarginBottom(1)
+	
+	columnStyle := lipgloss.NewStyle().
+		Width(36).
+		MarginRight(4)
+	
+	keyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("34")).
+		Bold(true)
+	
+	// Navigation column
+	navItems := []string{
+		"Navigation:",
+		"",
+		keyStyle.Render("↑/↓, j/k") + " - Move up/down",
+		keyStyle.Render("Ctrl-u/d") + " - Half page up/down",
+		keyStyle.Render("PgUp/PgDn") + " - Page up/down",
+		keyStyle.Render("g") + " - Go to top",
+		keyStyle.Render("G") + " - Go to bottom",
+		keyStyle.Render("/") + " - Start filtering repos",
+		keyStyle.Render("ESC") + " - Clear filter (when filtering)",
+		"",
+		"Context Actions:",
+		"",
+		keyStyle.Render("h") + " - Toggle hot context",
+		keyStyle.Render("c") + " - Toggle cold context",
+		keyStyle.Render("x") + " - Toggle exclude",
+		"",
+		"Repository Actions:",
+		"",
+		keyStyle.Render("r") + " - Refresh repository list",
+		keyStyle.Render("A") + " - Audit repository",
+		keyStyle.Render("R") + " - View audit report",
+		"",
+		"View Control:",
+		"",
+		keyStyle.Render("tab") + " - Switch to tree view",
+		keyStyle.Render("q") + " - Quit cx view",
+		keyStyle.Render("?") + " - Toggle this help",
+	}
+	
+	// Info column
+	infoItems := []string{
+		"Toggle Behavior:",
+		"",
+		"Press " + keyStyle.Render("h") + " on a repo:",
+		"  If hot → removes from hot",
+		"  If cold/none → adds to hot",
+		"",
+		"Press " + keyStyle.Render("c") + " on a repo:",
+		"  If cold → removes from cold",
+		"  If hot/none → adds to cold",
+		"",
+		"Press " + keyStyle.Render("x") + " on a repo:",
+		"  If excluded → removes exclusion",
+		"  Otherwise → adds exclusion",
+		"",
+		"Status Indicators:",
+		"",
+		"  " + keyStyle.Render("✓") + " - In hot context",
+		"  " + keyStyle.Render("❄️") + " - In cold context",
+		"  " + keyStyle.Render("🚫") + " - Excluded",
+		"  (none) - Not in rules",
+		"",
+		"Repository Types:",
+		"",
+		"  Regular: - Workspace repo",
+		"  └─ - Worktree branch",
+		"  URL: - Cloned external repo",
+	}
+	
+	// Render columns
+	navColumn := columnStyle.Render(strings.Join(navItems, "\n"))
+	infoColumn := columnStyle.Copy().MarginRight(0).Render(strings.Join(infoItems, "\n"))
+	
+	// Combine columns
+	content := lipgloss.JoinHorizontal(lipgloss.Top, navColumn, infoColumn)
+	
+	// Add title and wrap in box
+	title := titleStyle.Render("Repository Selection - Help")
+	fullContent := lipgloss.JoinVertical(lipgloss.Center, title, content)
+	
+	return lipgloss.NewStyle().
+		Width(m.width).
+		Height(m.height).
+		Align(lipgloss.Center, lipgloss.Center).
+		Render(boxStyle.Render(fullContent))
+}
+
 // renderHelp renders the help popup with legend and navigation
 func (m *viewModel) renderHelp() string {
 	// Create styles
@@ -1192,11 +2369,12 @@ func (m *viewModel) renderHelp() string {
 		"",
 		"Actions:",
 		"",
-		keyStyle.Render("a") + " - Toggle hot context",
+		keyStyle.Render("h") + " - Toggle hot context",
 		keyStyle.Render("c") + " - Toggle cold context",
 		keyStyle.Render("x") + " - Toggle exclude",
+		keyStyle.Render("tab/A") + " - Repository view",
 		keyStyle.Render("p") + " - Toggle pruning",
-		keyStyle.Render("./H") + " - Toggle gitignored files",
+		keyStyle.Render("H") + " - Toggle gitignored files",
 		keyStyle.Render("r") + " - Refresh view",
 		"",
 		keyStyle.Render("q") + " - Quit",
@@ -1213,7 +2391,7 @@ func (m *viewModel) renderHelp() string {
 		"",
 		"Context Status:",
 		"  " + keyStyle.Render("✓") + " - Hot Context",
-		"  " + keyStyle.Render("❄️") + " - Cold Context",  
+		"  " + keyStyle.Render("❄️") + " - Cold Context",
 		"  " + keyStyle.Render("🚫") + " - Excluded",
 		"  " + keyStyle.Render("🙈") + " - Git Ignored",
 		"  " + keyStyle.Render("⚠️") + " - Potentially risky path",
@@ -1240,6 +2418,16 @@ func (m *viewModel) renderHelp() string {
 	fullContent := lipgloss.JoinVertical(lipgloss.Center, title, content)
 	
 	return boxStyle.Render(fullContent)
+}
+
+// renderRules generates the rules panel content
+func (m *viewModel) renderRules() string {
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("12"))
+	
+	// Just return the rules content with a header
+	return headerStyle.Render(".grove/rules") + "\n\n" + m.rulesContent
 }
 
 // renderStats renders the context statistics

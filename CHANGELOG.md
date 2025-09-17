@@ -1,5 +1,46 @@
 ## v0.2.29 (2025-09-17)
 
+The `cx view` command has been significantly enhanced with a new repository management interface, accessible via the `Tab` key (166e0fb). This new view provides a comprehensive list of discovered and cloned repositories, displaying their version and color-coded audit status (5fe09bc). Users can now directly manage a repository's inclusion in the hot or cold context using hotkeys, view audit reports, and filter the repository list (166e0fb, 04abe41).
+
+UI and UX improvements include a new refresh capability in the repository view (ec1ab48) and wider side panels for rules and statistics to improve readability (06aa894). The help menus for both the tree and repository views have also been simplified for better clarity and maintainability (612ecef).
+
+Several bugs have been addressed in the interactive view. The refresh functionality now correctly updates all components, including the rules and statistics panels (9e12bd5). Additionally, the repository filtering mechanism has been made more intuitive, and the quit behavior has been clarified (04abe41).
+
+### Features
+
+*   Enhance cx view with improved repository management and help system (166e0fb)
+*   Enhance cx view with audit status and version display for cloned repos (5fe09bc)
+*   Add refresh functionality to repository selection view (ec1ab48)
+*   Increase width of rules and stats panels in repository view (06aa894)
+
+### Bug Fixes
+
+*   Improve refresh functionality to update all components (9e12bd5)
+*   Improve repository filtering behavior and quit functionality (04abe41)
+
+### Code Refactoring
+
+*   Simplify help menu layouts to improve readability (612ecef)
+
+### File Changes
+
+```
+ cmd/test_discovery/main.go |   78 +++
+ cmd/view.go                | 1240 +++++++++++++++++++++++++++++++++++++++++++-
+ go.mod                     |    3 +
+ go.sum                     |    6 +
+ go.work                    |    7 +
+ go.work.sum                |    9 +
+ pkg/context/manager.go     |   86 ++-
+ pkg/discovery/cloned.go    |   51 ++
+ pkg/discovery/discover.go  |   37 ++
+ pkg/discovery/repo.go      |   20 +
+ pkg/discovery/workspace.go |  164 ++++++
+ 11 files changed, 1667 insertions(+), 34 deletions(-)
+```
+
+## v0.2.29 (2025-09-17)
+
 ### Chores
 
 * bump dependencies

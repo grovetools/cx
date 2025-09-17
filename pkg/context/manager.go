@@ -1726,6 +1726,13 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 		return fmt.Errorf("safety validation failed: %w", err)
 	}
 	
+	// First, remove any existing rules for this path to prevent duplicates
+	// This makes the function idempotent and handles state changes
+	if err := m.RemoveRuleForPath(rulePath); err != nil {
+		// Non-fatal error, log and continue
+		fmt.Fprintf(os.Stderr, "Warning: could not remove existing rules: %v\n", err)
+	}
+	
 	// Find or create the rules file
 	rulesFilePath := m.findActiveRulesFile()
 	if rulesFilePath == "" {
@@ -1753,14 +1760,6 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 		newRule = "!" + rulePath
 	default:
 		newRule = rulePath
-	}
-	
-	// Check if rule already exists
-	for _, line := range lines {
-		if strings.TrimSpace(line) == newRule {
-			// Rule already exists, no need to add
-			return nil
-		}
 	}
 	
 	// Find separator line index
@@ -1893,6 +1892,77 @@ func (m *Manager) RemoveRule(rulePath string) error {
 			continue
 		}
 		newLines = append(newLines, line)
+	}
+	
+	// Clean up empty lines and unnecessary separators
+	newLines = cleanupRulesLines(newLines)
+	
+	// Write back to file
+	newContent := strings.Join(newLines, "\n")
+	if len(newLines) > 0 && !strings.HasSuffix(newContent, "\n") {
+		newContent += "\n"
+	}
+	
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0644)
+}
+
+// RemoveRuleForPath removes any rule that corresponds to the given repository path.
+// Unlike RemoveRule which requires an exact match, this function will find and remove
+// rules in various formats (path, !path, path/**, !path/**) that match the repository.
+func (m *Manager) RemoveRuleForPath(path string) error {
+	rulesFilePath := m.findActiveRulesFile()
+	if rulesFilePath == "" {
+		// No rules file exists, nothing to remove
+		return nil
+	}
+	
+	content, err := os.ReadFile(rulesFilePath)
+	if err != nil {
+		return fmt.Errorf("error reading rules file: %w", err)
+	}
+	
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	
+	// Clean the input path
+	path = strings.TrimSpace(path)
+	path = strings.TrimSuffix(path, "/")
+	
+	// Generate all possible patterns to look for based on the path
+	patternsToRemove := []string{
+		path,                  // exact path
+		"!" + path,           // excluded path
+		path + "/**",         // recursive include
+		"!" + path + "/**",   // recursive exclude
+		path + "/*",          // single level include
+		"!" + path + "/*",    // single level exclude
+	}
+	
+	// Also check for relative paths starting with ./ or ../
+	if !filepath.IsAbs(path) {
+		patternsToRemove = append(patternsToRemove, 
+			"./"+path,
+			"!./"+path,
+			"./"+path+"/**",
+			"!./"+path+"/**",
+		)
+	}
+	
+	// Check each line and skip if it matches any of our patterns
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		shouldRemove := false
+		
+		for _, pattern := range patternsToRemove {
+			if trimmedLine == pattern {
+				shouldRemove = true
+				break
+			}
+		}
+		
+		if !shouldRemove {
+			newLines = append(newLines, line)
+		}
 	}
 	
 	// Clean up empty lines and unnecessary separators
