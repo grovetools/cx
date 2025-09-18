@@ -5,3 +5,10 @@ bin/
 .grove
 .grove-worktrees
 .grove/cached-context
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Don't ignore CLAUDE.md
+!CLAUDE.md
