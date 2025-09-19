@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-context/pkg/repo"
 	"github.com/mattsolo1/grove-core/config"
 	"github.com/spf13/cobra"
@@ -243,15 +244,25 @@ func formatTimeSince(t time.Time) string {
 
 // setupDefaultAuditRules creates a default .grove/rules file for auditing.
 func setupDefaultAuditRules(repoPath string) error {
-	groveDir := filepath.Join(repoPath, ".grove")
+	rulesPath := filepath.Join(repoPath, ".grove", "rules")
+	
+	mgr := context.NewManager(repoPath)
+	rulesContent, _, err := mgr.LoadRulesContent()
+	if err != nil {
+		// Non-fatal, just use a basic default
+		rulesContent = []byte("*\n")
+		fmt.Fprintf(os.Stderr, "Warning: could not load default rules for audit: %v\n", err)
+	}
+	if rulesContent == nil {
+		rulesContent = []byte("*\n")
+	}
+
+	groveDir := filepath.Dir(rulesPath)
 	if err := os.MkdirAll(groveDir, 0755); err != nil {
 		return err
 	}
-	
-	rulesPath := filepath.Join(groveDir, "rules")
-	defaultRules := `*
-`
-	return os.WriteFile(rulesPath, []byte(defaultRules), 0644)
+
+	return os.WriteFile(rulesPath, rulesContent, 0644)
 }
 
 // runInteractiveView executes the 'cx view' command as a subprocess.

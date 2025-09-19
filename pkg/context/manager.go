@@ -2,6 +2,7 @@ package context
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 	
 	"github.com/mattsolo1/grove-context/pkg/repo"
+	"github.com/mattsolo1/grove-core/config"
 )
 
 // NodeStatus represents the classification of a file in the context
@@ -59,6 +61,149 @@ func NewManager(workDir string) *Manager {
 // GetWorkDir returns the current working directory
 func (m *Manager) GetWorkDir() string {
 	return m.workDir
+}
+
+// LoadDefaultRulesContent loads only the default rules from grove.yml, ignoring any local rules files.
+// It returns the default rules content and the path where rules should be written.
+func (m *Manager) LoadDefaultRulesContent() (content []byte, rulesPath string) {
+	rulesPath = filepath.Join(m.workDir, ActiveRulesFile)
+	
+	// Load grove.yml to check for default rules
+	cfg, err := config.LoadFrom(m.workDir)
+	if err != nil || cfg == nil {
+		// No config, so no default rules
+		return nil, rulesPath
+	}
+
+	// Use custom extension approach since the Context field may not exist in grove-core yet
+	var contextConfig struct {
+		DefaultRulesPath string `yaml:"default_rules_path"`
+	}
+	
+	if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
+		// Extension doesn't exist or failed to unmarshal, no default rules
+		return nil, rulesPath
+	}
+
+	if contextConfig.DefaultRulesPath != "" {
+		// Project root is where grove.yml is found
+		configPath, _ := config.FindConfigFile(m.workDir)
+		projectRoot := filepath.Dir(configPath)
+		if projectRoot == "" {
+			projectRoot = m.workDir
+		}
+		defaultRulesPath := filepath.Join(projectRoot, contextConfig.DefaultRulesPath)
+
+		content, err := os.ReadFile(defaultRulesPath)
+		if err != nil {
+			// Don't error out, just warn and act as if no default exists
+			fmt.Fprintf(os.Stderr, "Warning: could not read default_rules_path %s: %v\n", defaultRulesPath, err)
+			return nil, rulesPath
+		}
+		return content, rulesPath
+	}
+
+	return nil, rulesPath
+}
+
+// LoadRulesContent finds and reads the active rules file, falling back to grove.yml defaults.
+// It returns the content of the rules, the path of the file read (if any), and an error.
+func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
+	// 1. Look for local .grove/rules
+	localRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if _, err := os.Stat(localRulesPath); err == nil {
+		content, err := os.ReadFile(localRulesPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("reading local rules file %s: %w", localRulesPath, err)
+		}
+		return content, localRulesPath, nil
+	}
+
+	// 2. If not found, look for legacy .grovectx
+	legacyRulesPath := filepath.Join(m.workDir, RulesFile)
+	if _, err := os.Stat(legacyRulesPath); err == nil {
+		content, err := os.ReadFile(legacyRulesPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("reading legacy rules file %s: %w", legacyRulesPath, err)
+		}
+		return content, legacyRulesPath, nil
+	}
+
+	// 3. If not found, check grove.yml for a default
+	cfg, err := config.LoadFrom(m.workDir)
+	if err != nil || cfg == nil {
+		// No config, so no default rules
+		return nil, "", nil
+	}
+
+	// Note: For now, we'll use a custom extension approach since the Context field 
+	// may not exist in grove-core yet
+	var contextConfig struct {
+		DefaultRulesPath string `yaml:"default_rules_path"`
+	}
+	
+	if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
+		// Extension doesn't exist or failed to unmarshal, no default rules
+		return nil, "", nil
+	}
+
+	if contextConfig.DefaultRulesPath != "" {
+		// Project root is where grove.yml is found
+		configPath, _ := config.FindConfigFile(m.workDir)
+		projectRoot := filepath.Dir(configPath)
+		if projectRoot == "" {
+			projectRoot = m.workDir
+		}
+		defaultRulesPath := filepath.Join(projectRoot, contextConfig.DefaultRulesPath)
+
+		content, err := os.ReadFile(defaultRulesPath)
+		if err != nil {
+			// Don't error out, just warn and act as if no default exists
+			fmt.Fprintf(os.Stderr, "Warning: could not read default_rules_path %s: %v\n", defaultRulesPath, err)
+			return nil, "", nil
+		}
+		// Return the content, but the path is the *local* path where it *should* be written.
+		return content, localRulesPath, nil
+	}
+
+	// 4. No local or default rules found
+	return nil, "", nil
+}
+
+// resolveFilesFromRulesContent resolves files based on rules content provided as a byte slice.
+func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, error) {
+	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing rules content: %w", err)
+	}
+
+	// Resolve files from main patterns
+	mainFiles, err := m.resolveFilesFromPatterns(mainPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving main context files: %w", err)
+	}
+
+	// Resolve files from cold patterns
+	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving cold context files: %w", err)
+	}
+
+	// Create a map of cold files for efficient exclusion
+	coldFilesMap := make(map[string]bool)
+	for _, file := range coldFiles {
+		coldFilesMap[file] = true
+	}
+
+	// Filter main files to exclude any that are in cold files
+	var finalMainFiles []string
+	for _, file := range mainFiles {
+		if !coldFilesMap[file] {
+			finalMainFiles = append(finalMainFiles, file)
+		}
+	}
+
+	return finalMainFiles, nil
 }
 
 // ReadFilesList reads the list of files from a file
@@ -133,20 +278,22 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 	
-	// Dynamically resolve file list from rules
-	filesToInclude, err := m.ResolveFilesFromRules()
+	rulesContent, _, err := m.LoadRulesContent()
+	if err != nil {
+		return fmt.Errorf("loading rules: %w", err)
+	}
+
+	filesToInclude, err := m.resolveFilesFromRulesContent(rulesContent)
 	if err != nil {
 		return fmt.Errorf("error resolving files from rules: %w", err)
 	}
 	
 	// Handle case where no rules file exists
-	activeRulesPath := m.findActiveRulesFile()
-	if activeRulesPath == "" {
+	if rulesContent == nil {
 		// Print visible warning to stderr
 		fmt.Fprintf(os.Stderr, "\n⚠️  WARNING: No rules file found!\n")
 		fmt.Fprintf(os.Stderr, "⚠️  Create %s with patterns to include files in the context.\n", ActiveRulesFile)
 		fmt.Fprintf(os.Stderr, "⚠️  Generating empty context file.\n\n")
-
 	}
 	
 	// Create context file
@@ -165,7 +312,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	}
 	
 	// If no files to include, write a comment explaining why
-	if len(filesToInclude) == 0 && activeRulesPath == "" {
+	if len(filesToInclude) == 0 && rulesContent == nil {
 		if useXMLFormat {
 			fmt.Fprintf(ctxFile, "    <!-- No rules file found. Create %s with patterns to include files. -->\n", ActiveRulesFile)
 		} else {
@@ -410,13 +557,11 @@ func (m *Manager) UpdateFromRules() error {
 	return m.WriteFilesList(filesPath, filesToInclude)
 }
 
-// parseRulesFile reads a rules file and separates patterns into main and cold contexts.
-func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
-	file, err := os.Open(rulesPath)
-	if err != nil {
-		return nil, nil, false, false, false, 0, err
+// parseRulesFile reads rules content and separates patterns into main and cold contexts.
+func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
+	if len(rulesContent) == 0 {
+		return nil, nil, false, false, false, 0, nil
 	}
-	defer file.Close()
 
 	// Create repo manager for processing Git URLs
 	repoManager, repoErr := repo.NewManager()
@@ -425,7 +570,7 @@ func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns [
 	}
 
 	inColdSection := false
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bytes.NewReader(rulesContent))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "@freeze-cache" {
@@ -498,12 +643,14 @@ func (m *Manager) parseRulesFile(rulesPath string) (mainPatterns, coldPatterns [
 
 // ShouldFreezeCache checks if the @freeze-cache directive is present in the rules file.
 func (m *Manager) ShouldFreezeCache() (bool, error) {
-	activeRulesPath := m.findActiveRulesFile()
-	if activeRulesPath == "" {
+	rulesContent, _, err := m.LoadRulesContent()
+	if err != nil {
+		return false, err
+	}
+	if rulesContent == nil {
 		return false, nil
 	}
-
-	_, _, freezeCache, _, _, _, err := m.parseRulesFile(activeRulesPath)
+	_, _, freezeCache, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -513,12 +660,14 @@ func (m *Manager) ShouldFreezeCache() (bool, error) {
 
 // ShouldDisableExpiration checks if the @no-expire directive is present in the rules file.
 func (m *Manager) ShouldDisableExpiration() (bool, error) {
-	activeRulesPath := m.findActiveRulesFile()
-	if activeRulesPath == "" {
+	rulesContent, _, err := m.LoadRulesContent()
+	if err != nil {
+		return false, err
+	}
+	if rulesContent == nil {
 		return false, nil
 	}
-
-	_, _, _, disableExpiration, _, _, err := m.parseRulesFile(activeRulesPath)
+	_, _, _, disableExpiration, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -529,12 +678,14 @@ func (m *Manager) ShouldDisableExpiration() (bool, error) {
 // GetExpireTime returns the custom expiration duration if @expire-time directive is present.
 // Returns 0 if no custom expiration time is set.
 func (m *Manager) GetExpireTime() (time.Duration, error) {
-	activeRulesPath := m.findActiveRulesFile()
-	if activeRulesPath == "" {
+	rulesContent, _, err := m.LoadRulesContent()
+	if err != nil {
+		return 0, err
+	}
+	if rulesContent == nil {
 		return 0, nil
 	}
-
-	_, _, _, _, _, expireTime, err := m.parseRulesFile(activeRulesPath)
+	_, _, _, _, _, expireTime, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return 0, fmt.Errorf("error parsing rules file for expire time: %w", err)
 	}
@@ -544,12 +695,14 @@ func (m *Manager) GetExpireTime() (time.Duration, error) {
 
 // ShouldDisableCache checks if the @disable-cache directive is present in the rules file.
 func (m *Manager) ShouldDisableCache() (bool, error) {
-	activeRulesPath := m.findActiveRulesFile()
-	if activeRulesPath == "" {
+	rulesContent, _, err := m.LoadRulesContent()
+	if err != nil {
+		return false, err
+	}
+	if rulesContent == nil {
 		return false, nil
 	}
-
-	_, _, _, _, disableCache, _, err := m.parseRulesFile(activeRulesPath)
+	_, _, _, _, disableCache, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -559,29 +712,15 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
-	// Use the centralized engine
-	fileStatuses, err := m.ResolveAndClassifyAllFiles(false)
+	rulesContent, _, err := m.LoadRulesContent()
 	if err != nil {
 		return nil, err
 	}
-	
-	// Filter for hot context files only
-	var hotFiles []string
-	for path, status := range fileStatuses {
-		if status == StatusIncludedHot {
-			// Convert absolute paths back to relative if within workDir
-			relPath, err := filepath.Rel(m.workDir, path)
-			if err == nil && !strings.HasPrefix(relPath, "..") {
-				hotFiles = append(hotFiles, relPath)
-			} else {
-				hotFiles = append(hotFiles, path)
-			}
-		}
+	if rulesContent == nil {
+		// No rules file or default found, return empty list.
+		return []string{}, nil
 	}
-	
-	// Sort for consistent output
-	sort.Strings(hotFiles)
-	return hotFiles, nil
+	return m.resolveFilesFromRulesContent(rulesContent)
 }
 
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
@@ -860,8 +999,14 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 // resolveFileListFromRules dynamically resolves the list of files from a rules file
 func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
-	// Parse the rules file to get main and cold patterns
-	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesPath)
+	// Read the rules file
+	rulesContent, err := os.ReadFile(rulesPath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading rules file: %w", err)
+	}
+	
+	// Parse the rules content to get main and cold patterns
+	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules file: %w", err)
 	}
@@ -905,18 +1050,17 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus, error) {
 	result := make(map[string]NodeStatus)
 	
-	// Parse rules file to get patterns
-	rulesPath := filepath.Join(m.workDir, ActiveRulesFile)
-	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
-		// Try legacy rules file
-		rulesPath = filepath.Join(m.workDir, RulesFile)
-		if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
-			// No rules file exists
-			return result, nil
-		}
+	// Parse rules content to get patterns
+	rulesContent, _, err := m.LoadRulesContent()
+	if err != nil {
+		return nil, err
+	}
+	if rulesContent == nil {
+		// No rules file or default found
+		return result, nil
 	}
 	
-	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesPath)
+	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, err
 	}
