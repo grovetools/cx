@@ -31,6 +31,13 @@ func TUIViewScenario() *harness.Scenario {
 				if err := fs.WriteString(filepath.Join(ctx.RootDir, "utils_test.go"), "package main // excluded"); err != nil {
 					return err
 				}
+				// Create a docs directory for testing directory expansion
+				if err := fs.CreateDir(filepath.Join(ctx.RootDir, "docs")); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "docs", "api.md"), "# API Documentation"); err != nil {
+					return err
+				}
 				// Create rules that will put main.go in hot context, exclude the test, and leave PROJECT_README.md omitted.
 				rules := "**/*.go\n!**/*_test.go"
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
@@ -67,23 +74,128 @@ func TUIViewScenario() *harness.Scenario {
 				
 				return nil
 			}),
-			harness.NewStep("Navigate to target file using enhanced APIs", func(ctx *harness.Context) error {
+			harness.NewStep("Verify status indicators", func(ctx *harness.Context) error {
+				session := ctx.Get("view_session").(*tui.Session)
+				
+				// Capture screen to verify status indicators
+				content, err := session.Capture()
+				if err != nil {
+					return fmt.Errorf("failed to capture screen: %w", err)
+				}
+				
+				// Verify main.go has hot context indicator (✓)
+				if !strings.Contains(content, "✓") || !strings.Contains(content, "main.go") {
+					return fmt.Errorf("expected main.go to show hot context indicator (✓)")
+				}
+				
+				// Verify utils_test.go has excluded indicator (🚫)
+				if !strings.Contains(content, "🚫") || !strings.Contains(content, "utils_test.go") {
+					return fmt.Errorf("expected utils_test.go to show excluded indicator (🚫)")
+				}
+				
+				// Verify PROJECT_README.md has no indicator (omitted file)
+				// It should appear without ✓ or 🚫
+				if strings.Contains(content, "✓ PROJECT_README.md") || strings.Contains(content, "🚫 PROJECT_README.md") {
+					return fmt.Errorf("PROJECT_README.md should not have any status indicator")
+				}
+				
+				fmt.Println("   ✓ Status indicators verified")
+				return nil
+			}),
+			harness.NewStep("Test additional key bindings", func(ctx *harness.Context) error {
+				session := ctx.Get("view_session").(*tui.Session)
+				
+				// Test pressing 'c' for cold context toggle (should do nothing on PROJECT_README.md)
+				if err := session.NavigateToText("PROJECT_README.md"); err != nil {
+					return fmt.Errorf("failed to navigate to PROJECT_README.md: %w", err)
+				}
+				
+				if err := session.SendKeys("c"); err != nil {
+					return fmt.Errorf("failed to send 'c' key: %w", err)
+				}
+				
+				// Small wait for any potential action
+				time.Sleep(300 * time.Millisecond)
+				
+				// The file should still not have any indicator (remains omitted)
+				content, err := session.Capture()
+				if err != nil {
+					return fmt.Errorf("failed to capture after 'c' key: %w", err)
+				}
+				
+				if strings.Contains(content, "✓ PROJECT_README.md") || strings.Contains(content, "❄️ PROJECT_README.md") {
+					return fmt.Errorf("PROJECT_README.md should remain omitted after 'c' key")
+				}
+				
+				fmt.Println("   ✓ Additional key bindings tested")
+				return nil
+			}),
+			harness.NewStep("Verify statistics panel", func(ctx *harness.Context) error {
+				session := ctx.Get("view_session").(*tui.Session)
+				
+				content, err := session.Capture()
+				if err != nil {
+					return fmt.Errorf("failed to capture screen: %w", err)
+				}
+				
+				// Verify statistics are shown
+				if !strings.Contains(content, "Context Statistics") {
+					return fmt.Errorf("statistics panel not found")
+				}
+				
+				// Verify hot context count (should show 1 file - main.go)
+				if !strings.Contains(content, "Hot:") || !strings.Contains(content, "1 files") {
+					return fmt.Errorf("expected hot context to show 1 file")
+				}
+				
+				// Verify cold context count (should be 0)
+				if !strings.Contains(content, "Cold:") || !strings.Contains(content, "0 files") {
+					return fmt.Errorf("expected cold context to show 0 files")
+				}
+				
+				fmt.Println("   ✓ Statistics panel verified")
+				return nil
+			}),
+			harness.NewStep("Test help system", func(ctx *harness.Context) error {
+				session := ctx.Get("view_session").(*tui.Session)
+				
+				// Press '?' to open help
+				if err := session.SendKeys("?"); err != nil {
+					return fmt.Errorf("failed to open help: %w", err)
+				}
+				
+				// Wait for any help-related text to appear
+				time.Sleep(500 * time.Millisecond)
+				
+				content, err := session.Capture()
+				if err != nil {
+					return fmt.Errorf("failed to capture help screen: %w", err)
+				}
+				
+				// Just verify that the screen changed and shows help-related content
+				// Being less strict about exact content to avoid brittleness
+				if !strings.Contains(content, "help") && !strings.Contains(content, "Help") && 
+				   !strings.Contains(content, "Navigation") && !strings.Contains(content, "Actions") {
+					// Help might not have opened, try to close anyway
+					session.SendKeys("?")
+					return fmt.Errorf("help content not detected")
+				}
+				
+				// Close help
+				if err := session.SendKeys("?"); err != nil {
+					return fmt.Errorf("failed to close help: %w", err)
+				}
+				
+				// Small wait for transition
+				time.Sleep(300 * time.Millisecond)
+				
+				fmt.Println("   ✓ Help system tested")
+				return nil
+			}),
+			harness.NewStep("Navigate to target file for safety test", func(ctx *harness.Context) error {
 				session := ctx.Get("view_session").(*tui.Session)
 
-				// NEW: First, let's find where PROJECT_README.md is on the screen
-				row, col, found, err := session.FindTextLocation("PROJECT_README.md")
-				if err != nil {
-					return fmt.Errorf("error finding text location: %w", err)
-				}
-				if !found {
-					return fmt.Errorf("PROJECT_README.md not found on screen")
-				}
-				
-				// Log location for debugging
-				fmt.Printf("   Found PROJECT_README.md at row %d, col %d\n", row, col)
-				
-				// NEW: Navigate directly to the file instead of using brittle Down key
-				// Note: NavigateToText moves the cursor to the exact text location
+				// Navigate directly to PROJECT_README.md
 				if err := session.NavigateToText("PROJECT_README.md"); err != nil {
 					return fmt.Errorf("failed to navigate to PROJECT_README.md: %w", err)
 				}
@@ -93,7 +205,7 @@ func TUIViewScenario() *harness.Scenario {
 				if err != nil {
 					return fmt.Errorf("failed to get cursor position: %w", err)
 				}
-				fmt.Printf("   Cursor now at row %d, col %d\n", curRow, curCol)
+				fmt.Printf("   Cursor positioned at row %d, col %d\n", curRow, curCol)
 				
 				return nil
 			}),
@@ -123,21 +235,26 @@ func TUIViewScenario() *harness.Scenario {
 				if err != nil {
 					return fmt.Errorf("failed to capture TUI screen: %w", err)
 				}
-				ctx.ShowCommandOutput("TUI Capture", content, "")
 
 				// Verify that safety validation was triggered as expected
 				if strings.Contains(content, "safety validation failed") && 
 				   strings.Contains(content, "PROJECT_README.md") &&
 				   strings.Contains(content, "would include system directory") {
-					return nil // This is the expected behavior - safety validation working correctly
+					// Success - only log a simple confirmation, no screen dump
+					fmt.Println("   ✓ Safety validation correctly prevented unsafe rule")
+					return nil
 				}
 
+				// Only show the full TUI capture if something went wrong
 				// If the file was somehow added (unexpected), that would be an error
 				if strings.Contains(content, "✓ PROJECT_README.md") {
+					ctx.ShowCommandOutput("UNEXPECTED TUI State", content, "")
 					return fmt.Errorf("unexpected: PROJECT_README.md was added despite safety concerns")
 				}
 
-				return fmt.Errorf("expected safety validation error but did not find it. Screen content:\n%s", content)
+				// Show capture when we can't find expected error
+				ctx.ShowCommandOutput("TUI State (Expected Safety Error Not Found)", content, "")
+				return fmt.Errorf("expected safety validation error but did not find it")
 			}),
 			harness.NewStep("Quit the TUI", func(ctx *harness.Context) error {
 				session := ctx.Get("view_session").(*tui.Session)
