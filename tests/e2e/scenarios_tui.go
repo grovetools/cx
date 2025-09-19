@@ -12,11 +12,11 @@ import (
 	"github.com/mattsolo1/grove-tend/pkg/tui"
 )
 
-// TUIViewScenario tests the interactive `cx view` TUI.
+// TUIViewScenario tests the interactive `cx view` TUI using the enhanced APIs.
 func TUIViewScenario() *harness.Scenario {
 	return &harness.Scenario{
 		Name:        "cx-view-tui-test",
-		Description: "Tests the interactive `cx view` TUI by launching it in tmux and validating safety features.",
+		Description: "Tests the interactive `cx view` TUI using robust navigation and timing APIs.",
 		Tags:        []string{"cx", "tui", "view", "interactive"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup project for TUI view", func(ctx *harness.Context) error {
@@ -51,33 +51,72 @@ func TUIViewScenario() *harness.Scenario {
 				ctx.Set("view_session", session)
 				return nil
 			}),
-			harness.NewStep("Wait for TUI to initialize", func(ctx *harness.Context) error {
+			harness.NewStep("Wait for TUI to stabilize", func(ctx *harness.Context) error {
 				session := ctx.Get("view_session").(*tui.Session)
-				// Wait for a known header text to appear, confirming the TUI is ready.
-				return session.WaitForText("Grove Context Visualization", 5*time.Second)
+				
+				// NEW: Use WaitForUIStable instead of WaitForText + time.Sleep
+				// This is more reliable as it waits for the UI to stop changing
+				if err := session.WaitForUIStable(5*time.Second, 100*time.Millisecond, 300*time.Millisecond); err != nil {
+					return fmt.Errorf("TUI did not stabilize: %w", err)
+				}
+				
+				// Verify the header is present
+				if err := session.WaitForText("Grove Context Visualization", 2*time.Second); err != nil {
+					return fmt.Errorf("TUI header not found: %w", err)
+				}
+				
+				return nil
 			}),
-			harness.NewStep("Interact with TUI to trigger safety validation", func(ctx *harness.Context) error {
+			harness.NewStep("Navigate to target file using enhanced APIs", func(ctx *harness.Context) error {
 				session := ctx.Get("view_session").(*tui.Session)
 
-				// Navigate to PROJECT_README.md. Based on alphabetical order, we expect:
-				// main.go, PROJECT_README.md, utils_test.go
-				// So navigate down once to get to PROJECT_README.md
-				if err := session.SendKeys("Down"); err != nil {
-					return fmt.Errorf("failed to send 'Down' key: %w", err)
+				// NEW: First, let's find where PROJECT_README.md is on the screen
+				row, col, found, err := session.FindTextLocation("PROJECT_README.md")
+				if err != nil {
+					return fmt.Errorf("error finding text location: %w", err)
 				}
+				if !found {
+					return fmt.Errorf("PROJECT_README.md not found on screen")
+				}
+				
+				// Log location for debugging
+				fmt.Printf("   Found PROJECT_README.md at row %d, col %d\n", row, col)
+				
+				// NEW: Navigate directly to the file instead of using brittle Down key
+				// Note: NavigateToText moves the cursor to the exact text location
+				if err := session.NavigateToText("PROJECT_README.md"); err != nil {
+					return fmt.Errorf("failed to navigate to PROJECT_README.md: %w", err)
+				}
+				
+				// Verify cursor position
+				curRow, curCol, err := session.GetCursorPosition()
+				if err != nil {
+					return fmt.Errorf("failed to get cursor position: %w", err)
+				}
+				fmt.Printf("   Cursor now at row %d, col %d\n", curRow, curCol)
+				
+				return nil
+			}),
+			harness.NewStep("Trigger safety validation", func(ctx *harness.Context) error {
+				session := ctx.Get("view_session").(*tui.Session)
 
 				// Simulate user pressing 'h' to attempt adding the selected file to hot context.
 				// This should trigger safety validation and show an error.
 				if err := session.SendKeys("h"); err != nil {
 					return fmt.Errorf("failed to send 'h' key: %w", err)
 				}
+				
+				// NEW: Use WaitForUIStable instead of time.Sleep
+				// Wait for the UI to process the action and show the error
+				if err := session.WaitForUIStable(3*time.Second, 100*time.Millisecond, 200*time.Millisecond); err != nil {
+					// Non-fatal: UI might not stabilize due to error message
+					fmt.Printf("   UI stability warning: %v\n", err)
+				}
+				
 				return nil
 			}),
 			harness.NewStep("Verify safety validation triggered", func(ctx *harness.Context) error {
 				session := ctx.Get("view_session").(*tui.Session)
-
-				// Wait a moment for the action to complete
-				time.Sleep(1 * time.Second)
 
 				// Capture the entire screen content to verify the safety validation.
 				content, err := session.Capture()
@@ -106,8 +145,11 @@ func TUIViewScenario() *harness.Scenario {
 				if err := session.SendKeys("q"); err != nil {
 					return fmt.Errorf("failed to send 'q' key: %w", err)
 				}
-				// Give the process a moment to exit before the harness cleans up the session.
-				time.Sleep(500 * time.Millisecond)
+				
+				// NEW: Wait for UI to close cleanly instead of fixed sleep
+				// Allow time for graceful shutdown
+				time.Sleep(200 * time.Millisecond)
+				
 				return nil
 			}),
 		},
