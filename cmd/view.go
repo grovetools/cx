@@ -480,19 +480,31 @@ func (m *viewModel) filterRepos() {
 
 // ensureRepoCursorVisible ensures the repo cursor is visible
 func (m *viewModel) ensureRepoCursorVisible() {
-	viewportHeight := m.height - 8 // Leave room for header and help
-	if viewportHeight < 5 {
-		viewportHeight = 5
+	// Calculate the actual list height (must match renderRepoSelect)
+	viewportHeight := m.height - 8 // Account for header, footer, and more margins
+	listHeight := viewportHeight - 4 // Leave more space for top and bottom margins
+	
+	if listHeight < 5 {
+		listHeight = 5
 	}
 	
 	if m.repoCursor < m.repoScrollOffset {
 		m.repoScrollOffset = m.repoCursor
-	} else if m.repoCursor >= m.repoScrollOffset + viewportHeight {
-		m.repoScrollOffset = m.repoCursor - viewportHeight + 1
+	} else if m.repoCursor >= m.repoScrollOffset + listHeight {
+		m.repoScrollOffset = m.repoCursor - listHeight + 1
 	}
 	
 	if m.repoScrollOffset < 0 {
 		m.repoScrollOffset = 0
+	}
+	
+	// Ensure scroll offset doesn't go beyond the list
+	maxScrollOffset := len(m.filteredRepos) - listHeight
+	if maxScrollOffset < 0 {
+		maxScrollOffset = 0
+	}
+	if m.repoScrollOffset > maxScrollOffset {
+		m.repoScrollOffset = maxScrollOffset
 	}
 }
 
@@ -645,7 +657,7 @@ func (m *viewModel) renderRepoSelect() string {
 	}
 	
 	// Calculate dimensions (matching tree view layout exactly)
-	viewportHeight := m.height - 6 // Account for header, footer, and margins
+	viewportHeight := m.height - 8 // Account for header, footer, and more margins
 	rulesWidth := int(float64(m.width) * 0.4)      // Right panel is 40% of width (was 33%)
 	repoListWidth := m.width - rulesWidth - 2 // Left panel gets the rest
 	
@@ -670,7 +682,7 @@ func (m *viewModel) renderRepoSelect() string {
 		Foreground(lipgloss.Color("214"))
 	
 	// Calculate visible range for repo list (use a smaller height for the actual list)
-	listHeight := viewportHeight - 2 // Leave some space
+	listHeight := viewportHeight - 4 // Leave more space for top and bottom margins
 	visibleEnd := m.repoScrollOffset + listHeight
 	if visibleEnd > len(m.filteredRepos) {
 		visibleEnd = len(m.filteredRepos)
@@ -865,12 +877,41 @@ func (m *viewModel) renderRepoSelect() string {
 			Render(scrollInfo))
 	}
 	
-	// Create the left panel (repository list)
+	// Create scrollbar for the repository list
+	scrollbar := ""
+	if len(m.filteredRepos) > listHeight {
+		scrollbar = m.renderScrollbar(
+			len(m.filteredRepos),
+			listHeight,
+			m.repoScrollOffset,
+			listHeight,
+		)
+	}
+	
+	// Create the repository list content
+	repoListContent := lipgloss.NewStyle().
+		Width(repoListWidth - 3). // Make room for scrollbar
+		Render(b.String())
+	
+	// Combine repo list with scrollbar
+	var repoWithScrollbar string
+	if scrollbar != "" {
+		repoWithScrollbar = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			repoListContent,
+			" ", // Small gap
+			scrollbar,
+		)
+	} else {
+		repoWithScrollbar = repoListContent
+	}
+	
+	// Create the left panel (repository list with scrollbar)
 	repoPanel := lipgloss.NewStyle().
 		Width(repoListWidth).
 		Height(viewportHeight - 1). // Reduce height slightly
-		Padding(0, 1).
-		Render(b.String())
+		Padding(1, 1). // Add top/bottom padding for better visual spacing
+		Render(repoWithScrollbar)
 	
 	// Create the right panel with rules and stats (exactly like tree view)
 	// Rules panel (top part of right panel)
@@ -881,7 +922,7 @@ func (m *viewModel) renderRepoSelect() string {
 		BorderForeground(lipgloss.Color("241")).
 		Padding(0, 1)
 	
-	rulesPanel := rulesStyle.Render(m.renderRules())
+	rulesPanel := rulesStyle.Render(m.renderRules(rulesWidth, rulesHeight))
 	
 	// Stats panel (bottom part of right panel)
 	statsStyle := lipgloss.NewStyle().
@@ -1231,22 +1272,26 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ensureRepoCursorVisible()
 			case "ctrl+u":
 				// Scroll up half page
-				viewportHeight := m.height - 8 // Match the viewport calculation
-				if viewportHeight < 5 {
-					viewportHeight = 5
+				// Calculate the actual list height (must match renderRepoSelect)
+				viewportHeight := m.height - 8
+				listHeight := viewportHeight - 4
+				if listHeight < 5 {
+					listHeight = 5
 				}
-				m.repoCursor -= viewportHeight / 2
+				m.repoCursor -= listHeight / 2
 				if m.repoCursor < 0 {
 					m.repoCursor = 0
 				}
 				m.ensureRepoCursorVisible()
 			case "ctrl+d":
 				// Scroll down half page
-				viewportHeight := m.height - 8 // Match the viewport calculation
-				if viewportHeight < 5 {
-					viewportHeight = 5
+				// Calculate the actual list height (must match renderRepoSelect)
+				viewportHeight := m.height - 8
+				listHeight := viewportHeight - 4
+				if listHeight < 5 {
+					listHeight = 5
 				}
-				m.repoCursor += viewportHeight / 2
+				m.repoCursor += listHeight / 2
 				if m.repoCursor >= len(m.filteredRepos) {
 					m.repoCursor = len(m.filteredRepos) - 1
 				}
@@ -1943,6 +1988,17 @@ func (m *viewModel) View() string {
 	}
 
 	tree := strings.Join(treeLines, "\n")
+	
+	// Create scrollbar for the tree view
+	treeScrollbar := ""
+	if len(m.visibleNodes) > viewportHeight {
+		treeScrollbar = m.renderScrollbar(
+			len(m.visibleNodes),
+			viewportHeight,
+			m.scrollOffset,
+			viewportHeight,
+		)
+	}
 
 	// Status message
 	statusMsg := ""
@@ -1965,37 +2021,7 @@ func (m *viewModel) View() string {
 		BorderForeground(lipgloss.Color("241")).
 		Padding(0, 1)
 	
-	rulesHeaderStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12")).
-		MarginBottom(1)
-	
-	rulesHeader := rulesHeaderStyle.Render(".grove/rules")
-	
-	// Format rules content with line numbers
-	rulesLines := strings.Split(m.rulesContent, "\n")
-	var numberedLines []string
-	for i, line := range rulesLines {
-		if i >= rulesHeight-3 { // Account for header and borders
-			break
-		}
-		lineNum := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Width(3).
-			Align(lipgloss.Right).
-			Render(fmt.Sprintf("%d", i+1))
-		
-		// Truncate line if too long
-		maxLineWidth := rulesWidth - 6 // Account for line numbers and padding
-		if len(line) > maxLineWidth && maxLineWidth > 0 {
-			line = line[:maxLineWidth-1] + "…"
-		}
-		
-		numberedLines = append(numberedLines, fmt.Sprintf("%s  %s", lineNum, line))
-	}
-	
-	rulesContentFormatted := strings.Join(numberedLines, "\n")
-	rulesPanel := rulesStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rulesHeader, rulesContentFormatted))
+	rulesPanel := rulesStyle.Render(m.renderRules(rulesWidth, rulesHeight))
 	
 	// Stats panel
 	statsStyle := lipgloss.NewStyle().
@@ -2010,13 +2036,29 @@ func (m *viewModel) View() string {
 	// Combine rules and stats vertically
 	rightPanel := lipgloss.JoinVertical(lipgloss.Left, rulesPanel, statsPanel)
 	
+	// Combine tree with scrollbar
+	var treeWithScrollbar string
+	if treeScrollbar != "" {
+		treeContent := lipgloss.NewStyle().
+			Width(treeWidth - 3). // Make room for scrollbar
+			Render(tree)
+		treeWithScrollbar = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			treeContent,
+			" ", // Small gap
+			treeScrollbar,
+		)
+	} else {
+		treeWithScrollbar = tree
+	}
+	
 	// Tree panel
 	treeStyle := lipgloss.NewStyle().
 		Width(treeWidth).
 		Height(viewportHeight).
 		Padding(0, 1) // top/bottom: 0, left/right: 1
 	
-	treePanel := treeStyle.Render(tree)
+	treePanel := treeStyle.Render(treeWithScrollbar)
 	
 	// Combine panels horizontally
 	mainContent := lipgloss.JoinHorizontal(lipgloss.Top, treePanel, rightPanel)
@@ -2420,14 +2462,102 @@ func (m *viewModel) renderHelp() string {
 	return boxStyle.Render(fullContent)
 }
 
-// renderRules generates the rules panel content
-func (m *viewModel) renderRules() string {
+// renderScrollbar creates a vertical scrollbar indicator
+func (m *viewModel) renderScrollbar(totalItems, visibleItems, scrollOffset, height int) string {
+	if totalItems <= visibleItems {
+		// No need for scrollbar if all items fit
+		return ""
+	}
+	
+	// Calculate scrollbar metrics
+	// The thumb size is proportional to the visible portion
+	thumbSize := max(1, (height * visibleItems) / totalItems)
+	if thumbSize > height {
+		thumbSize = height
+	}
+	
+	// Calculate thumb position
+	maxScrollOffset := totalItems - visibleItems
+	if maxScrollOffset <= 0 {
+		maxScrollOffset = 1
+	}
+	thumbPosition := (scrollOffset * (height - thumbSize)) / maxScrollOffset
+	
+	// Build the scrollbar
+	var scrollbar strings.Builder
+	for i := 0; i < height; i++ {
+		if i >= thumbPosition && i < thumbPosition+thumbSize {
+			// Thumb
+			scrollbar.WriteString("█")
+		} else {
+			// Track
+			scrollbar.WriteString("│")
+		}
+		if i < height-1 {
+			scrollbar.WriteString("\n")
+		}
+	}
+	
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render(scrollbar.String())
+}
+
+// Helper function for max
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// renderRules generates the rules panel content, truncated to fit the given dimensions
+func (m *viewModel) renderRules(width, height int) string {
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("12"))
+		Foreground(lipgloss.Color("12")).
+		MarginBottom(1)
 	
-	// Just return the rules content with a header
-	return headerStyle.Render(".grove/rules") + "\n\n" + m.rulesContent
+	rulesHeader := headerStyle.Render(".grove/rules")
+	
+	// Format rules content with line numbers and truncation
+	rulesLines := strings.Split(m.rulesContent, "\n")
+	var numberedLines []string
+	maxLines := height - 3 // Account for header, margin, and borders
+	
+	// Cap at 10 lines maximum
+	if maxLines > 10 {
+		maxLines = 10
+	}
+	
+	for i, line := range rulesLines {
+		if i >= maxLines && maxLines > 0 {
+			// Add indicator that there are more lines
+			remaining := len(rulesLines) - i
+			moreStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("241")).
+				Italic(true)
+			numberedLines = append(numberedLines, moreStyle.Render(fmt.Sprintf("... (%d more lines)", remaining)))
+			break
+		}
+		
+		lineNum := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Width(3).
+			Align(lipgloss.Right).
+			Render(fmt.Sprintf("%d", i+1))
+		
+		// Truncate line if too long
+		maxLineWidth := width - 6 // Account for line numbers and padding
+		if len(line) > maxLineWidth && maxLineWidth > 0 {
+			line = line[:maxLineWidth-1] + "…"
+		}
+		
+		numberedLines = append(numberedLines, fmt.Sprintf("%s  %s", lineNum, line))
+	}
+	
+	rulesContentFormatted := strings.Join(numberedLines, "\n")
+	return lipgloss.JoinVertical(lipgloss.Left, rulesHeader, rulesContentFormatted)
 }
 
 // renderStats renders the context statistics
