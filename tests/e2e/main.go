@@ -25,6 +25,9 @@ func main() {
 		EmptyColdContextScenario(),
 		CachedContextOnlyColdFilesScenario(),
 
+		// TUI Scenarios
+		TUIViewScenario(),
+
 		// Advanced Scenarios
 		StatsAndValidateScenario(),
 		SnapshotWorkflowScenario(),
