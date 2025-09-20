@@ -890,7 +890,7 @@ func (m *viewModel) renderRepoSelect() string {
 	
 	// Create the repository list content
 	repoListContent := lipgloss.NewStyle().
-		Width(repoListWidth - 3). // Make room for scrollbar
+		Width(repoListWidth - 4). // Make room for scrollbar
 		Render(b.String())
 	
 	// Combine repo list with scrollbar
@@ -2040,7 +2040,7 @@ func (m *viewModel) View() string {
 	var treeWithScrollbar string
 	if treeScrollbar != "" {
 		treeContent := lipgloss.NewStyle().
-			Width(treeWidth - 3). // Make room for scrollbar
+			Width(treeWidth - 4). // Make room for scrollbar
 			Render(tree)
 		treeWithScrollbar = lipgloss.JoinHorizontal(
 			lipgloss.Top,
