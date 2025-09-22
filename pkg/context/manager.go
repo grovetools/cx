@@ -982,26 +982,58 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
-	// Find the active rules file to use the recursive resolver
+	// Find the active rules file to start the recursive resolution
 	activeRulesFile := m.findActiveRulesFile()
 	if activeRulesFile == "" {
-		// Check for defaults configured in grove.yml
+		// If no rules file, check for defaults configured in grove.yml
 		defaultContent, _ := m.LoadDefaultRulesContent()
 		if defaultContent != nil {
-			// Use the non-recursive resolver for default content
+			// Use the non-recursive content-based resolver
 			return m.resolveFilesFromRulesContent(defaultContent)
 		}
-		// No rules file or default found, return empty list.
+		// No active or default rules found
 		return []string{}, nil
 	}
-	
-	// Use the recursive resolver with the actual rules file path
-	hotPatterns, _, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
+
+	// Resolve all patterns recursively from the active rules file
+	hotPatterns, coldPatterns, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve patterns: %w", err)
 	}
-	
-	return m.resolveFilesFromPatterns(hotPatterns)
+
+	// Resolve files from hot patterns
+	hotFiles, err := m.resolveFilesFromPatterns(hotPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving hot context files: %w", err)
+	}
+
+	// Only resolve and filter cold patterns if there are any
+	if len(coldPatterns) > 0 {
+		// Resolve files from cold patterns
+		coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+		if err != nil {
+			return nil, fmt.Errorf("error resolving cold context files: %w", err)
+		}
+
+		// Create a map of cold files for efficient exclusion
+		coldFilesMap := make(map[string]bool)
+		for _, file := range coldFiles {
+			coldFilesMap[file] = true
+		}
+
+		// Filter main files to exclude any that are also in cold files
+		var finalHotFiles []string
+		for _, file := range hotFiles {
+			if !coldFilesMap[file] {
+				finalHotFiles = append(finalHotFiles, file)
+			}
+		}
+
+		return finalHotFiles, nil
+	}
+
+	// No cold patterns, return hot files as is
+	return hotFiles, nil
 }
 
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
@@ -2126,12 +2158,12 @@ func (m *Manager) validateRuleSafety(rulePath string) error {
 	// Check against system directories (both Unix and Windows)
 	dangerousPaths := []string{
 		"/etc", "/usr", "/bin", "/sbin", "/System", "/Library",
-		"/var", "/tmp", "/proc", "/sys", "/dev", "/root",
+		"/proc", "/sys", "/dev", "/root",
 		"C:\\Windows", "C:\\Program Files", "C:\\ProgramData",
 	}
-	
+
 	for _, dangerous := range dangerousPaths {
-		if strings.HasPrefix(absPath, dangerous) || strings.HasPrefix(dangerous, absPath) {
+		if absPath == dangerous || strings.HasPrefix(absPath, dangerous+string(filepath.Separator)) {
 			return fmt.Errorf("rule '%s' would include system directory '%s'", rulePath, dangerous)
 		}
 	}

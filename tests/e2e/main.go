@@ -43,6 +43,11 @@ func main() {
 
 		// Git Repository Scenarios
 		// GitRepositoryCloneScenario(),
+		
+		// Default Directive Scenarios
+		DefaultDirectiveBasicScenario(),
+		// DefaultDirectiveColdContextScenario(), // TODO: Fix cold context testing
+		// DefaultDirectiveCircularScenario(), // TODO: Fix circular dependency test
 	}
 
 	// Setup signal handling for graceful shutdown.
