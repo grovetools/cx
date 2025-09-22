@@ -172,7 +172,9 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 
 // resolveFilesFromRulesContent resolves files based on rules content provided as a byte slice.
 func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, error) {
-	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	// Parse the rules content directly without recursion for this case
+	// This is used by commands that provide rules content directly (not from a file)
+	mainPatterns, coldPatterns, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules content: %w", err)
 	}
@@ -252,6 +254,35 @@ func (m *Manager) WriteFilesList(filename string, files []string) error {
 	return nil
 }
 
+// SetActiveRules sets the active rules file (.grove/rules) from a source file.
+func (m *Manager) SetActiveRules(sourcePath string) error {
+	// Check if source file exists
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return fmt.Errorf("source rules file not found: %s", sourcePath)
+	}
+
+	// Read content from source
+	content, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("error reading source rules file %s: %w", sourcePath, err)
+	}
+
+	// Ensure .grove directory exists
+	groveDir := filepath.Join(m.workDir, GroveDir)
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
+	}
+
+	// Write to active rules file, overwriting if it exists
+	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if err := os.WriteFile(activeRulesPath, content, 0644); err != nil {
+		return fmt.Errorf("error writing active rules file: %w", err)
+	}
+
+	fmt.Printf("Set active rules from %s\n", sourcePath)
+	return nil
+}
+
 
 // findActiveRulesFile returns the path to the active rules file if it exists
 func (m *Manager) findActiveRulesFile() string {
@@ -270,6 +301,59 @@ func (m *Manager) findActiveRulesFile() string {
 	return ""
 }
 
+// GenerateContextFromRulesFile generates context from an explicit rules file path.
+func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLFormat bool) error {
+	// Ensure .grove directory exists for output files
+	groveDir := filepath.Join(m.workDir, GroveDir)
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
+	}
+
+	absRulesFilePath, err := filepath.Abs(rulesFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for rules file: %w", err)
+	}
+	
+	hotPatterns, coldPatterns, err := m.resolveAllPatterns(absRulesFilePath, make(map[string]bool))
+	if err != nil {
+		return fmt.Errorf("failed to resolve patterns from rules file %s: %w", rulesFilePath, err)
+	}
+	
+	hotFiles, err := m.resolveFilesFromPatterns(hotPatterns)
+	if err != nil {
+		return fmt.Errorf("error resolving hot context files: %w", err)
+	}
+	
+	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	if err != nil {
+		return fmt.Errorf("error resolving cold context files: %w", err)
+	}
+	
+	// Cold-over-hot precedence
+	coldFilesMap := make(map[string]bool)
+	for _, file := range coldFiles {
+		coldFilesMap[file] = true
+	}
+	
+	var finalHotFiles []string
+	for _, file := range hotFiles {
+		if !coldFilesMap[file] {
+			finalHotFiles = append(finalHotFiles, file)
+		}
+	}
+
+	// Generate context files
+	if err := m.generateContextFromFiles(finalHotFiles, useXMLFormat); err != nil {
+		return err
+	}
+	
+	if err := m.generateCachedContextFromFiles(coldFiles); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
 // GenerateContext creates the context file from the files list
 func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	// Ensure .grove directory exists
@@ -278,24 +362,28 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 	
-	rulesContent, _, err := m.LoadRulesContent()
-	if err != nil {
-		return fmt.Errorf("loading rules: %w", err)
-	}
-
-	filesToInclude, err := m.resolveFilesFromRulesContent(rulesContent)
+	// Use ResolveFilesFromRules which handles @default directives
+	filesToInclude, err := m.ResolveFilesFromRules()
 	if err != nil {
 		return fmt.Errorf("error resolving files from rules: %w", err)
 	}
 	
 	// Handle case where no rules file exists
-	if rulesContent == nil {
-		// Print visible warning to stderr
-		fmt.Fprintf(os.Stderr, "\n⚠️  WARNING: No rules file found!\n")
-		fmt.Fprintf(os.Stderr, "⚠️  Create %s with patterns to include files in the context.\n", ActiveRulesFile)
-		fmt.Fprintf(os.Stderr, "⚠️  Generating empty context file.\n\n")
+	if len(filesToInclude) == 0 {
+		rulesContent, _, _ := m.LoadRulesContent()
+		if rulesContent == nil {
+			// Print visible warning to stderr
+			fmt.Fprintf(os.Stderr, "\n⚠️  WARNING: No rules file found!\n")
+			fmt.Fprintf(os.Stderr, "⚠️  Create %s with patterns to include files in the context.\n", ActiveRulesFile)
+			fmt.Fprintf(os.Stderr, "⚠️  Generating empty context file.\n\n")
+		}
 	}
 	
+	return m.generateContextFromFiles(filesToInclude, useXMLFormat)
+}
+
+// generateContextFromFiles is a private helper that writes a list of files to the hot context file.
+func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) error {
 	// Create context file
 	contextPath := filepath.Join(m.workDir, ContextFile)
 	ctxFile, err := os.Create(contextPath)
@@ -308,11 +396,11 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	if useXMLFormat {
 		fmt.Fprintf(ctxFile, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 		fmt.Fprintf(ctxFile, "<context>\n")
-		fmt.Fprintf(ctxFile, "  <hot-context files=\"%d\" description=\"Files to be used for reference/background context to carry out the user's question/task to be provided later\">\n", len(filesToInclude))
+		fmt.Fprintf(ctxFile, "  <hot-context files=\"%d\" description=\"Files to be used for reference/background context to carry out the user's question/task to be provided later\">\n", len(files))
 	}
 	
 	// If no files to include, write a comment explaining why
-	if len(filesToInclude) == 0 && rulesContent == nil {
+	if len(files) == 0 {
 		if useXMLFormat {
 			fmt.Fprintf(ctxFile, "    <!-- No rules file found. Create %s with patterns to include files. -->\n", ActiveRulesFile)
 		} else {
@@ -321,7 +409,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	}
 	
 	// Write concatenated content
-	for _, file := range filesToInclude {
+	for _, file := range files {
 		if useXMLFormat {
 			// Use the existing writeFileToXML method for consistency
 			if err := m.writeFileToXML(ctxFile, file, "    "); err != nil {
@@ -356,7 +444,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		fmt.Fprintf(ctxFile, "</context>\n")
 	}
 	
-	fmt.Printf("Generated %s with %d files\n", ContextFile, len(filesToInclude))
+	fmt.Printf("Generated %s with %d files\n", ContextFile, len(files))
 	
 	return nil
 }
@@ -375,6 +463,11 @@ func (m *Manager) GenerateCachedContext() error {
 		return fmt.Errorf("error resolving cold context files: %w", err)
 	}
 	
+	return m.generateCachedContextFromFiles(coldFiles)
+}
+
+// generateCachedContextFromFiles is a private helper that writes a list of files to the cold context files.
+func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
 	// Create cached context file
 	cachedPath := filepath.Join(m.workDir, CachedContextFile)
 	cachedFile, err := os.Create(cachedPath)
@@ -558,9 +651,9 @@ func (m *Manager) UpdateFromRules() error {
 }
 
 // parseRulesFile reads rules content and separates patterns into main and cold contexts.
-func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
+func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
 	if len(rulesContent) == 0 {
-		return nil, nil, false, false, false, 0, nil
+		return nil, nil, nil, nil, false, false, false, 0, nil
 	}
 
 	// Create repo manager for processing Git URLs
@@ -587,13 +680,24 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 		}
 		if strings.HasPrefix(line, "@expire-time ") {
 			// Parse the duration argument
-			durationStr := strings.TrimSpace(strings.TrimPrefix(line, "@expire-time"))
+			durationStr := strings.TrimSpace(strings.TrimPrefix(line, "@expire-time "))
 			if durationStr != "" {
 				parsedDuration, parseErr := time.ParseDuration(durationStr)
 				if parseErr != nil {
-					return nil, nil, false, false, false, 0, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
+					return nil, nil, nil, nil, false, false, false, 0, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
 				}
 				expireTime = parsedDuration
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "@default:") {
+			path := strings.TrimSpace(strings.TrimPrefix(line, "@default:"))
+			if path != "" {
+				if inColdSection {
+					coldDefaultPaths = append(coldDefaultPaths, path)
+				} else {
+					mainDefaultPaths = append(mainDefaultPaths, path)
+				}
 			}
 			continue
 		}
@@ -636,9 +740,9 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, nil, false, false, false, 0, err
+		return nil, nil, nil, nil, false, false, false, 0, err
 	}
-	return mainPatterns, coldPatterns, freezeCache, disableExpiration, disableCache, expireTime, nil
+	return mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, freezeCache, disableExpiration, disableCache, expireTime, nil
 }
 
 // ShouldFreezeCache checks if the @freeze-cache directive is present in the rules file.
@@ -650,7 +754,7 @@ func (m *Manager) ShouldFreezeCache() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, freezeCache, _, _, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, freezeCache, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -667,7 +771,7 @@ func (m *Manager) ShouldDisableExpiration() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, disableExpiration, _, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, disableExpiration, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -685,7 +789,7 @@ func (m *Manager) GetExpireTime() (time.Duration, error) {
 	if rulesContent == nil {
 		return 0, nil
 	}
-	_, _, _, _, _, expireTime, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, _, expireTime, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return 0, fmt.Errorf("error parsing rules file for expire time: %w", err)
 	}
@@ -702,7 +806,7 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, disableCache, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, disableCache, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -710,17 +814,194 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 	return disableCache, nil
 }
 
+// resolveAllPatterns recursively resolves rules, including those from @default directives.
+func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) (hotPatterns []string, coldPatterns []string, err error) {
+	absRulesPath, err := filepath.Abs(rulesPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get absolute path for rules: %w", err)
+	}
+
+	if visited[absRulesPath] {
+		// Circular dependency detected, return to prevent infinite loop.
+		return nil, nil, nil
+	}
+	visited[absRulesPath] = true
+
+	rulesContent, err := os.ReadFile(absRulesPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// If a default rules file doesn't exist, it's not an error, just return empty.
+			return nil, nil, nil
+		}
+		return nil, nil, fmt.Errorf("reading rules file %s: %w", absRulesPath, err)
+	}
+
+	localHot, localCold, mainDefaults, coldDefaults, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
+	}
+
+	hotPatterns = append(hotPatterns, localHot...)
+	coldPatterns = append(coldPatterns, localCold...)
+	
+	rulesDir := filepath.Dir(absRulesPath)
+
+	// Process hot defaults
+	for _, defaultPath := range mainDefaults {
+		resolvedPath := defaultPath
+		if !filepath.IsAbs(resolvedPath) {
+			resolvedPath = filepath.Join(rulesDir, resolvedPath)
+		}
+		
+		// First resolve the real path
+		realPath, err := filepath.EvalSymlinks(resolvedPath)
+		if err != nil {
+			realPath = resolvedPath
+		}
+		
+		// Load the config directly from the grove.yml file in that directory
+		configFile := filepath.Join(realPath, "grove.yml")
+		if _, err := os.Stat(configFile); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Warning: no grove.yml found at %s for @default path %s\n", configFile, defaultPath)
+			continue
+		}
+		
+		cfg, err := config.Load(configFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not load config for @default path %s (file: %s): %v\n", defaultPath, configFile, err)
+			continue
+		}
+		
+		var contextConfig struct {
+			DefaultRulesPath string `yaml:"default_rules_path"`
+		}
+		if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to unmarshal context extension for @default path %s: %v\n", defaultPath, err)
+			continue
+		}
+		if contextConfig.DefaultRulesPath == "" {
+			fmt.Fprintf(os.Stderr, "Warning: no default_rules_path found for @default path %s\n", defaultPath)
+			continue
+		}
+		
+		defaultRulesFile := filepath.Join(realPath, contextConfig.DefaultRulesPath)
+
+		// Recursively resolve patterns from the default rules file
+		// ALL patterns from the default (hot and cold) are added to the current HOT context.
+		nestedHot, nestedCold, err := m.resolveAllPatterns(defaultRulesFile, visited)
+		if err != nil {
+			return nil, nil, err
+		}
+		// The patterns from external project need to be prefixed with the project path
+		// so they resolve files from that project, not the current one
+		for i, pattern := range nestedHot {
+			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
+				nestedHot[i] = filepath.Join(realPath, pattern)
+			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
+				nestedHot[i] = "!" + filepath.Join(realPath, pattern[1:])
+			}
+		}
+		for i, pattern := range nestedCold {
+			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
+				nestedCold[i] = filepath.Join(realPath, pattern)
+			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
+				nestedCold[i] = "!" + filepath.Join(realPath, pattern[1:])
+			}
+		}
+		hotPatterns = append(hotPatterns, nestedHot...)
+		hotPatterns = append(hotPatterns, nestedCold...)
+	}
+
+	// Process cold defaults
+	for _, defaultPath := range coldDefaults {
+		resolvedPath := defaultPath
+		if !filepath.IsAbs(resolvedPath) {
+			resolvedPath = filepath.Join(rulesDir, resolvedPath)
+		}
+
+		// First resolve the real path
+		realPath, err := filepath.EvalSymlinks(resolvedPath)
+		if err != nil {
+			realPath = resolvedPath
+		}
+		
+		// Load the config directly from the grove.yml file in that directory
+		configFile := filepath.Join(realPath, "grove.yml")
+		if _, err := os.Stat(configFile); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Warning: no grove.yml found at %s for @default path %s\n", configFile, defaultPath)
+			continue
+		}
+		
+		cfg, err := config.Load(configFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not load config for @default path %s (file: %s): %v\n", defaultPath, configFile, err)
+			continue
+		}
+
+		var contextConfig struct {
+			DefaultRulesPath string `yaml:"default_rules_path"`
+		}
+		if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to unmarshal context extension for @default path %s: %v\n", defaultPath, err)
+			continue
+		}
+		if contextConfig.DefaultRulesPath == "" {
+			fmt.Fprintf(os.Stderr, "Warning: no default_rules_path found for @default path %s\n", defaultPath)
+			continue
+		}
+
+		defaultRulesFile := filepath.Join(realPath, contextConfig.DefaultRulesPath)
+
+		// Recursively resolve patterns from the default rules file
+		// ALL patterns from the default are added to the current COLD context.
+		nestedHot, nestedCold, err := m.resolveAllPatterns(defaultRulesFile, visited)
+		if err != nil {
+			return nil, nil, err
+		}
+		// The patterns from external project need to be prefixed with the project path
+		for i, pattern := range nestedHot {
+			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
+				nestedHot[i] = filepath.Join(realPath, pattern)
+			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
+				nestedHot[i] = "!" + filepath.Join(realPath, pattern[1:])
+			}
+		}
+		for i, pattern := range nestedCold {
+			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
+				nestedCold[i] = filepath.Join(realPath, pattern)
+			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
+				nestedCold[i] = "!" + filepath.Join(realPath, pattern[1:])
+			}
+		}
+		coldPatterns = append(coldPatterns, nestedHot...)
+		coldPatterns = append(coldPatterns, nestedCold...)
+	}
+
+	return hotPatterns, coldPatterns, nil
+}
+
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
-	rulesContent, _, err := m.LoadRulesContent()
-	if err != nil {
-		return nil, err
-	}
-	if rulesContent == nil {
+	// Find the active rules file to use the recursive resolver
+	activeRulesFile := m.findActiveRulesFile()
+	if activeRulesFile == "" {
+		// Check for defaults configured in grove.yml
+		defaultContent, _ := m.LoadDefaultRulesContent()
+		if defaultContent != nil {
+			// Use the non-recursive resolver for default content
+			return m.resolveFilesFromRulesContent(defaultContent)
+		}
 		// No rules file or default found, return empty list.
 		return []string{}, nil
 	}
-	return m.resolveFilesFromRulesContent(rulesContent)
+	
+	// Use the recursive resolver with the actual rules file path
+	hotPatterns, _, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
+	if err != nil {
+		return nil, err
+	}
+	
+	return m.resolveFilesFromPatterns(hotPatterns)
 }
 
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
@@ -1006,7 +1287,7 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 	}
 	
 	// Parse the rules content to get main and cold patterns
-	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	mainPatterns, coldPatterns, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules file: %w", err)
 	}
@@ -1050,20 +1331,24 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus, error) {
 	result := make(map[string]NodeStatus)
 	
-	// Parse rules content to get patterns
-	rulesContent, _, err := m.LoadRulesContent()
+	// Find the active rules file to start the recursive resolution
+	activeRulesFile := m.findActiveRulesFile()
+	if activeRulesFile == "" {
+		// If no rules file, check for defaults configured in grove.yml
+		_, defaultRulesFile := m.LoadDefaultRulesContent()
+		if _, err := os.Stat(defaultRulesFile); !os.IsNotExist(err) {
+			activeRulesFile = defaultRulesFile
+		} else {
+			// No active or default rules found
+			return result, nil
+		}
+	}
+
+	hotPatterns, coldPatterns, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve all patterns: %w", err)
 	}
-	if rulesContent == nil {
-		// No rules file or default found
-		return result, nil
-	}
-	
-	mainPatterns, coldPatterns, _, _, _, _, err := m.parseRulesFile(rulesContent)
-	if err != nil {
-		return nil, err
-	}
+	mainPatterns := hotPatterns
 	
 	// Combine all patterns for classification
 	allPatterns := append([]string{}, mainPatterns...)

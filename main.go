@@ -16,6 +16,7 @@ func main() {
     rootCmd.AddCommand(cmd.NewDashboardCmd())
     rootCmd.AddCommand(cmd.NewEditCmd())
     rootCmd.AddCommand(cmd.NewResetCmd())
+    rootCmd.AddCommand(cmd.NewSetRulesCmd())
     rootCmd.AddCommand(cmd.NewGenerateCmd()) 
     rootCmd.AddCommand(cmd.NewShowCmd())
     rootCmd.AddCommand(cmd.NewListCmd())

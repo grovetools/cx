@@ -54,6 +54,31 @@ README.md
 !../grove-core/**/*_test.go
 ```
 
+### Reusing Rules with `@default`
+
+To improve modularity, you can import the default rules from another Grove project using the `@default` directive. This is useful for including common libraries or shared components without duplicating rule definitions.
+
+```
+# Hot Context
+# Include all local Go files
+*.go
+
+# Import all default rules from grove-core as hot context
+@default: ../grove-core
+
+---
+
+# Cold Context
+# Import all default rules from grove-flow as cold context
+@default: ../grove-flow
+```
+
+-   The path can be relative or absolute.
+-   `grove-context` will find the `grove.yml` in the target directory and load the rules specified by `context.default_rules_path`.
+-   If `@default` is in the hot section, all rules from the target project (both hot and cold) are imported as **hot** context.
+-   If `@default` is in the cold section, all rules from the target project are imported as **cold** context.
+-   Circular dependencies are automatically detected and handled.
+
 ### .grove/context & .grove/cached-context
 The generated context files for hot and cold contexts, respectively. Files are concatenated using XML-style delimiters:
 ```xml
@@ -85,6 +110,8 @@ The `cx` binary provides a suite of commands for managing your context. Here are
 - `cx edit`: Open `.grove/rules` in your default editor.
 - `cx generate`: Build the `.grove/context` and `.grove/cached-context` files from your rules.
 - `cx show`: Print the generated hot context to the console, ready to be piped to your clipboard or an LLM.
+- `cx set-rules <path>`: Set the active rules from an external file, copying it to `.grove/rules`.
+- `cx reset`: Reset the rules to the project's default configuration (if defined in `grove.yml`).
 
 ### Analysis & Inspection
 

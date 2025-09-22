@@ -420,6 +420,101 @@ func slicesEqual(a, b []string) bool {
 	return true
 }
 
+// Helper function to write string to file for tests
+func fsWriteString(t *testing.T, path, content string) {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("Failed to create directory for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write to %s: %v", path, err)
+	}
+}
+
+func TestManager_DefaultDirectiveResolution(t *testing.T) {
+	// Setup a multi-project test fixture
+	rootDir := t.TempDir()
+	
+	// Project A (main project)
+	projectA := filepath.Join(rootDir, "project-a")
+	os.MkdirAll(filepath.Join(projectA, ".grove"), 0755)
+	fsWriteString(t, filepath.Join(projectA, "a.go"), "package a")
+	fsWriteString(t, filepath.Join(projectA, "a.txt"), "a text")
+	fsWriteString(t, filepath.Join(projectA, "grove.yml"), `version: 1.0`) // Add grove.yml for C to find
+
+	// Project B (dependency)
+	projectB := filepath.Join(rootDir, "project-b")
+	os.MkdirAll(filepath.Join(projectB, ".grove"), 0755)
+	fsWriteString(t, filepath.Join(projectB, "b.go"), "package b")
+	fsWriteString(t, filepath.Join(projectB, "b.txt"), "b text")
+	fsWriteString(t, filepath.Join(projectB, "grove.yml"), `version: 1.0
+context:
+  default_rules_path: .grove/default.rules`)
+	fsWriteString(t, filepath.Join(projectB, ".grove/default.rules"), `*.go
+---
+*.txt`)
+
+	// Project C (circular dependency back to A)
+	projectC := filepath.Join(rootDir, "project-c")
+	os.MkdirAll(filepath.Join(projectC, ".grove"), 0755)
+	fsWriteString(t, filepath.Join(projectC, "c.go"), "package c")
+	fsWriteString(t, filepath.Join(projectC, "grove.yml"), `version: 1.0
+context:
+  default_rules_path: rules.ctx`)
+	// Project C's rules point back to Project A
+	fsWriteString(t, filepath.Join(projectC, "rules.ctx"), `@default: ../project-a`)
+
+	// Project A's main rules file
+	fsWriteString(t, filepath.Join(projectA, ".grove/rules"), `*.go
+@default: ../../project-b
+---
+*.txt
+@default: ../../project-c`)
+
+	mgr := NewManager(projectA)
+	
+	// Debug: print project paths
+	t.Logf("Project A: %s", projectA)
+	t.Logf("Project B: %s", projectB)
+	t.Logf("Project C: %s", projectC)
+	
+	// Test Hot context resolution
+	hotFiles, err := mgr.ResolveFilesFromRules()
+	if err != nil {
+		t.Fatalf("ResolveFilesFromRules failed: %v", err)
+	}
+	sort.Strings(hotFiles)
+	
+	expectedHot := []string{
+		"a.go",
+		"../project-b/b.go",
+		"../project-b/b.txt", // from project-b, imported into hot context
+	}
+	sort.Strings(expectedHot)
+	
+	if !slicesEqual(hotFiles, expectedHot) {
+		t.Errorf("Hot context mismatch.\nExpected: %v\nGot:      %v", expectedHot, hotFiles)
+	}
+
+	// Test Cold context resolution
+	coldFiles, err := mgr.ResolveColdContextFiles()
+	if err != nil {
+		t.Fatalf("ResolveColdContextFiles failed: %v", err)
+	}
+	sort.Strings(coldFiles)
+
+	// Expected: a.txt (from A's cold section) + c.go (from C's hot section, pulled into A's cold)
+	// a.go from C's recursion should be ignored due to cycle.
+	expectedCold := []string{
+		"a.txt",
+		"../project-c/c.go",
+	}
+	sort.Strings(expectedCold)
+
+	if !slicesEqual(coldFiles, expectedCold) {
+		t.Errorf("Cold context mismatch.\nExpected: %v\nGot:      %v", expectedCold, coldFiles)
+	}
+}
+
 func TestManager_ParseDirectives(t *testing.T) {
 	// Create test directory
 	testDir := t.TempDir()
@@ -615,5 +710,144 @@ pkg/**/*.go`,
 				t.Errorf("Expected GetExpireTime to return %v, got %v", tt.expectExpireTime, expireTime)
 			}
 		})
+	}
+}
+
+func TestManager_GenerateContextFromRulesFile(t *testing.T) {
+	// Create test directory structure
+	testDir := t.TempDir()
+	
+	// Create test files
+	testFiles := map[string]string{
+		"main.go":           "package main\n\nfunc main() {}",
+		"lib/helper.go":     "package lib\n\nfunc Helper() {}",
+		"lib/util.go":       "package lib\n\nfunc Util() {}",
+		"test/main_test.go": "package test\n\nfunc TestMain() {}",
+	}
+	
+	for relPath, content := range testFiles {
+		fullPath := filepath.Join(testDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to write file %s: %v", relPath, err)
+		}
+	}
+	
+	// Create .grove directory
+	groveDir := filepath.Join(testDir, ".grove")
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		t.Fatalf("Failed to create .grove directory: %v", err)
+	}
+	
+	// Create external rules file
+	externalRulesPath := filepath.Join(testDir, "external-rules.txt")
+	externalRulesContent := `main.go
+lib/*.go
+---
+test/*.go`
+	if err := os.WriteFile(externalRulesPath, []byte(externalRulesContent), 0644); err != nil {
+		t.Fatalf("Failed to write external rules file: %v", err)
+	}
+	
+	// Create manager and generate context from external rules file
+	m := NewManager(testDir)
+	err := m.GenerateContextFromRulesFile(externalRulesPath, false)
+	if err != nil {
+		t.Fatalf("GenerateContextFromRulesFile failed: %v", err)
+	}
+	
+	// Verify hot context was generated
+	contextPath := filepath.Join(testDir, ContextFile)
+	if _, err := os.Stat(contextPath); os.IsNotExist(err) {
+		t.Fatal("Context file was not created")
+	}
+	
+	// Read and verify hot context content
+	contextContent, err := os.ReadFile(contextPath)
+	if err != nil {
+		t.Fatalf("Failed to read context file: %v", err)
+	}
+	
+	// Should contain main.go and lib files, but not test files
+	contextStr := string(contextContent)
+	if !strings.Contains(contextStr, "main.go") {
+		t.Error("Context should contain main.go")
+	}
+	if !strings.Contains(contextStr, "lib/helper.go") {
+		t.Error("Context should contain lib/helper.go")
+	}
+	if strings.Contains(contextStr, "test/main_test.go") {
+		t.Error("Hot context should not contain test/main_test.go (it's in cold context)")
+	}
+	
+	// Verify cold context was generated
+	cachedContextPath := filepath.Join(testDir, CachedContextFile)
+	if _, err := os.Stat(cachedContextPath); os.IsNotExist(err) {
+		t.Fatal("Cached context file was not created")
+	}
+	
+	// Read and verify cold context content
+	cachedContent, err := os.ReadFile(cachedContextPath)
+	if err != nil {
+		t.Fatalf("Failed to read cached context file: %v", err)
+	}
+	
+	// Should contain test files
+	cachedStr := string(cachedContent)
+	if !strings.Contains(cachedStr, "test/main_test.go") {
+		t.Error("Cached context should contain test/main_test.go")
+	}
+}
+
+func TestManager_SetActiveRules(t *testing.T) {
+	// Create test directory
+	testDir := t.TempDir()
+	
+	// Create .grove directory
+	groveDir := filepath.Join(testDir, ".grove")
+	if err := os.MkdirAll(groveDir, 0755); err != nil {
+		t.Fatalf("Failed to create .grove directory: %v", err)
+	}
+	
+	// Create source rules file
+	sourceRulesPath := filepath.Join(testDir, "source-rules.txt")
+	sourceRulesContent := `# Test rules
+*.go
+!vendor/
+!*_test.go`
+	if err := os.WriteFile(sourceRulesPath, []byte(sourceRulesContent), 0644); err != nil {
+		t.Fatalf("Failed to write source rules file: %v", err)
+	}
+	
+	// Create manager and set active rules
+	m := NewManager(testDir)
+	err := m.SetActiveRules(sourceRulesPath)
+	if err != nil {
+		t.Fatalf("SetActiveRules failed: %v", err)
+	}
+	
+	// Verify active rules file was created
+	activeRulesPath := filepath.Join(testDir, ActiveRulesFile)
+	if _, err := os.Stat(activeRulesPath); os.IsNotExist(err) {
+		t.Fatal("Active rules file was not created")
+	}
+	
+	// Verify content matches source
+	activeRulesContent, err := os.ReadFile(activeRulesPath)
+	if err != nil {
+		t.Fatalf("Failed to read active rules file: %v", err)
+	}
+	
+	if string(activeRulesContent) != sourceRulesContent {
+		t.Errorf("Active rules content doesn't match source.\nExpected:\n%s\nGot:\n%s", 
+			sourceRulesContent, string(activeRulesContent))
+	}
+	
+	// Test setting rules from non-existent file
+	err = m.SetActiveRules(filepath.Join(testDir, "non-existent.txt"))
+	if err == nil {
+		t.Error("SetActiveRules should fail for non-existent file")
 	}
 }
