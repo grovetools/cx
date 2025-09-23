@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/mattsolo1/grove-docgen/main/schema/docgen.config.schema.json
-category: "CLI Tools"
-title: "Grove Context (`cx`)"
+category: "Developer Tools"
+title: "Grove Context"
 description: "A rule-based tool for dynamically managing the file-based context provided to Large Language Models (LLMs)."
 enabled: true
 sections:
@@ -50,7 +50,8 @@ sections:
     prompt: prompts/contributing.md
     title: Contributing
 settings:
-  model: gemini-2.5-pro
+  # model: gemini-2.5-pro
+  model: gpt-5
   output_dir: docs
   regeneration_mode: scratch
   rules_file: docs.rules
