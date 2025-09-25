@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
 )
@@ -27,7 +26,7 @@ func NewValidateCmd() *cobra.Command {
 			}
 			
 			if result.TotalFiles == 0 {
-				fmt.Println("No files in context. Check your rules file.")
+				prettyLog.WarnPretty("No files in context. Check your rules file.")
 				return nil
 			}
 			

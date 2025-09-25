@@ -46,8 +46,8 @@ func newRepoListCmd() *cobra.Command {
 			}
 
 			if len(repos) == 0 {
-				fmt.Println("No repositories tracked yet.")
-				fmt.Println("Add a Git URL to your rules file to start tracking repositories.")
+				prettyLog.InfoPretty("No repositories tracked yet.")
+				prettyLog.InfoPretty("Add a Git URL to your rules file to start tracking repositories.")
 				return nil
 			}
 
@@ -104,13 +104,13 @@ func newRepoSyncCmd() *cobra.Command {
 				return fmt.Errorf("failed to create repository manager: %w", err)
 			}
 
-			fmt.Println("Syncing all tracked repositories...")
+			prettyLog.InfoPretty("Syncing all tracked repositories...")
 			
 			if err := manager.Sync(); err != nil {
 				return fmt.Errorf("failed to sync repositories: %w", err)
 			}
 
-			fmt.Println("All repositories synced successfully.")
+			prettyLog.Success("All repositories synced successfully.")
 			return nil
 		},
 	}
@@ -143,16 +143,16 @@ func newRepoAuditCmd() *cobra.Command {
 					return fmt.Errorf("failed to update audit status: %w", err)
 				}
 				
-				fmt.Printf("✅ Updated audit status to '%s' for %s\n", statusFlag, repoURL)
+				prettyLog.Success(fmt.Sprintf("Updated audit status to '%s' for %s", statusFlag, repoURL))
 				return nil
 			}
 
-			fmt.Println("Preparing repository for audit...")
+			prettyLog.InfoPretty("Preparing repository for audit...")
 			localPath, currentCommit, err := manager.Ensure(repoURL, "")
 			if err != nil {
 				return fmt.Errorf("failed to ensure repository is cloned: %w", err)
 			}
-			fmt.Printf("🔍 Auditing %s at commit %s\n", repoURL, currentCommit[:7])
+			prettyLog.InfoPretty(fmt.Sprintf("Auditing %s at commit %s", repoURL, currentCommit[:7]))
 
 			// Change directory to the repository for the audit.
 			originalDir, _ := os.Getwd()
@@ -165,13 +165,15 @@ func newRepoAuditCmd() *cobra.Command {
 				return fmt.Errorf("failed to set up default audit rules: %w", err)
 			}
 
-			fmt.Println("\nLaunching interactive context viewer (`cx view`)...")
-			fmt.Println("📝 Use a/c/x to add/cool/exclude files. Press 'q' to exit and continue.")
+			prettyLog.Blank()
+			prettyLog.InfoPretty("Launching interactive context viewer (`cx view`)...")
+			prettyLog.InfoPretty("Use a/c/x to add/cool/exclude files. Press 'q' to exit and continue.")
 			if err := runInteractiveView(); err != nil {
 				return fmt.Errorf("error during interactive context view: %w", err)
 			}
 
-			fmt.Println("\nGenerating context and running LLM security analysis...")
+			prettyLog.Blank()
+			prettyLog.InfoPretty("Generating context and running LLM security analysis...")
 			reportContent, err := runLLMAnalysis()
 			if err != nil {
 				return fmt.Errorf("LLM analysis failed: %w", err)
@@ -181,11 +183,12 @@ func newRepoAuditCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to save audit report: %w", err)
 			}
-			fmt.Printf("✅ Audit report saved to: %s\n", reportPath)
+			prettyLog.Success(fmt.Sprintf("Audit report saved to: %s", reportPath))
 
-			fmt.Println("\nPlease review the generated audit report in your editor.")
+			prettyLog.Blank()
+			prettyLog.InfoPretty("Please review the generated audit report in your editor.")
 			if err := openInEditor(reportPath); err != nil {
-				fmt.Printf("Warning: could not open report in editor: %v\n", err)
+				prettyLog.WarnPretty(fmt.Sprintf("Could not open report in editor: %v", err))
 			}
 			
 			approved, err := promptForApproval()
@@ -204,7 +207,8 @@ func newRepoAuditCmd() *cobra.Command {
 				return fmt.Errorf("failed to update manifest with audit result: %w", err)
 			}
 			
-			fmt.Printf("\n✨ Audit complete. Repository status updated to '%s'.\n", status)
+			prettyLog.Blank()
+			prettyLog.Success(fmt.Sprintf("Audit complete. Repository status updated to '%s'.", status))
 			return nil
 		},
 	}
@@ -289,7 +293,7 @@ func runLLMAnalysis() (string, error) {
 		var flowCfg FlowConfig
 		if err := coreCfg.UnmarshalExtension("flow", &flowCfg); err == nil && flowCfg.OneshotModel != "" {
 			model = flowCfg.OneshotModel
-			fmt.Printf("Using model from grove.yml: %s\n", model)
+			prettyLog.InfoPretty(fmt.Sprintf("Using model from grove.yml: %s", model))
 		}
 	}
 	

@@ -26,7 +26,7 @@ func NewResetCmd() *cobra.Command {
 			// Check if there's an existing rules file
 			if _, err := os.Stat(rulesPath); err == nil && !force {
 				// Rules file exists, ask for confirmation
-				fmt.Printf("Warning: This will overwrite the existing rules file at %s\n", rulesPath)
+				prettyLog.WarnPretty(fmt.Sprintf("This will overwrite the existing rules file at %s", rulesPath))
 				fmt.Print("Are you sure you want to reset to defaults? (y/N): ")
 				
 				var response string
@@ -34,7 +34,7 @@ func NewResetCmd() *cobra.Command {
 				response = strings.ToLower(strings.TrimSpace(response))
 				
 				if response != "y" && response != "yes" {
-					fmt.Println("Reset cancelled.")
+					prettyLog.InfoPretty("Reset cancelled.")
 					return nil
 				}
 			}
@@ -51,7 +51,7 @@ func NewResetCmd() *cobra.Command {
 				if err := os.WriteFile(rulesPath, rulesContent, 0644); err != nil {
 					return fmt.Errorf("error writing rules file: %w", err)
 				}
-				fmt.Printf("✓ Reset rules file to project defaults: %s\n", rulesPath)
+				prettyLog.Success(fmt.Sprintf("Reset rules file to project defaults: %s", rulesPath))
 			} else {
 				// No defaults configured, use basic boilerplate
 				boilerplate := []byte(`# Context rules file
@@ -67,19 +67,20 @@ func NewResetCmd() *cobra.Command {
 				if err := os.WriteFile(rulesPath, boilerplate, 0644); err != nil {
 					return fmt.Errorf("error writing rules file: %w", err)
 				}
-				fmt.Printf("✓ Reset rules file to basic defaults: %s\n", rulesPath)
-				fmt.Println("Tip: Configure default rules in grove.yml with:")
-				fmt.Println("  context:")
-				fmt.Println("    default_rules_path: .grove/default.rules")
+				prettyLog.Success(fmt.Sprintf("Reset rules file to basic defaults: %s", rulesPath))
+				prettyLog.InfoPretty("Tip: Configure default rules in grove.yml with:")
+				prettyLog.InfoPretty("  context:")
+				prettyLog.InfoPretty("    default_rules_path: .grove/default.rules")
 			}
 			
 			// Show what was written
-			fmt.Println("\nNew rules content:")
-			fmt.Println(strings.Repeat("-", 40))
+			prettyLog.Blank()
+			prettyLog.InfoPretty("New rules content:")
+			prettyLog.Divider()
 			
 			content, err := os.ReadFile(rulesPath)
 			if err == nil {
-				fmt.Print(string(content))
+				prettyLog.Code(string(content))
 			}
 			
 			return nil

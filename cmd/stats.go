@@ -58,7 +58,7 @@ func NewStatsCmd() *cobra.Command {
 					// Return empty array for JSON
 					fmt.Println("[]")
 				} else {
-					fmt.Println("No files in context. Check your rules file.")
+					prettyLog.WarnPretty("No files in context. Check your rules file.")
 				}
 				return nil
 			}

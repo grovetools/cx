@@ -35,9 +35,9 @@ func NewEditCmd() *cobra.Command {
 				// Use default content if available, otherwise use boilerplate
 				if rulesContent == nil {
 					rulesContent = []byte("# Context rules file\n# Add patterns to include files, one per line\n# Use ! prefix to exclude\n# Examples:\n#   *.go\n#   !*_test.go\n#   src/**/*.js\n\n*\n")
-					fmt.Printf("Created new rules file with boilerplate: %s\n", rulesPath)
+					prettyLog.Success(fmt.Sprintf("Created new rules file with boilerplate: %s", rulesPath))
 				} else {
-					fmt.Printf("Created new rules file from project default: %s\n", rulesPath)
+					prettyLog.Success(fmt.Sprintf("Created new rules file from project default: %s", rulesPath))
 				}
 
 				if err := os.WriteFile(rulesPath, rulesContent, 0644); err != nil {

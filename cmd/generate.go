@@ -3,12 +3,10 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/logging"
 )
 
 var (
 	useXMLFormat bool = true
-	prettyLog = logging.NewPrettyLogger()
 )
 
 func NewGenerateCmd() *cobra.Command {

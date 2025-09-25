@@ -135,7 +135,7 @@ func (d *DiffResult) Print(compareName string) {
 			return d.Added[i].Tokens > d.Added[j].Tokens
 		})
 		for _, f := range d.Added {
-			fmt.Printf("  + %-50s (%s tokens)\n", truncatePath(f.Path, 50), FormatTokenCount(f.Tokens))
+			fmt.Printf("  + %-50s (%s tokens)\n", TruncatePath(f.Path, 50), FormatTokenCount(f.Tokens))
 		}
 		fmt.Println()
 	}
@@ -147,7 +147,7 @@ func (d *DiffResult) Print(compareName string) {
 			return d.Removed[i].Tokens > d.Removed[j].Tokens
 		})
 		for _, f := range d.Removed {
-			fmt.Printf("  - %-50s (%s tokens)\n", truncatePath(f.Path, 50), FormatTokenCount(f.Tokens))
+			fmt.Printf("  - %-50s (%s tokens)\n", TruncatePath(f.Path, 50), FormatTokenCount(f.Tokens))
 		}
 		fmt.Println()
 	}
@@ -185,8 +185,8 @@ func (d *DiffResult) Print(compareName string) {
 		FormatBytes(int(abs64(sizeDiff))))
 }
 
-// truncatePath shortens a path for display
-func truncatePath(path string, maxLen int) string {
+// TruncatePath shortens a path for display
+func TruncatePath(path string, maxLen int) string {
 	if len(path) <= maxLen {
 		return path
 	}

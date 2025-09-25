@@ -29,7 +29,7 @@ func NewViewCmd() *cobra.Command {
 			
 			// Check if we need to launch audit after exit
 			if viewModel, ok := finalModel.(*viewModel); ok && viewModel.auditRepoURL != "" {
-				fmt.Printf("\nLaunching audit for %s...\n", viewModel.auditRepoURL)
+				prettyLog.InfoPretty(fmt.Sprintf("Launching audit for %s...", viewModel.auditRepoURL))
 				// Execute cx repo audit command
 				auditCmd := newRepoAuditCmd()
 				auditCmd.SetArgs([]string{viewModel.auditRepoURL})
