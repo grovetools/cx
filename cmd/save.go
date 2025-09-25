@@ -9,7 +9,7 @@ import (
 
 var (
 	saveLog = logging.NewLogger("grove-context")
-	savePrettyLog = logging.NewPrettyLogger("grove-context")
+	savePrettyLog = logging.NewPrettyLogger()
 )
 
 func NewSaveCmd() *cobra.Command {

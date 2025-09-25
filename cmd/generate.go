@@ -8,7 +8,7 @@ import (
 
 var (
 	useXMLFormat bool = true
-	prettyLog = logging.NewPrettyLogger("grove-context")
+	prettyLog = logging.NewPrettyLogger()
 )
 
 func NewGenerateCmd() *cobra.Command {

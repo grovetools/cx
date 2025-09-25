@@ -6,7 +6,7 @@ import (
 	"github.com/mattsolo1/grove-core/logging"
 )
 
-var fixPrettyLog = logging.NewPrettyLogger("grove-context")
+var fixPrettyLog = logging.NewPrettyLogger()
 
 func NewFixCmd() *cobra.Command {
 	cmd := &cobra.Command{

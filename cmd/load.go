@@ -9,7 +9,7 @@ import (
 
 var (
 	loadLog = logging.NewLogger("grove-context")
-	loadPrettyLog = logging.NewPrettyLogger("grove-context")
+	loadPrettyLog = logging.NewPrettyLogger()
 )
 
 func NewLoadCmd() *cobra.Command {

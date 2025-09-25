@@ -9,7 +9,7 @@ import (
 
 var (
 	setRulesLog = logging.NewLogger("grove-context")
-	setRulesPrettyLog = logging.NewPrettyLogger("grove-context")
+	setRulesPrettyLog = logging.NewPrettyLogger()
 )
 
 // NewSetRulesCmd creates the set-rules command

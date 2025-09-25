@@ -9,7 +9,7 @@ import (
 
 var (
 	fromGitLog = logging.NewLogger("grove-context")
-	fromGitPrettyLog = logging.NewPrettyLogger("grove-context")
+	fromGitPrettyLog = logging.NewPrettyLogger()
 )
 
 func NewFromGitCmd() *cobra.Command {
