@@ -1,9 +1,15 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/cli"
+	"github.com/mattsolo1/grove-core/logging"
+)
+
+var (
+	loadLog = logging.NewLogger("grove-context")
+	loadPrettyLog = logging.NewPrettyLogger("grove-context")
 )
 
 func NewLoadCmd() *cobra.Command {
@@ -13,17 +19,18 @@ func NewLoadCmd() *cobra.Command {
 		Long:  `Loads a snapshot from .grove/context-snapshots/<name> to .grove/context-files.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logger := cli.GetLogger(cmd)
 			name := args[0]
 			mgr := context.NewManager("")
 			
-			logger.Infof("Loading snapshot: %s", name)
+			loadLog.WithField("snapshot", name).Info("Loading snapshot")
+			loadPrettyLog.InfoPretty(fmt.Sprintf("Loading snapshot: %s", name))
 			
 			if err := mgr.LoadSnapshot(name); err != nil {
 				return err
 			}
 			
-			logger.Info("Snapshot loaded successfully")
+			loadLog.Info("Snapshot loaded successfully")
+			loadPrettyLog.Success("Snapshot loaded successfully")
 			return nil
 		},
 	}

@@ -4,7 +4,12 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/cli"
+	"github.com/mattsolo1/grove-core/logging"
+)
+
+var (
+	fromGitLog = logging.NewLogger("grove-context")
+	fromGitPrettyLog = logging.NewPrettyLogger("grove-context")
 )
 
 func NewFromGitCmd() *cobra.Command {
@@ -13,7 +18,6 @@ func NewFromGitCmd() *cobra.Command {
 		Short: "Generate context based on git history",
 		Long:  `Generate context from files in git history based on various criteria like commits, branches, or dates.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logger := cli.GetLogger(cmd)
 			mgr := context.NewManager("")
 			
 			// Get flags
@@ -27,7 +31,8 @@ func NewFromGitCmd() *cobra.Command {
 				return fmt.Errorf("specify at least one option: --since, --branch, --staged, or --commits")
 			}
 			
-			logger.Info("Updating context from git history...")
+			fromGitLog.Info("Updating context from git history")
+			fromGitPrettyLog.InfoPretty("Updating context from git history...")
 			
 			// Create git options
 			opts := context.GitOptions{
@@ -45,9 +50,10 @@ func NewFromGitCmd() *cobra.Command {
 			// Show what was added
 			files, err := mgr.ListFiles()
 			if err == nil {
-				fmt.Printf("\nFiles added to context:\n")
+				fromGitPrettyLog.Blank()
+				fromGitPrettyLog.InfoPretty("Files added to context:")
 				for _, file := range files {
-					fmt.Printf("  %s\n", file)
+					fromGitPrettyLog.Path("  ", file)
 				}
 			}
 			
