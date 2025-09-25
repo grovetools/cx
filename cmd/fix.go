@@ -6,10 +6,7 @@ import (
 	"github.com/mattsolo1/grove-core/logging"
 )
 
-var (
-	fixLog = logging.NewLogger("grove-context")
-	fixPrettyLog = logging.NewPrettyLogger("grove-context")
-)
+var fixPrettyLog = logging.NewPrettyLogger("grove-context")
 
 func NewFixCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -19,14 +16,12 @@ func NewFixCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager("")
 			
-			fixLog.Info("Fixing context validation issues")
 			fixPrettyLog.InfoPretty("Fixing context validation issues...")
 			
 			if err := mgr.FixContext(); err != nil {
 				return err
 			}
 			
-			fixLog.Info("Context fixed successfully")
 			fixPrettyLog.Success("Context fixed successfully")
 			return nil
 		},

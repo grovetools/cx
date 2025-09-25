@@ -8,7 +8,6 @@ import (
 
 var (
 	useXMLFormat bool = true
-	log = logging.NewLogger("grove-context")
 	prettyLog = logging.NewPrettyLogger("grove-context")
 )
 
@@ -20,25 +19,21 @@ func NewGenerateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager("")
 			
-			log.Info("Generating context file")
 			prettyLog.InfoPretty("Generating context file...")
 			
 			if err := mgr.GenerateContext(useXMLFormat); err != nil {
 				return err
 			}
 			
-			log.Info("Context file generated successfully")
 			prettyLog.Success("Context file generated successfully")
 			
 			// Also generate cached context
-			log.Info("Generating cached context file")
 			prettyLog.InfoPretty("Generating cached context file...")
 			
 			if err := mgr.GenerateCachedContext(); err != nil {
 				return err
 			}
 			
-			log.Info("Cached context file generated successfully")
 			prettyLog.Success("Cached context file generated successfully")
 			return nil
 		},
