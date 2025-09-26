@@ -1,3 +1,94 @@
+## v0.4.0 (2025-09-26)
+
+This release introduces more flexible rules management and standardizes command-line output. A new `cx set-rules <path>` command allows setting the active rules from an external file, and the core logic has been refactored for programmatic context generation (695b3b0). Projects can now define a default rules path in `grove.yml`, which can be used to reset `.grove/rules` with pre-defined rules. A corresponding `cx reset` command has been added to restore these project defaults (a4854db).
+
+The command-line output has been refactored to align with `grove-core`'s logging standards (b93aabc, 352ff85). User-facing messages and progress indicators are now sent to stderr, ensuring that command output to stdout (e.g., from `cx list` or `cx show`) remains clean for scripting and piping (b93aabc). This also includes restoring pretty logging with visual feedback for successful operations (43663e1).
+
+Several bugs have been fixed, including an issue with cold context precedence where hot files were not being correctly excluded (bdc09d0). The interactive TUI (`cx view`) has received layout and scrolling improvements, such as visual scrollbars and corrected panel width calculations to prevent content wrapping issues (c5b8131, 4fa8fc4). The safety validation for adding external paths has also been refined to reduce false positives (bdc09d0).
+
+Finally, a draft set of documentation has been added, covering core concepts, commands, best practices, and contribution guidelines (a240a64, dfbf30b).
+
+### Features
+
+*   Add `cx set-rules` command for setting active rules from an external file (695b3b0)
+*   Add `cx reset` command to restore rules to project defaults (a4854db)
+*   Support project-default rules via `default_rules_path` in `grove.yml` (a4854db)
+
+### Bug Fixes
+
+*   Resolve cold context precedence to correctly filter hot files (bdc09d0)
+*   Improve TUI layout with scrollbars and correct panel widths (c5b8131, 4fa8fc4)
+*   Refine TUI safety validation to reduce false positives for external paths (bdc09d0)
+*   Remove duplicate structured logging messages (d5dcd54)
+
+### Code Refactoring
+
+*   Integrate `grove-core` logging to separate user messages (stderr) from data output (stdout) (b93aabc)
+*   Update logging to use parameterless `NewPrettyLogger` (352ff85)
+*   Restore pretty logging with visual feedback for successful operations (43663e1)
+*   Refactor core logic to support programmatic context generation (695b3b0)
+
+### Documentation
+
+*   Add draft documentation for commands, concepts, and contributing (a240a64, dfbf30b)
+
+### Chores
+
+*   Update `.gitignore` to track `CLAUDE.md` and ignore `go.work` files (c31d1f9)
+
+### File Changes
+
+```
+ .gitignore                               |   7 +
+ .grovectx                                |   2 -
+ CLAUDE.md                                |  30 ++
+ README.md                                |  27 ++
+ cmd/diff.go                              |  84 ++++-
+ cmd/edit.go                              |  48 ++-
+ cmd/fix.go                               |   9 +-
+ cmd/fromgit.go                           |  16 +-
+ cmd/generate.go                          |  14 +-
+ cmd/load.go                              |  15 +-
+ cmd/loggers.go                           |  10 +
+ cmd/repo.go                              |  57 +--
+ cmd/reset.go                             |  93 +++++
+ cmd/save.go                              |  15 +-
+ cmd/setrules.go                          |  40 ++
+ cmd/stats.go                             |   2 +-
+ cmd/validate.go                          |   3 +-
+ cmd/view.go                              | 244 ++++++++++---
+ docs/advanced-topics.md                  | 259 +++++++++++++
+ docs/best-practices.md                   | 195 ++++++++++
+ docs/command-reference.md                | 339 +++++++++++++++++
+ docs/contributing.md                     | 154 ++++++++
+ docs/core-concepts.md                    | 161 +++++++++
+ docs/docgen.config.yml                   |  59 +++
+ docs/docs.rules                          |   1 +
+ docs/getting-started.md                  | 155 ++++++++
+ docs/installation.md                     |  30 ++
+ docs/interactive-tools.md                | 175 +++++++++
+ docs/overview.md                         | 108 ++++++
+ docs/prompts/advanced-topics.md          |  23 ++
+ docs/prompts/best-practices.md           |  16 +
+ docs/prompts/command-reference.md        |  17 +
+ docs/prompts/contributing.md             |  15 +
+ docs/prompts/core-concepts.md            |  24 ++
+ docs/prompts/getting-started.md          |  12 +
+ docs/prompts/installation.md             |  12 +
+ docs/prompts/interactive-tools.md        |  22 ++
+ docs/prompts/overview.md                 |  21 ++
+ main.go                                  |   2 +
+ overview-gemini.md                       |  16 +
+ pkg/context/diff.go                      |   8 +-
+ pkg/context/manager.go                   | 603 +++++++++++++++++++++++++++----
+ pkg/context/manager_test.go              | 234 ++++++++++++
+ pkg/docs/docs.json                       |  66 ++++
+ tests/e2e/main.go                        |   8 +
+ tests/e2e/scenarios_default_directive.go | 379 +++++++++++++++++++
+ tests/e2e/scenarios_tui.go               | 465 ++++++++++++++++++++++++
+ tests/e2e/test_utils.go                  |  51 +++
+ 48 files changed, 4136 insertions(+), 210 deletions(-)
+```
 ## v0.3.0 (2025-09-17)
 
 This release introduces a context repository management TUI designed to streamline context management across multiple projects and reference repositories from Github (008b68b), available by running `cx view` and pressint `Tab`. Users can add/remove everything `grove repo list` and `grove ws list`, including worktrees, from the TUI. It also displays audit status and version information for cloned repositories. 
