@@ -174,7 +174,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, error) {
 	// Parse the rules content directly without recursion for this case
 	// This is used by commands that provide rules content directly (not from a file)
-	mainPatterns, coldPatterns, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	mainPatterns, coldPatterns, _, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules content: %w", err)
 	}
@@ -314,7 +314,7 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 		return fmt.Errorf("failed to get absolute path for rules file: %w", err)
 	}
 	
-	hotPatterns, coldPatterns, err := m.resolveAllPatterns(absRulesFilePath, make(map[string]bool))
+	hotPatterns, coldPatterns, _, err := m.resolveAllPatterns(absRulesFilePath, make(map[string]bool))
 	if err != nil {
 		return fmt.Errorf("failed to resolve patterns from rules file %s: %w", rulesFilePath, err)
 	}
@@ -651,9 +651,9 @@ func (m *Manager) UpdateFromRules() error {
 }
 
 // parseRulesFile reads rules content and separates patterns into main and cold contexts.
-func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
+func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
 	if len(rulesContent) == 0 {
-		return nil, nil, nil, nil, false, false, false, 0, nil
+		return nil, nil, nil, nil, nil, false, false, false, 0, nil
 	}
 
 	// Create repo manager for processing Git URLs
@@ -684,9 +684,16 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			if durationStr != "" {
 				parsedDuration, parseErr := time.ParseDuration(durationStr)
 				if parseErr != nil {
-					return nil, nil, nil, nil, false, false, false, 0, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
+					return nil, nil, nil, nil, nil, false, false, false, 0, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
 				}
 				expireTime = parsedDuration
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "@view:") {
+			path := strings.TrimSpace(strings.TrimPrefix(line, "@view:"))
+			if path != "" {
+				viewPaths = append(viewPaths, path)
 			}
 			continue
 		}
@@ -740,9 +747,9 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, nil, nil, nil, false, false, false, 0, err
+		return nil, nil, nil, nil, nil, false, false, false, 0, err
 	}
-	return mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, freezeCache, disableExpiration, disableCache, expireTime, nil
+	return mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, viewPaths, freezeCache, disableExpiration, disableCache, expireTime, nil
 }
 
 // ShouldFreezeCache checks if the @freeze-cache directive is present in the rules file.
@@ -754,7 +761,7 @@ func (m *Manager) ShouldFreezeCache() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, freezeCache, _, _, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, freezeCache, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -771,7 +778,7 @@ func (m *Manager) ShouldDisableExpiration() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, _, disableExpiration, _, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, disableExpiration, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -789,7 +796,7 @@ func (m *Manager) GetExpireTime() (time.Duration, error) {
 	if rulesContent == nil {
 		return 0, nil
 	}
-	_, _, _, _, _, _, _, expireTime, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, _, _, expireTime, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return 0, fmt.Errorf("error parsing rules file for expire time: %w", err)
 	}
@@ -806,7 +813,7 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, _, _, disableCache, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, _, disableCache, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -815,15 +822,15 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 }
 
 // resolveAllPatterns recursively resolves rules, including those from @default directives.
-func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) (hotPatterns []string, coldPatterns []string, err error) {
+func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) (hotPatterns, coldPatterns, viewPaths []string, err error) {
 	absRulesPath, err := filepath.Abs(rulesPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get absolute path for rules: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get absolute path for rules: %w", err)
 	}
 
 	if visited[absRulesPath] {
 		// Circular dependency detected, return to prevent infinite loop.
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	visited[absRulesPath] = true
 
@@ -831,18 +838,19 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 	if err != nil {
 		if os.IsNotExist(err) {
 			// If a default rules file doesn't exist, it's not an error, just return empty.
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
-		return nil, nil, fmt.Errorf("reading rules file %s: %w", absRulesPath, err)
+		return nil, nil, nil, fmt.Errorf("reading rules file %s: %w", absRulesPath, err)
 	}
 
-	localHot, localCold, mainDefaults, coldDefaults, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	localHot, localCold, mainDefaults, coldDefaults, localView, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
+		return nil, nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
 	}
 
 	hotPatterns = append(hotPatterns, localHot...)
 	coldPatterns = append(coldPatterns, localCold...)
+	viewPaths = append(viewPaths, localView...)
 	
 	rulesDir := filepath.Dir(absRulesPath)
 
@@ -888,9 +896,9 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 
 		// Recursively resolve patterns from the default rules file
 		// ALL patterns from the default (hot and cold) are added to the current HOT context.
-		nestedHot, nestedCold, err := m.resolveAllPatterns(defaultRulesFile, visited)
+		nestedHot, nestedCold, nestedView, err := m.resolveAllPatterns(defaultRulesFile, visited)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		// The patterns from external project need to be prefixed with the project path
 		// so they resolve files from that project, not the current one
@@ -910,6 +918,14 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 		}
 		hotPatterns = append(hotPatterns, nestedHot...)
 		hotPatterns = append(hotPatterns, nestedCold...)
+		
+		// Add view paths from nested rules, adjusting relative paths
+		for i, path := range nestedView {
+			if !filepath.IsAbs(path) {
+				nestedView[i] = filepath.Join(realPath, path)
+			}
+		}
+		viewPaths = append(viewPaths, nestedView...)
 	}
 
 	// Process cold defaults
@@ -954,9 +970,9 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 
 		// Recursively resolve patterns from the default rules file
 		// ALL patterns from the default are added to the current COLD context.
-		nestedHot, nestedCold, err := m.resolveAllPatterns(defaultRulesFile, visited)
+		nestedHot, nestedCold, nestedView, err := m.resolveAllPatterns(defaultRulesFile, visited)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		// The patterns from external project need to be prefixed with the project path
 		for i, pattern := range nestedHot {
@@ -975,9 +991,17 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 		}
 		coldPatterns = append(coldPatterns, nestedHot...)
 		coldPatterns = append(coldPatterns, nestedCold...)
+		
+		// Add view paths from nested rules, adjusting relative paths
+		for i, path := range nestedView {
+			if !filepath.IsAbs(path) {
+				nestedView[i] = filepath.Join(realPath, path)
+			}
+		}
+		viewPaths = append(viewPaths, nestedView...)
 	}
 
-	return hotPatterns, coldPatterns, nil
+	return hotPatterns, coldPatterns, viewPaths, nil
 }
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
@@ -996,7 +1020,7 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	}
 
 	// Resolve all patterns recursively from the active rules file
-	hotPatterns, coldPatterns, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
+	hotPatterns, coldPatterns, _, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve patterns: %w", err)
 	}
@@ -1319,7 +1343,7 @@ func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
 	}
 	
 	// Parse the rules content to get main and cold patterns
-	mainPatterns, coldPatterns, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	mainPatterns, coldPatterns, _, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules file: %w", err)
 	}
@@ -1376,7 +1400,7 @@ func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus,
 		}
 	}
 
-	hotPatterns, coldPatterns, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
+	hotPatterns, coldPatterns, viewPaths, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve all patterns: %w", err)
 	}
@@ -1407,8 +1431,38 @@ func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus,
 		delete(hotFiles, f)
 	}
 	
-	// Get all unique root paths to walk
+	// Get all unique root paths to walk from patterns
 	rootPaths := m.extractRootPaths(allPatterns)
+	
+	// Add paths from @view directives to the list of roots to walk
+	for _, vp := range viewPaths {
+		var absPath string
+		if filepath.IsAbs(vp) {
+			absPath = vp
+		} else {
+			absPath = filepath.Join(m.workDir, vp)
+		}
+		
+		// Make sure path is absolute
+		absPath, err := filepath.Abs(absPath)
+		if err == nil {
+			// Check if the path exists before adding it
+			if _, statErr := os.Stat(absPath); statErr == nil {
+				rootPaths = append(rootPaths, absPath)
+			}
+		}
+	}
+	
+	// De-duplicate rootPaths
+	seen := make(map[string]struct{})
+	uniqueRoots := []string{}
+	for _, root := range rootPaths {
+		if _, ok := seen[root]; !ok {
+			seen[root] = struct{}{}
+			uniqueRoots = append(uniqueRoots, root)
+		}
+	}
+	rootPaths = uniqueRoots
 	
 	// Ensure the working directory itself is in the result
 	result[m.workDir] = StatusDirectory
@@ -2282,6 +2336,54 @@ const (
 	RuleCold                       // Rule exists in cold context  
 	RuleExcluded                   // Rule exists as exclusion
 )
+
+// ToggleViewDirective adds or removes a `@view:` directive from the rules file.
+func (m *Manager) ToggleViewDirective(path string) error {
+	rulesFilePath := m.findActiveRulesFile()
+	if rulesFilePath == "" {
+		// Create .grove/rules file if it doesn't exist
+		groveDir := filepath.Join(m.workDir, GroveDir)
+		if err := os.MkdirAll(groveDir, 0755); err != nil {
+			return fmt.Errorf("error creating %s directory: %w", groveDir, err)
+		}
+		rulesFilePath = filepath.Join(m.workDir, ActiveRulesFile)
+	}
+
+	content, err := os.ReadFile(rulesFilePath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("error reading rules file: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	found := false
+	viewDirective := "@view: " + path
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == viewDirective {
+			found = true
+			continue // Remove the line
+		}
+		newLines = append(newLines, line)
+	}
+
+	if !found {
+		// Add the directive to the top
+		newLines = append([]string{viewDirective}, newLines...)
+	}
+
+	// Clean up empty lines at the end
+	for len(newLines) > 0 && strings.TrimSpace(newLines[len(newLines)-1]) == "" {
+		newLines = newLines[:len(newLines)-1]
+	}
+
+	newContent := strings.Join(newLines, "\n")
+	if len(newLines) > 0 {
+		newContent += "\n" // Ensure trailing newline
+	}
+
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0644)
+}
 
 // GetRuleStatus checks the current status of a rule in the rules file
 func (m *Manager) GetRuleStatus(rulePath string) RuleStatus {

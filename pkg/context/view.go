@@ -66,6 +66,19 @@ func (m *Manager) AnalyzeProjectTree(prune bool, showGitIgnored bool) (*FileNode
 	nodes := make(map[string]*FileNode)
 	pathMapping := make(map[string]string) // normalized -> original path
 	hasExternalFiles := false
+	hasExternalViewPaths := false
+	
+	// Check if any paths are from @view directives and are external
+	for path := range fileStatuses {
+		relPath, err := filepath.Rel(m.workDir, path)
+		if err != nil || strings.HasPrefix(relPath, "..") {
+			// This is an external path, check if it's a directory (likely from @view)
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				hasExternalViewPaths = true
+				break
+			}
+		}
+	}
 	
 	for path, status := range fileStatuses {
 		// Skip StatusIgnoredByGit unless explicitly requested
@@ -123,8 +136,8 @@ func (m *Manager) AnalyzeProjectTree(prune bool, showGitIgnored bool) (*FileNode
 		nodes[nodeKey] = node
 	}
 	
-	// If no external files are included, remove external directory nodes
-	if !hasExternalFiles {
+	// If no external files are included and no @view paths, remove external directory nodes
+	if !hasExternalFiles && !hasExternalViewPaths {
 		filteredNodes := make(map[string]*FileNode)
 		for nodeKey, node := range nodes {
 			relPath, err := filepath.Rel(m.workDir, node.Path)
@@ -138,7 +151,7 @@ func (m *Manager) AnalyzeProjectTree(prune bool, showGitIgnored bool) (*FileNode
 	
 	// Build the tree structure
 	var root *FileNode
-	if hasExternalFiles {
+	if hasExternalFiles || hasExternalViewPaths {
 		// Create a synthetic root to show CWD and external paths as siblings
 		root = buildTreeWithSyntheticRoot(m.workDir, nodes)
 	} else {

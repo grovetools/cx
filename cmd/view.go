@@ -124,6 +124,7 @@ type viewModel struct {
 	// Rules parsing
 	hotRules        []string           // Rules in hot context section
 	coldRules       []string           // Rules in cold context section
+	viewPaths       []string           // Paths from @view directives
 }
 
 // nodeWithLevel stores a node with its display level
@@ -171,6 +172,7 @@ func (m *viewModel) loadAndParseRules() {
 	// Clear existing rules
 	m.hotRules = []string{}
 	m.coldRules = []string{}
+	m.viewPaths = []string{}
 	
 	rulesPath := filepath.Join(".grove", "rules")
 	content, err := os.ReadFile(rulesPath)
@@ -202,8 +204,18 @@ func (m *viewModel) loadAndParseRules() {
 			continue
 		}
 		
-		// Skip empty lines and comments
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "@") {
+		// Skip empty lines and comments, but process @view
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "@view:") {
+			path := strings.TrimSpace(strings.TrimPrefix(trimmed, "@view:"))
+			if path != "" {
+				m.viewPaths = append(m.viewPaths, path)
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "@") { // Skip other directives
 			continue
 		}
 		
@@ -509,6 +521,17 @@ func (m *viewModel) ensureRepoCursorVisible() {
 }
 
 // getPathForRule determines whether to use relative or absolute path for a repository
+// isRepoInView checks if a repository is included via a @view directive.
+func (m *viewModel) isRepoInView(repo discovery.Repo) bool {
+	repoPath := m.getPathForRule(repo.Path)
+	for _, viewPath := range m.viewPaths {
+		if viewPath == repoPath {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *viewModel) getPathForRule(repoPath string) string {
 	// Try to get relative path
 	relPath, err := filepath.Rel(m.workDir, repoPath)
@@ -732,8 +755,13 @@ func (m *viewModel) renderRepoSelect() string {
 		// Status indicator with colors matching main cx view
 		status := m.getRepoStatus(repo)
 		isExcluded := m.isRepoExcluded(repo)
+		isInView := m.isRepoInView(repo)
 		
-		if isExcluded {
+		if isInView {
+			// Blue eye icon for in view
+			viewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+			line += viewStyle.Render("👁️") + " "
+		} else if isExcluded {
 			// Red exclude symbol
 			excludeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 			line += excludeStyle.Render("🚫") + " "
@@ -1105,6 +1133,36 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.discoverReposCmd(),
 					m.loadTreeCmd(),
 				)
+			case "a":
+				// Add/remove repo from view
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+					repo := m.filteredRepos[m.repoCursor]
+					path := m.getPathForRule(repo.Path)
+					manager := context.NewManager("")
+					
+					if err := manager.ToggleViewDirective(path); err != nil {
+						m.statusMessage = fmt.Sprintf("Error: %v", err)
+						return m, nil
+					}
+					
+					// Check if it was added or removed to set status message
+					wasInView := false
+					for _, vp := range m.viewPaths {
+						if vp == path {
+							wasInView = true
+							break
+						}
+					}
+					if wasInView {
+						m.statusMessage = fmt.Sprintf("Removed %s from view", repo.Name)
+					} else {
+						m.statusMessage = fmt.Sprintf("Added %s to view", repo.Name)
+					}
+					
+					// Reload rules and refresh stats
+					m.loadAndParseRules()
+					return m, m.loadTreeCmd()
+				}
 			case "A":
 				// Audit repository - only works for cloned repos
 				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
@@ -2299,6 +2357,7 @@ func (m *viewModel) renderRepoHelp() string {
 		keyStyle.Render("h") + " - Toggle hot context",
 		keyStyle.Render("c") + " - Toggle cold context",
 		keyStyle.Render("x") + " - Toggle exclude",
+		keyStyle.Render("a") + " - Add/remove from tree view",
 		"",
 		"Repository Actions:",
 		"",
@@ -2334,6 +2393,7 @@ func (m *viewModel) renderRepoHelp() string {
 		"  " + keyStyle.Render("✓") + " - In hot context",
 		"  " + keyStyle.Render("❄️") + " - In cold context",
 		"  " + keyStyle.Render("🚫") + " - Excluded",
+		"  " + keyStyle.Render("👁️") + " - In tree view (via @view)",
 		"  (none) - Not in rules",
 		"",
 		"Repository Types:",
