@@ -1,15 +1,8 @@
-# Grove Context (cx) — Overview
+# Overview
 
-Grove Context (`cx`) is a rule-based command-line tool for assembling file-based context for Large Language Models (LLMs). It replaces ad hoc copy/paste and scripts with a repeatable, version-controlled workflow: you define which files matter in a single rules file, and `cx` resolves and concatenates them into a structured context file you can submit to LLM tools.
+`grove-context` (`cx`) is a rule-based CLI tool for assembling file-based context for Large Language Models (LLMs). It file selection by writing a `.grove/rules` file. This is a foundational tool in the Grove ecosystem, designed to solve a critical problem: making coding agents more effective by providing them with curated, relevant, and consistent context.
 
-## What problem does it solve?
-
-Many LLM workflows require supplying significant portions of source code, configuration, and docs. Collecting the right files, excluding noise (tests, generated artifacts, large assets), and keeping the set current is tedious and error-prone. `cx` automates this by:
-
-- Selecting files via a simple rules file (gitignore-style patterns)
-- Resolving and concatenating those files into a single output
-- Separating frequently changing files from stable background materials
-- Providing interactive tools to understand and refine your context
+The central idea is that the quality of an agent's output, particularly in complex planning stages, is directly proportional to the quality of the context it receives. `cx` provides a rational, predictable process for generating that context. `cx` is editor-independent and easily integrated into other workflows. 
 
 ## Key features
 
