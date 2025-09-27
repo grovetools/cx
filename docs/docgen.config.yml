@@ -6,47 +6,47 @@ enabled: true
 sections:
   - name: overview
     order: 1
-    output: overview.md
+    output: 01-overview.md
     prompt: prompts/overview.md
     title: Overview
   - name: installation
     order: 2
-    output: installation.md
+    output: 02-installation.md
     prompt: prompts/installation.md
     title: Installation
   - name: getting-started
     order: 3
-    output: getting-started.md
+    output: 03-getting-started.md
     prompt: prompts/getting-started.md
     title: Getting Started
   - name: core-concepts
     order: 4
-    output: core-concepts.md
+    output: 04-core-concepts.md
     prompt: prompts/core-concepts.md
     title: Core Concepts
   - name: command-reference
     order: 5
-    output: command-reference.md
+    output: 05-command-reference.md
     prompt: prompts/command-reference.md
     title: Command Reference
   - name: interactive-tools
     order: 6
-    output: interactive-tools.md
+    output: 06-interactive-tools.md
     prompt: prompts/interactive-tools.md
     title: Interactive Tools
   - name: advanced-topics
     order: 7
-    output: advanced-topics.md
+    output: 07-advanced-topics.md
     prompt: prompts/advanced-topics.md
     title: Advanced Topics
   - name: best-practices
     order: 8
-    output: best-practices.md
+    output: 08-best-practices.md
     prompt: prompts/best-practices.md
     title: Best Practices
   - name: contributing
     order: 9
-    output: contributing.md
+    output: 09-contributing.md
     prompt: prompts/contributing.md
     title: Contributing
 settings:
