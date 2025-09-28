@@ -1,1 +1,5 @@
 *
+../grove-meta/**/*.go
+../grove-docgen/**/*.go
+../grove-gemini/**/*.go
+../grove-mcp/**/*.go

@@ -7,48 +7,53 @@ sections:
   - name: overview
     order: 1
     output: 01-overview.md
-    prompt: prompts/overview.md
+    prompt: prompts/01-overview.md
     title: Overview
-  - name: installation
+  - name: examples
     order: 2
-    output: 02-installation.md
-    prompt: prompts/installation.md
-    title: Installation
-  - name: getting-started
+    output: 02-examples.md
+    prompt: prompts/02-examples.md
+    title: Examples
+  - name: rules-and-patterns
     order: 3
-    output: 03-getting-started.md
-    prompt: prompts/getting-started.md
-    title: Getting Started
-  - name: core-concepts
+    output: 03-rules-and-patterns.md
+    prompt: prompts/03-rules-and-patterns.md
+    title: Rules & Patterns
+  - name: context-generation
     order: 4
-    output: 04-core-concepts.md
-    prompt: prompts/core-concepts.md
-    title: Core Concepts
-  - name: command-reference
+    output: 04-context-generation.md
+    prompt: prompts/04-context-generation.md
+    title: Context Generation
+  - name: loading-rules
     order: 5
-    output: 05-command-reference.md
-    prompt: prompts/command-reference.md
-    title: Command Reference
-  - name: interactive-tools
+    output: 05-loading-rules.md
+    prompt: prompts/05-loading-rules.md
+    title: Loading Rules
+  - name: context-tui
     order: 6
-    output: 06-interactive-tools.md
-    prompt: prompts/interactive-tools.md
-    title: Interactive Tools
-  - name: advanced-topics
+    output: 06-context-tui.md
+    prompt: prompts/06-context-tui.md
+    title: Context TUI
+  - name: git-workflows
     order: 7
-    output: 07-advanced-topics.md
-    prompt: prompts/advanced-topics.md
-    title: Advanced Topics
-  - name: best-practices
+    output: 07-git-workflows.md
+    prompt: prompts/07-git-workflows.md
+    title: Git Workflows
+  - name: external-repositories
     order: 8
-    output: 08-best-practices.md
-    prompt: prompts/best-practices.md
-    title: Best Practices
-  - name: contributing
+    output: 08-external-repositories.md
+    prompt: prompts/08-external-repositories.md
+    title: External Repositories
+  - name: experimental
     order: 9
-    output: 09-contributing.md
-    prompt: prompts/contributing.md
-    title: Contributing
+    output: 09-experimental.md
+    prompt: prompts/09-experimental.md
+    title: Experimental Features
+  - name: command-reference
+    order: 10
+    output: 10-command-reference.md
+    prompt: prompts/10-command-reference.md
+    title: Command Reference
 settings:
   # model: gemini-2.5-pro
   model: gpt-5
