@@ -17,7 +17,8 @@ Based on the provided codebase context, create a complete overview that includes
    - Git integration for version-specific context (`cx from-git`)
    - External repository inclusion with audit (`cx repo`)
 4. **Ecosystem Integration**: A dedicated H2 section explaining how grove-context fits into the Grove ecosystem as a foundational tool used by grove-gemini, grove-openai, and grove-docgen. Mention that grove-gemini is particularly useful for large contexts
-5. **Installation**: A dedicated H2 section at the bottom with standardized installation instructions
+5. **How it works**: Provide a more technical description and exactly what happens under the hood
+6. **Installation**: A dedicated H2 section at the bottom with standardized installation instructions
 
 ## Installation Section Requirements
 Include this condensed installation section at the bottom:
