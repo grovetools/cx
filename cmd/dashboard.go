@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
+	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
 )
@@ -188,37 +189,28 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the UI
 func (m dashboardModel) View() string {
-	// Header
-	headerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#4ecdc4")).
-		Bold(true).
-		MarginBottom(1)
+	theme := core_theme.DefaultTheme
 
-	header := headerStyle.Render("Grove Context Dashboard")
+	// Header
+	header := theme.Header.Render("Grove Context Dashboard")
 
 	// Status line
-	statusStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#808080")).
-		MarginBottom(1)
+	statusStyle := theme.Muted.Copy().MarginBottom(1)
 
 	updateIndicator := ""
 	if m.isUpdating {
 		updateIndicator = " (updating...)"
 	}
 
-	status := statusStyle.Render(fmt.Sprintf("Last update: %s%s", 
+	status := statusStyle.Render(fmt.Sprintf("Last update: %s%s",
 		m.lastUpdate.Format("15:04:05"),
 		updateIndicator))
 
 	// Error display
 	if m.err != nil {
-		errorStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ff4444")).
-			Bold(true).
-			MarginTop(1).
-			MarginBottom(1)
-		
-		return header + "\n" + status + "\n" + 
+		errorStyle := theme.Error.Copy().MarginTop(1).MarginBottom(1)
+
+		return header + "\n" + status + "\n" +
 			errorStyle.Render(fmt.Sprintf("Error: %v", m.err)) + "\n\n" +
 			statusStyle.Render("Press 'r' to retry, 'q' to quit")
 	}
@@ -230,9 +222,7 @@ func (m dashboardModel) View() string {
 	coldBox := renderSummaryBox("Cold Context Statistics", m.coldStats, m.horizontal)
 
 	// Help text
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#808080")).
-		MarginTop(1)
+	helpStyle := theme.Muted.Copy().MarginTop(1)
 
 	layoutIndicator := ""
 	if m.horizontal {
@@ -240,7 +230,7 @@ func (m dashboardModel) View() string {
 	} else {
 		layoutIndicator = " (vertical layout)"
 	}
-	
+
 	help := helpStyle.Render("Watching for file changes... Press 'r' to refresh manually, 'q' to quit" + layoutIndicator)
 
 	// Combine all elements based on layout
@@ -283,35 +273,29 @@ func renderSummaryBox(title string, stats *context.ContextStats, horizontal bool
 	if stats == nil {
 		return renderEmptyBox(title, horizontal)
 	}
+	theme := core_theme.DefaultTheme
 
 	// Box style - adjust width for horizontal layout
 	boxWidth := 50
 	if horizontal {
 		boxWidth = 25 // Half width for side-by-side display
 	}
-	
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#4ecdc4")).
-		Padding(1, 2).
+
+	boxStyle := theme.Box.Copy().
+		BorderForeground(theme.Colors.Cyan).
 		Width(boxWidth)
 
 	// Title style
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#4ecdc4")).
-		Bold(true).
+	titleStyle := theme.Title.Copy().
+		Foreground(theme.Colors.Cyan).
 		MarginBottom(1)
 
 	// Content
 	content := titleStyle.Render(title) + "\n\n"
 
 	// Stats
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#95e1d3"))
-	
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#ffffff")).
-		Bold(true)
+	labelStyle := theme.Info.Copy()
+	valueStyle := theme.Info.Copy().Foreground(theme.Colors.LightText).Bold(true)
 
 	// Format file count
 	fileCount := fmt.Sprintf("%-16s %s", "Total Files:", valueStyle.Render(fmt.Sprintf("%d", stats.TotalFiles)))
@@ -332,25 +316,19 @@ func renderSummaryBox(title string, stats *context.ContextStats, horizontal bool
 
 // renderEmptyBox renders an empty statistics box
 func renderEmptyBox(title string, horizontal bool) string {
+	theme := core_theme.DefaultTheme
 	boxWidth := 50
 	if horizontal {
 		boxWidth = 25 // Half width for side-by-side display
 	}
-	
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#808080")).
-		Padding(1, 2).
+
+	boxStyle := theme.Box.Copy().
+		BorderForeground(theme.Colors.MutedText).
 		Width(boxWidth)
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#808080")).
-		Bold(true).
-		MarginBottom(1)
+	titleStyle := theme.Muted.Copy().Bold(true).MarginBottom(1)
 
-	emptyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#808080")).
-		Italic(true)
+	emptyStyle := theme.Muted.Copy().Italic(true)
 
 	content := titleStyle.Render(title) + "\n\n" +
 		emptyStyle.Render("No data available")

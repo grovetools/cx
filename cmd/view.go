@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-context/pkg/discovery"
 	"github.com/spf13/cobra"
@@ -647,15 +648,16 @@ func (m *viewModel) ruleMatchesPath(rule, path string) bool {
 
 // getAuditStatusStyle returns the appropriate style for an audit status
 func (m *viewModel) getAuditStatusStyle(status string) lipgloss.Style {
+	theme := core_theme.DefaultTheme
 	switch status {
 	case "passed", "audited":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("34")) // Green
+		return theme.Success
 	case "failed":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red
+		return theme.Error
 	case "not_audited":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("243")) // Gray
+		return theme.Muted
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // Yellow/Orange
+		return theme.Warning
 	}
 }
 
@@ -2019,11 +2021,7 @@ func (m *viewModel) View() string {
 	if m.pruning {
 		pruningIndicator = " (Pruning)"
 	}
-	header := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12")).
-		MarginBottom(1).
-		Render("Grove Context Visualization" + pruningIndicator)
+	header := core_theme.DefaultTheme.Header.Render("Grove Context Visualization" + pruningIndicator)
 
 	// Calculate split widths (60% for tree, 40% for rules)
 	treeWidth := int(float64(m.width) * 0.6)
@@ -2061,10 +2059,7 @@ func (m *viewModel) View() string {
 	// Status message
 	statusMsg := ""
 	if m.statusMessage != "" {
-		statusMsg = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("34")).
-			Bold(true).
-			Render(m.statusMessage)
+		statusMsg = core_theme.DefaultTheme.Success.Render(m.statusMessage)
 	}
 
 	// Calculate heights for rules and stats
@@ -2072,22 +2067,18 @@ func (m *viewModel) View() string {
 	rulesHeight := viewportHeight - statsHeight - 1 // -1 for spacing
 	
 	// Rules panel
-	rulesStyle := lipgloss.NewStyle().
+	rulesStyle := core_theme.DefaultTheme.Box.Copy().
 		Width(rulesWidth).
 		Height(rulesHeight).
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("241")).
-		Padding(0, 1)
+		BorderForeground(core_theme.DefaultTheme.Colors.Border)
 	
 	rulesPanel := rulesStyle.Render(m.renderRules(rulesWidth, rulesHeight))
 	
 	// Stats panel
-	statsStyle := lipgloss.NewStyle().
+	statsStyle := core_theme.DefaultTheme.Box.Copy().
 		Width(rulesWidth).
 		Height(statsHeight).
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("241")).
-		Padding(0, 1)
+		BorderForeground(core_theme.DefaultTheme.Colors.Border)
 	
 	statsPanel := statsStyle.Render(m.renderStats())
 	
@@ -2269,19 +2260,20 @@ func (m *viewModel) getStatusSymbol(node *context.FileNode) string {
 
 // getStyle returns the appropriate style for a status
 func (m *viewModel) getStyle(node *context.FileNode) lipgloss.Style {
+	theme := core_theme.DefaultTheme
 	// Base style based on status
 	var style lipgloss.Style
 	switch node.Status {
 	case context.StatusIncludedHot:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("65")) // Dark greenish-grey for hot
+		style = lipgloss.NewStyle().Foreground(theme.Colors.Green)
 	case context.StatusIncludedCold:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("67")) // Dark bluish-grey for cold
+		style = lipgloss.NewStyle().Foreground(theme.Colors.Cyan)
 	case context.StatusExcludedByRule:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("95")) // Dark reddish-grey for excluded
+		style = lipgloss.NewStyle().Foreground(theme.Colors.Red)
 	case context.StatusOmittedNoMatch:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Darker grey for omitted
+		style = lipgloss.NewStyle().Foreground(theme.Colors.MutedText)
 	case context.StatusDirectory:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("252")) // Light gray for plain directories
+		style = lipgloss.NewStyle().Foreground(theme.Colors.LightText)
 	case context.StatusIgnoredByGit:
 		style = lipgloss.NewStyle().Foreground(lipgloss.Color("238")) // Very dark grey for gitignored
 	default:
