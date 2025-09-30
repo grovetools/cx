@@ -2,28 +2,6 @@
 <!-- This content will be automatically replaced by generated documentation -->
 <!-- DOCGEN:OVERVIEW:END -->
 
-## Installation
-
-```bash
-grove install {{ .PackageName }}
-```
-
-## Quick Start
-
-```bash
-# Initialize context rules in your project
-cx init
-
-# Generate context from rules
-cx generate
-
-# View context interactively
-cx view
-
-# Monitor context in real-time
-cx dashboard
-```
-
 ## Documentation
 
 See the [documentation](docs/) for detailed usage instructions:
@@ -38,10 +16,6 @@ See the [documentation](docs/) for detailed usage instructions:
 - [Experimental Features](docs/09-experimental.md) - Beta features
 - [Command Reference](docs/10-command-reference.md) - Complete CLI reference
 
-## Contributing
 
-Contributions welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
-
-## License
-
-MIT
+<!-- DOCGEN:TOC:START -->
+<!-- DOCGEN:TOC:END -->

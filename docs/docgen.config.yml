@@ -3,6 +3,7 @@ category: "Developer Tools"
 title: "Grove Context"
 description: "A rule-based tool for dynamically managing the file-based context provided to Large Language Models (LLMs)."
 readme:
+  generate_toc: true
   template: docs/README.md.tpl
   output: README.md
   source_section: overview

@@ -42,28 +42,6 @@ Requires the `grove` meta-CLI. See the [Grove Installation Guide](https://github
 
 <!-- DOCGEN:OVERVIEW:END -->
 
-## Installation
-
-```bash
-grove install grove-context
-```
-
-## Quick Start
-
-```bash
-# Initialize context rules in your project
-cx init
-
-# Generate context from rules
-cx generate
-
-# View context interactively
-cx view
-
-# Monitor context in real-time
-cx dashboard
-```
-
 ## Documentation
 
 See the [documentation](docs/) for detailed usage instructions:
@@ -78,10 +56,19 @@ See the [documentation](docs/) for detailed usage instructions:
 - [Experimental Features](docs/09-experimental.md) - Beta features
 - [Command Reference](docs/10-command-reference.md) - Complete CLI reference
 
-## Contributing
 
-Contributions welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+<!-- DOCGEN:TOC:START -->
 
-## License
+See the [documentation](docs/) for detailed usage instructions:
+- [Overview](docs/01-overview.md) - <img src="./images/grove-context-readme.svg" width="60%" />
+- [Examples](docs/02-examples.md) - This guide provides practical examples of how to use Grove Context (`cx`) in ...
+- [Rules & Patterns](docs/03-rules-and-patterns.md) - The `.grove/rules` file is the core of Grove Context's functionality. It defi...
+- [Context Generation](docs/04-context-generation.md) - Grove Context (`cx`) transforms a set of rules into a structured, file-based ...
+- [Loading Rules](docs/05-loading-rules.md) - `grove-context` (`cx`) provides a flexible system for managing different rule...
+- [Context TUI](docs/06-context-tui.md) - The `cx view` command launches a terminal user interface (TUI) for interactiv...
+- [Git Workflows](docs/07-git-workflows.md) - `grove-context` integrates with Git to create dynamic, task-specific contexts...
+- [External Repositories](docs/08-external-repositories.md) - `grove-context` can include files from sources outside the current project's ...
+- [Experimental Features](docs/09-experimental.md) - This section covers features in `grove-context` that are either under active ...
+- [Command Reference](docs/10-command-reference.md) - This document provides a comprehensive reference for all `cx` commands, organ...
 
-MIT
+<!-- DOCGEN:TOC:END -->
