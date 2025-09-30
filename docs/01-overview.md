@@ -1,6 +1,8 @@
 
 # Grove Context
 
+<img src="./images/grove-context-readme.svg" width="60%" />
+
 `grove-context` (`cx`) is a pattern-based command-line tool for dynamically generating and managing file-based context for Large Language Models (LLMs). It automates the often manual and error-prone process of collecting and concatenating project files into a single, structured format, providing a repeatable and version-controlled workflow. With smart defaults that automatically exclude binary files, it focuses on including text-based source code relevant to your task.
 
 <!-- placeholder for animated gif -->

@@ -1,173 +1,87 @@
-# Grove Context (cx)
-<img src="https://github.com/user-attachments/assets/fc7e287a-33e5-4146-9c1b-14b77c99bdba" width="60%" />
+<!-- DOCGEN:OVERVIEW:START -->
 
+<img src="docs/images/grove-context-readme.svg" width="60%" />
 
-`grove-context` (`cx`) is a, rule-based tool for dynamically managing the file-based context provided to Large Language Models (LLMs).
+`grove-context` (`cx`) is a pattern-based command-line tool for dynamically generating and managing file-based context for Large Language Models (LLMs). It automates the often manual and error-prone process of collecting and concatenating project files into a single, structured format, providing a repeatable and version-controlled workflow. With smart defaults that automatically exclude binary files, it focuses on including text-based source code relevant to your task.
 
-It replaces manual copy-pasting with a repeatable, version-controlled workflow, ensuring your LLM has the precise information it needs for any task.
+<!-- placeholder for animated gif -->
 
-## Features
-- **Dynamic Context Generation:** Define your context once in a `.grove/rules` file and generate it on demand.
-- **Hot & Cold Contexts:** Separate frequently changing files ("hot") from stable dependencies ("cold") to optimize context size and relevance.
-- **Interactive Tools:** Visualize your context with `cx view` and monitor it in real-time with `cx dashboard`.
-- **Git Integration:** Automatically generate context from recent changes, branches, or staged files.
-- **Snapshots:** Save and load different context configurations for different tasks (e.g., feature work, bug fixes).
-- **External Directory Support:** Easily include files from other repositories or directories.
+### Key Features
 
-## How It Works
+*   **Pattern-Based File Selection**: Define context using a `.gitignore`-style syntax in a `.grove/rules` file to precisely include or exclude files and directories.
+*   **Automatic Context Generation**: Dynamically generate a structured context file from your rules, with intelligent defaults that filter out binary files and other non-text assets.
+*   **Quick Rules Editing**: Open the active rules file in your default editor instantly with `cx edit`, perfect for binding to a keyboard shortcut for rapid iteration.
+*   **Context Inspection**: Easily verify your context with `cx list` to see included files and `cx stats` for a detailed breakdown of token counts, file sizes, and language distribution.
+*   **Interactive TUI**: Launch a terminal user interface with `cx view` to visually browse your project, see which files are included or excluded in real-time, and modify rules interactively.
+*   **Flexible Rule Management**: Load different rule sets for various tasks using `cx set-rules`, reset to project defaults with `cx reset`, and manage configurations with `cx save`/`load`.
+*   **Git Integration**: Generate context based on your Git history, such as including all files changed since the last commit, on a specific branch, or only staged files using `cx from-git`.
+*   **External Repository Management**: Include files from external Git repositories directly in your rules, and manage them with the `cx repo` command, which includes a security audit workflow.
 
-The core of `grove-context` is the `.grove/rules` file. This plain text file uses `.gitignore`-style patterns to define which files to include or exclude. Every `cx` command resolves files dynamically from these rules—there is no intermediate state.
+## Ecosystem Integration
 
-A `---` separator divides the rules into a "hot" context (above) and a "cold" context (below).
+`grove-context` is a foundational tool within the Grove ecosystem, serving as the primary context provider for other LLM-powered tools. It is used by:
 
-- **Hot Context:** Files you are actively editing.
-- **Cold Context:** Stable files, libraries, or dependencies that provide background information.
+*   **`grove-gemini` and `grove-openai`**: The `grove llm request` facade uses `cx` to automatically gather context before making a request to an LLM provider. `grove-gemini` in particular leverages the hot/cold context separation feature to optimize token usage with Gemini's caching capabilities, which is especially useful for large contexts.
+*   **`grove-docgen`**: The documentation generator uses `cx` to build a comprehensive understanding of a codebase before generating documentation.
 
-This separation allows you to send only the hot context in follow-up prompts, while the cold context can be sent once or managed by more advanced agents.
+By centralizing context management, `cx` ensures that all tools in the ecosystem operate with a consistent and reproducible understanding of the project.
 
 ## Installation
+
 Install via the Grove meta-CLI:
 ```bash
 grove install context
 ```
 
-## File Structure
-
-### .grove/rules
-Contains glob patterns to automatically select files. Supports recursive patterns with `**` and exclusions with `!`:
-```
-# Include all Go files recursively
-src/**/*.go
-
-# Exclude vendor directory
-!vendor/**/*
-
-# Include the project README
-README.md
-
----
-
-# Cold context: Stable dependencies from an external project
-../grove-core/**/*.go
-
-# Exclude tests from the external project
-!../grove-core/**/*_test.go
-```
-
-### Reusing Rules with `@default`
-
-To improve modularity, you can import the default rules from another Grove project using the `@default` directive. This is useful for including common libraries or shared components without duplicating rule definitions.
-
-```
-# Hot Context
-# Include all local Go files
-*.go
-
-# Import all default rules from grove-core as hot context
-@default: ../grove-core
-
----
-
-# Cold Context
-# Import all default rules from grove-flow as cold context
-@default: ../grove-flow
-```
-
--   The path can be relative or absolute.
--   `grove-context` will find the `grove.yml` in the target directory and load the rules specified by `context.default_rules_path`.
--   If `@default` is in the hot section, all rules from the target project (both hot and cold) are imported as **hot** context.
--   If `@default` is in the cold section, all rules from the target project are imported as **cold** context.
--   Circular dependencies are automatically detected and handled.
-
-### .grove/context & .grove/cached-context
-The generated context files for hot and cold contexts, respectively. Files are concatenated using XML-style delimiters:
-```xml
-<file path="main.go">
-package main
-
-func main() {
-    // code...
-}
-</file>
-
-<file path="internal/cli/context.go">
-package cli
-// code...
-</file>
-```
-
-## Commands
-
-The `cx` binary provides a suite of commands for managing your context. Here are some of the most important ones. For a full list, run `cx --help`.
-
-### Interactive Tools
-
-- `cx view`: Launch an interactive tree view to see exactly which files are included, excluded, or ignored by your rules.
-- `cx dashboard`: Display a live-updating terminal dashboard showing statistics for your hot and cold contexts.
-
-### Core Workflow
-
-- `cx edit`: Open `.grove/rules` in your default editor.
-- `cx generate`: Build the `.grove/context` and `.grove/cached-context` files from your rules.
-- `cx show`: Print the generated hot context to the console, ready to be piped to your clipboard or an LLM.
-- `cx set-rules <path>`: Set the active rules from an external file, copying it to `.grove/rules`.
-- `cx reset`: Reset the rules to the project's default configuration (if defined in `grove.yml`).
-
-### Analysis & Inspection
-
-- `cx stats`: Get a detailed breakdown of your context, including token counts, language distribution, and largest files.
-- `cx diff [snapshot]`: Compare your current context to a saved snapshot or an empty context.
-- `cx list`: List all files included in the hot context.
-- `cx list-cache`: List all files included in the cold context.
-- `cx validate`: Check for missing files or other issues in your resolved context.
-
-### Snapshots
-
-- `cx save <name>`: Save the current `.grove/rules` as a named snapshot.
-- `cx load <name>`: Restore a snapshot to `.grove/rules`.
-- `cx list-snapshots`: List all available snapshots.
-
-### Git Integration
-
-- `cx from-git`: Automatically generate rules based on git history (e.g., `--staged`, `--branch=main`, `--since="1 day ago"`).
-
-## Example Workflow
-
-1.  **Define your context:**
-    ```bash
-    # Open the rules file and add your patterns
-    cx edit
-    ```
-2.  **Visualize and refine:**
-    ```bash
-    # Interactively see what's included and make adjustments
-    cx view
-    ```
-3.  **Generate the context files:**
-    ```bash
-    cx generate
-    ```
-4.  **Copy to clipboard and send to your LLM:**
+Verify installation:
 ```bash
-cx show | pbcopy  # macOS
+cx version
 ```
 
-## Best Practices
+Requires the `grove` meta-CLI. See the [Grove Installation Guide](https://github.com/mattsolo1/grove-meta/blob/main/docs/02-installation.md) if you don't have it installed.
 
-1. **Use Rules for Common Patterns**: Define your common file patterns in `.grove/rules`
-2. **Use Exclusions Wisely**: Exclude test files, generated code, and large assets with `!` patterns
-3. **Watch Large Files**: Use `cx stats` to identify files with high token counts (shown in red/yellow)
-4. **Save Snapshots**: Save different rule sets for different tasks
+<!-- DOCGEN:OVERVIEW:END -->
 
-## Version Control
+## Installation
 
-It is recommended to add the `.grove` directory to your `.gitignore` file, as it contains locally generated files. You may choose to check in specific snapshots from `.grove/context-snapshots/` if they represent important, shared contexts.
-
+```bash
+grove install grove-context
 ```
-# Grove directory (contains rules and generated files)
-.grove/
+
+## Quick Start
+
+```bash
+# Initialize context rules in your project
+cx init
+
+# Generate context from rules
+cx generate
+
+# View context interactively
+cx view
+
+# Monitor context in real-time
+cx dashboard
 ```
+
+## Documentation
+
+See the [documentation](docs/) for detailed usage instructions:
+- [Overview](docs/01-overview.md) - Introduction and core concepts
+- [Examples](docs/02-examples.md) - Common usage patterns
+- [Rules & Patterns](docs/03-rules-and-patterns.md) - Writing effective rules files
+- [Context Generation](docs/04-context-generation.md) - How context is generated
+- [Loading Rules](docs/05-loading-rules.md) - Rule file loading and inheritance
+- [Context TUI](docs/06-context-tui.md) - Interactive context viewer
+- [Git Workflows](docs/07-git-workflows.md) - Git integration features
+- [External Repositories](docs/08-external-repositories.md) - Including external files
+- [Experimental Features](docs/09-experimental.md) - Beta features
+- [Command Reference](docs/10-command-reference.md) - Complete CLI reference
+
+## Contributing
+
+Contributions welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ## License
 
-See the main Grove project for licensing information.
+MIT

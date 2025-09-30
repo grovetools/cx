@@ -23,7 +23,7 @@ LDFLAGS = -ldflags="\
 -X '$(VERSION_PKG).Branch=$(GIT_BRANCH)' \
 -X '$(VERSION_PKG).BuildDate=$(BUILD_DATE)'"
 
-.PHONY: all build test clean fmt vet lint run check dev build-all help
+.PHONY: all build test clean fmt vet lint run check generate-docs dev build-all help
 
 all: build
 
@@ -66,6 +66,13 @@ run: build
 
 # Run all checks
 check: fmt vet lint test
+
+# Generate documentation
+generate-docs: build
+	@echo "Generating documentation..."
+	@docgen generate
+	@echo "Synchronizing README.md..."
+	@docgen sync-readme
 
 # Development build with race detector
 dev:
