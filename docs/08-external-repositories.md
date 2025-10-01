@@ -1,16 +1,16 @@
 # External Repositories
 
-`grove-context` can include files from sources outside the current project's directory, enabling context generation for monorepos, shared libraries, and third-party dependencies. This is managed through path patterns, Git URL references, and a dedicated set of `repo` commands.
+`grove-context` (`cx`) can include files from sources outside the current project's directory. This is managed through path patterns, Git URL references in the rules file, and a dedicated set of `repo` commands.
 
-## 1. Including External Repositories
+## 1. Including External Sources
 
-There are three primary methods for including external files in your context.
+There are three methods for including files from external sources in your context.
 
 ### Git Repository References
 
-You can add a Git repository URL directly to your `.grove/rules` file. `cx` will automatically clone or update the repository locally and include its files based on your patterns. This is the recommended method for third-party dependencies.
+A Git repository URL can be added directly to the `.grove/rules` file. `cx` will clone or update the repository locally and apply patterns to its files. A specific version (tag, branch, or commit hash) can be pinned using the `@` symbol.
 
-You can pin the repository to a specific version (tag, branch, or commit hash) using the `@` symbol.
+Repositories are cloned to a central cache directory (`~/.grove/cx/repos`).
 
 **Example `.grove/rules`:**
 ```gitignore
@@ -22,11 +22,9 @@ https://github.com/charmbracelet/lipgloss@v0.13.0
 !**/*_test.go
 ```
 
-When `cx` processes these rules, it clones the repository to a central cache directory (`~/.grove/cx/repos`) and treats its local path as the base for the provided patterns.
-
 ### Local Path References
 
-For monorepos or workspaces where projects are located in sibling directories, you can use relative paths to include files from other local projects.
+Relative or absolute filesystem paths can be used to include files from other local projects, such as in a monorepo workspace.
 
 **Example `.grove/rules`:**
 ```gitignore
@@ -37,19 +35,16 @@ For monorepos or workspaces where projects are located in sibling directories, y
 ../api/schema.openapi.yaml
 ```
 
-Absolute paths are also supported for including files from any location on your filesystem.
-
 ### The `@default` Directive
 
-The `@default` directive provides a structured way to import rules from another local Grove project. It's particularly useful for building composite contexts in a monorepo.
+The `@default` directive imports rules from another local Grove project. When `cx` encounters `@default: <path>`, it performs the following steps:
 
-When `cx` encounters `@default: <path>`, it:
-1.  Looks for a `grove.yml` file in the specified `<path>`.
+1.  Locates the `grove.yml` file in the specified `<path>`.
 2.  Reads the `context.default_rules_path` value from that `grove.yml`.
-3.  Loads and processes the rules from that file, prepending the `<path>` to all relative patterns to ensure they resolve correctly from the external project's location.
+3.  Loads the rules from that file and prepends `<path>` to all relative patterns to ensure they resolve from the external project's location.
 
 **Example:**
-Assume you have a `grove-core` project with its own default rules.
+Assume a `grove-core` project with its own default rules.
 
 **`../grove-core/.grove/default.rules`:**
 ```gitignore
@@ -59,17 +54,17 @@ Assume you have a `grove-core` project with its own default rules.
 
 **Your project's `.grove/rules`:**
 ```gitignore
-# Include my local files
+# Include local files
 src/**/*.js
 
-# Also include all default files from grove-core
+# Include all default files from grove-core
 @default: ../grove-core
 ```
-This will include all `.js` files from your local `src` directory and all non-test `.go` files from the `grove-core` project.
+This configuration includes all `.js` files from the local `src` directory and all non-test `.go` files from the `grove-core` project.
 
 ## 2. Managing External Repositories
 
-The `cx repo` command suite helps you manage the Git repositories that `cx` tracks and clones based on your rules files.
+The `cx repo` command suite manages the Git repositories that `cx` tracks and clones from rules files.
 
 ### Listing Tracked Repositories (`cx repo list`)
 
@@ -89,7 +84,7 @@ https://github.com/user/another-repo    default  b4c5d6e  not_audited          1
 
 ### Syncing Repositories (`cx repo sync`)
 
-This command fetches the latest changes for all tracked repositories and checks out their pinned versions. This is useful for ensuring your local copies are up-to-date.
+This command fetches the latest changes for all tracked repositories and checks out their pinned versions to ensure local copies are up-to-date.
 
 ```bash
 cx repo sync
@@ -97,14 +92,14 @@ cx repo sync
 
 ## 3. Repository Audit (`cx repo audit`)
 
-Before including an unknown third-party repository, it is best practice to perform an audit to understand its contents, size, and potential security risks. The `cx repo audit` command provides an interactive, LLM-assisted workflow for this purpose.
+Before including an unknown third-party repository, the `cx repo audit` command can be used to analyze its contents. It provides an interactive workflow assisted by an LLM.
 
 The workflow is as follows:
 1.  **Clone**: `cx` clones the repository to a temporary location.
-2.  **Context Refinement**: It launches `cx view`, allowing you to interactively select which files from the repository should be included in the audit context.
-3.  **LLM Analysis**: `cx` generates a context from your selection and sends it to an LLM with a prompt to analyze it for security vulnerabilities or prompt injection risks.
-4.  **Review and Approve**: The LLM's analysis is saved to a report file and opened in your editor. You are then prompted to approve or reject the audit.
-5.  **Manifest Update**: The result ("passed" or "failed") is recorded in the central manifest, visible in `cx repo list`.
+2.  **Context Refinement**: The command launches `cx view`, allowing interactive selection of files to be included in the audit context.
+3.  **LLM Analysis**: `cx` generates a context from the selection and sends it to an LLM with a prompt to analyze it for security vulnerabilities.
+4.  **Review and Approve**: The analysis is saved to a report file and opened in your editor. You are then prompted to approve or reject the audit.
+5.  **Manifest Update**: The result ("passed" or "failed") is recorded in a central manifest, which is visible in `cx repo list`.
 
 **Example Audit Workflow:**
 ```bash
@@ -124,7 +119,7 @@ echo "https://github.com/charmbracelet/lipgloss" >> .grove/rules
 
 ## 4. Best Practices
 
--   **Always Audit First**: Run `cx repo audit` on external repositories before adding them to your rules to prevent including malicious or unexpectedly large codebases.
--   **Pin Versions**: For reproducibility, always pin Git repositories to a specific tag or commit hash (e.g., `url@v1.2.3`).
--   **Use Specific Patterns**: When including external repos, add specific exclusion patterns to limit the context to only what you need, reducing token count and noise.
--   **Prefer `@default` for Monorepos**: Use the `@default` directive for managing shared context between local Grove projects to keep configurations DRY (Don't Repeat Yourself).
+-   Run `cx repo audit` on external repositories before adding them to rules to prevent including malicious or unexpectedly large codebases.
+-   Pin Git repositories to a specific tag or commit hash (e.g., `url@v1.2.3`) for reproducible context.
+-   When including an external repository, add specific exclusion patterns to limit the context to necessary files.
+-   For shared context between local Grove projects, use the `@default` directive to avoid duplicating rule definitions.

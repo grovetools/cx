@@ -1,58 +1,48 @@
 # Rules and Patterns
 
-The `.grove/rules` file is the core of Grove Context's functionality. It defines which files and directories are included in or excluded from the context using a simple, powerful pattern-matching syntax.
+The `.grove/rules` file defines which files and directories are included in or excluded from the context using a pattern-matching syntax.
 
 ## Rules File Basics
 
--   **Location**: The active rules file is located at `.grove/rules` within your project root. `cx` will also read a legacy `.grovectx` file if `.grove/rules` is not found.
+-   **Location**: The active rules file is `.grove/rules`. The legacy `.grovectx` file is read as a fallback if `.grove/rules` is not found.
 -   **Format**: The file is plain text, with one pattern per line.
--   **Comments**: Lines beginning with a `#` are treated as comments and ignored.
--   **Directives**: Special commands starting with `@` (e.g., `@default:`) or Git URLs can be included to import rules or repositories. See the "External Repositories" documentation for details.
--   **Paths**: Patterns can be relative to the project root (e.g., `src/**/*.go`), relative to a parent directory (e.g., `../other-repo/**`), or absolute (e.g., `/path/to/shared/lib`).
+-   **Comments**: Lines beginning with `#` are ignored.
+-   **Directives**: Special commands like `@default:` or Git URLs can be included. See the "External Repositories" documentation for details.
+-   **Paths**: Patterns can be relative to the project root (`src/**/*.go`), relative to a parent directory (`../other-repo/**`), or absolute (`/path/to/shared/lib`).
 
 ## Pattern Syntax Reference
 
-The syntax is designed to be familiar to anyone who has used `.gitignore` files.
+The syntax is based on `.gitignore` conventions.
 
-| Pattern             | Description                                                                                                                                                                             | Example                       |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `*`                 | Matches any sequence of characters, but not directory separators (`/`).                                                                                                                   | `*.go`                        |
-| `**`                | Matches directories recursively at any depth.                                                                                                                                           | `src/**/*.js`                 |
-| `src/`              | Matches a directory named `src`. A trailing slash is optional but recommended for clarity.                                                                                                | `docs/` or `docs`             |
-| `/path/to/file.txt` | An absolute path matches a specific file or directory on the filesystem.                                                                                                                | `/Users/dev/project/file.txt` |
-| `!pattern`          | Negates a pattern, excluding any files that match.                                                                                                                                      | `!**/*_test.go`               |
+| Pattern             | Description                                                                     | Example                       |
+| ------------------- | ------------------------------------------------------------------------------- | ----------------------------- |
+| `*`                 | Matches any sequence of characters except directory separators (`/`).             | `*.go`                        |
+| `**`                | Matches directories recursively.                                                | `src/**/*.js`                 |
+| `src/`              | Matches a directory named `src`. A trailing slash is optional.                  | `docs/` or `docs`             |
+| `/path/to/file.txt` | An absolute path matches a specific file or directory on the filesystem.        | `/Users/dev/project/file.txt` |
+| `!pattern`          | Excludes files that match the pattern.                                          | `!**/*_test.go`               |
 
-**Note on Directory Patterns**: When used for inclusion, a plain directory name (e.g., `docs`) is automatically treated as a recursive pattern (`docs/**`) to include all its contents.
+**Note**: An inclusion pattern for a plain directory name (e.g., `docs`) is treated as a recursive pattern (`docs/**`) to include all its contents.
 
 ## Include/Exclude Logic
 
-`cx` processes rules to determine the final set of files for the context.
+`cx` processes rules to determine the final set of files.
 
-1.  **Default Behavior**: All files are initially considered omitted. A file must match at least one inclusion pattern to be considered for the context.
-2.  **Exclusion with `!`**: If a file matches an inclusion pattern, it can be subsequently excluded by a pattern prefixed with `!`.
-3.  **Last Match Wins**: For any given file, the last pattern in the rules file that matches it determines its fate. If the last matching pattern is an inclusion rule, the file is included. If it's an exclusion rule, the file is excluded. This makes it practical to start with broad inclusion rules and follow them with specific exclusions.
-4.  **.gitignore**: Files and directories listed in your project's `.gitignore` file are automatically excluded by default, unless they are explicitly included by a rule.
+1.  **Default Behavior**: A file is omitted unless it matches at least one inclusion pattern.
+2.  **Exclusion**: If a file matches an inclusion pattern, it can be subsequently excluded by a pattern prefixed with `!`.
+3.  **Precedence**: The last pattern in the rules file that matches a file determines its inclusion or exclusion.
+4.  **.gitignore**: Files listed in `.gitignore` are excluded by default unless explicitly included by a rule.
 
 ## Pattern Writing Strategies
 
--   **Start Broad, Then Exclude**: Begin with broad patterns like `**/*.go` and then add more specific exclusion patterns like `!vendor/**` or `!**/*_test.go`.
--   **Use Relative Paths for Portability**: When including files from sibling projects, use relative paths like `../other-project/**/*.go` to ensure the rules work for all team members.
--   **Group Related Patterns**: Keep patterns for a specific language or feature set together, often with comments, to improve readability.
--   **Be Specific with Exclusions**: To exclude a directory and its contents, use a pattern like `!dist/**`. A pattern without a slash, like `!tests`, will exclude any file or directory named `tests` at any level.
+-   Begin with broad inclusion patterns (`**/*.go`) and follow them with specific exclusions (`!vendor/**`).
+-   Use relative paths (`../other-project/**/*.go`) to include files from sibling projects.
+-   Group related patterns with comments for readability.
+-   To exclude a directory and its contents, use `!dist/**`. A pattern without a slash, like `!tests`, excludes any file or directory named `tests` at any level.
 
 ## Editing Rules with `cx edit`
 
-The `cx edit` command provides a fast way to open the active `.grove/rules` file in your default editor (as defined by the `$EDITOR` environment variable).
-
-**Recommended Usage**: Bind this command to a keyboard shortcut in your shell for rapid iteration on your context.
-
-```bash
-# Example for .zshrc or .bashrc
-alias cxe='cx edit'
-
-# Or bind to a hotkey
-# bindkey -s '^x^c' 'cx edit\n' # Zsh example
-```
+The `cx edit` command opens the `.grove/rules` file in the editor specified by the `$EDITOR` environment variable. This is intended for rapid iteration and can be bound to a shell keyboard shortcut.
 
 ## Examples
 

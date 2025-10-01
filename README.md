@@ -2,29 +2,29 @@
 
 <img src="docs/images/grove-context-readme.svg" width="60%" />
 
-`grove-context` (`cx`) is a pattern-based command-line tool for dynamically generating and managing file-based context for Large Language Models (LLMs). It automates the often manual and error-prone process of collecting and concatenating project files into a single, structured format, providing a repeatable and version-controlled workflow. With smart defaults that automatically exclude binary files, it focuses on including text-based source code relevant to your task.
+`grove-context` (`cx`) is a command-line tool that generates file-based context for Large Language Models (LLMs) from a set of user-defined patterns. It reads files matching these patterns, concatenates their content into a structured format, and excludes binary files by default.
 
 <!-- placeholder for animated gif -->
 
 ### Key Features
 
-*   **Pattern-Based File Selection**: Define context using a `.gitignore`-style syntax in a `.grove/rules` file to precisely include or exclude files and directories.
-*   **Automatic Context Generation**: Dynamically generate a structured context file from your rules, with intelligent defaults that filter out binary files and other non-text assets.
-*   **Quick Rules Editing**: Open the active rules file in your default editor instantly with `cx edit`, perfect for binding to a keyboard shortcut for rapid iteration.
-*   **Context Inspection**: Easily verify your context with `cx list` to see included files and `cx stats` for a detailed breakdown of token counts, file sizes, and language distribution.
-*   **Interactive TUI**: Launch a terminal user interface with `cx view` to visually browse your project, see which files are included or excluded in real-time, and modify rules interactively.
-*   **Flexible Rule Management**: Load different rule sets for various tasks using `cx set-rules`, reset to project defaults with `cx reset`, and manage configurations with `cx save`/`load`.
-*   **Git Integration**: Generate context based on your Git history, such as including all files changed since the last commit, on a specific branch, or only staged files using `cx from-git`.
-*   **External Repository Management**: Include files from external Git repositories directly in your rules, and manage them with the `cx repo` command, which includes a security audit workflow.
+*   **Pattern-Based File Selection**: Reads include/exclude patterns from a `.grove/rules` file using a `.gitignore`-style syntax.
+*   **Context Generation**: Generates a concatenated context file with XML delimiters.
+*   **Rules Editing**: Opens the `.grove/rules` file in the default editor via the `cx edit` command.
+*   **Context Inspection**: Lists included files (`cx list`) and displays token/file counts and language distribution (`cx stats`).
+*   **Interactive TUI**: Provides a terminal interface (`cx view`) to browse the file tree, view file statuses, and modify rules.
+*   **Rule Management**: Switches the active rules by copying an external file (`cx set-rules`), restores a project-defined default (`cx reset`), or saves/loads named rule configurations (`cx save`/`load`).
+*   **Git Integration**: Generates a temporary rules file from Git history (`cx from-git`), such as files changed on a branch or staged for commit.
+*   **External Repository Management**: Includes files from external Git repositories specified by URL in the rules file and manages local clones via the `cx repo` command, which includes an audit workflow.
 
 ## Ecosystem Integration
 
-`grove-context` is a foundational tool within the Grove ecosystem, serving as the primary context provider for other LLM-powered tools. It is used by:
+`grove-context` is a foundational tool within the Grove ecosystem that provides context to other LLM-powered tools.
 
-*   **`grove-gemini` and `grove-openai`**: The `grove llm request` facade uses `cx` to automatically gather context before making a request to an LLM provider. `grove-gemini` in particular leverages the hot/cold context separation feature to optimize token usage with Gemini's caching capabilities, which is especially useful for large contexts.
-*   **`grove-docgen`**: The documentation generator uses `cx` to build a comprehensive understanding of a codebase before generating documentation.
+*   **`grove-gemini` and `grove-openai`**: The `grove llm request` command calls the `cx` binary to generate context before sending a request to an LLM provider. The hot/cold context separation allows `grove-gemini` to send a stable "cold" context for caching, which is useful for large contexts.
+*   **`grove-docgen`**: The documentation generator uses `cx` to gather a codebase's files before generating documentation.
 
-By centralizing context management, `cx` ensures that all tools in the ecosystem operate with a consistent and reproducible understanding of the project.
+This allows different tools in the ecosystem to operate on a consistent and reproducible set of files defined by a single `.grove/rules` file.
 
 ## Installation
 

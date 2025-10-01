@@ -1,6 +1,6 @@
 # Command Reference
 
-This document provides a comprehensive reference for all `cx` commands, organized by functional category.
+This document provides a reference for all `cx` commands, organized by functional category.
 
 ## Core Commands
 
@@ -29,7 +29,7 @@ Generates the primary context file from the active rules.
 Lists all files included in the hot context.
 
 -   **Usage**: `cx list`
--   **Description**: Resolves the active rules and prints the absolute paths of all files included in the "hot" context (rules above the `---` separator). This command is useful for verifying which files will be included in the final context before generation.
+-   **Description**: Resolves the active rules and prints the absolute paths of all files included in the "hot" context (rules above the `---` separator). This command is used to verify which files will be included in the final context before generation.
 -   **Arguments**: None
 -   **Flags**: None
 -   **Examples**:
@@ -49,7 +49,7 @@ Lists all files included in the hot context.
 Prints the entire generated hot context file to standard output.
 
 -   **Usage**: `cx show`
--   **Description**: Outputs the complete contents of the `.grove/context` file. This is useful for piping the generated context directly to other tools or language models. If the file doesn't exist, it will return an error prompting you to run `cx generate`.
+-   **Description**: Outputs the complete contents of the `.grove/context` file. This is useful for piping the generated context directly to other tools. If the file doesn't exist, it will return an error prompting you to run `cx generate`.
 -   **Arguments**: None
 -   **Flags**: None
 -   **Examples**:
@@ -69,7 +69,7 @@ Prints the entire generated hot context file to standard output.
 Opens the active rules file in your default editor.
 
 -   **Usage**: `cx edit`
--   **Description**: Opens the `.grove/rules` file in the editor specified by the `$EDITOR` environment variable. If no rules file exists, it creates one with boilerplate content. This command is designed for rapid iteration on context rules.
+-   **Description**: Opens the `.grove/rules` file in the editor specified by the `$EDITOR` environment variable. If no rules file exists, it creates one with boilerplate content.
 -   **Arguments**: None
 -   **Flags**: None
 -   **Examples**:
@@ -90,7 +90,7 @@ Commands for creating context based on Git repository history.
 Generates a new rules file based on Git history.
 
 -   **Usage**: `cx from-git`
--   **Description**: Overwrites the `.grove/rules` file with explicit paths to files that have changed according to the specified Git criteria. This is useful for creating a context focused on recent work or specific changes.
+-   **Description**: Overwrites the `.grove/rules` file with explicit paths to files that have changed according to the specified Git criteria. This is used for creating a context focused on recent work or specific changes.
 -   **Arguments**: None
 -   **Flags**:
     -   `--staged`: Include only files that are staged for the next commit.
@@ -117,7 +117,7 @@ Generates a new rules file based on Git history.
 Compares the current context with a saved snapshot.
 
 -   **Usage**: `cx diff [snapshot|current]`
--   **Description**: Shows the differences between the files resolved from the current `.grove/rules` and the files resolved from a saved snapshot. It lists added and removed files, and provides a summary of changes in file count, token count, and total size.
+-   **Description**: Shows the differences between the files resolved from the current `.grove/rules` and the files resolved from a saved snapshot. It lists added and removed files and provides a summary of changes in file count, token count, and total size.
 -   **Arguments**:
     -   `[snapshot|current]` (optional): The name of the snapshot to compare against. Defaults to comparing against an empty context if omitted.
 -   **Flags**: None
@@ -165,7 +165,7 @@ Loads a saved snapshot into the active rules file.
 -   **Arguments**:
     -   `<name>` (required): The name of the snapshot to load.
 -   **Flags**: None
---   **Examples**:
+-   **Examples**:
     ```bash
     # Restore the rules from the 'feature-x-setup' snapshot
     cx load feature-x-setup
@@ -199,10 +199,10 @@ Commands that provide a terminal-based user interface for inspecting context.
 
 ### cx view
 
-Launches an interactive TUI to visualize context composition.
+Launches an interactive TUI to inspect context composition.
 
 -   **Usage**: `cx view`
--   **Description**: Starts a terminal user interface that displays a file tree of your project. It visually indicates whether each file is included in the hot context, cold context, excluded by a rule, or omitted. You can navigate the tree and interactively modify the rules file by pressing keys (`h` for hot, `c` for cold, `x` for exclude).
+-   **Description**: Starts a terminal user interface that displays a file tree of your project. It visually indicates whether each file is included in the hot context, cold context, excluded by a rule, or omitted. You can navigate the tree and modify the rules file by pressing keys (`h` for hot, `c` for cold, `x` for exclude).
 -   **Arguments**: None
 -   **Flags**: None
 -   **Examples**:
@@ -241,7 +241,7 @@ Displays a live-updating dashboard of context statistics.
 Provides a detailed analysis of the context composition.
 
 -   **Usage**: `cx stats`
--   **Description**: Generates and displays a detailed report on the composition of both the hot and cold contexts. The report includes a summary of file counts, token counts, and total size, as well as breakdowns by programming language and a list of the largest files.
+-   **Description**: Generates and displays a report on the composition of both the hot and cold contexts. The report includes a summary of file counts, token counts, and total size, as well as breakdowns by language and a list of the largest files.
 -   **Arguments**: None
 -   **Flags**:
     -   `--top <n>` (int, default: 5): The number of largest files to show in the report.
@@ -295,7 +295,7 @@ Commands for maintaining and validating your context configuration.
 Verifies the integrity and accessibility of files in the context.
 
 -   **Usage**: `cx validate`
--   **Description**: Checks all files resolved from the active rules to ensure they exist and are readable. It reports any missing files, duplicates, or permission issues.
+-   **Description**: Checks all files resolved from the active rules to ensure they exist and are readable. It reports any missing files or permission issues.
 -   **Arguments**: None
 -   **Flags**: None
 -   **Examples**:
@@ -345,7 +345,7 @@ Resets the rules file to project defaults.
 Sets the active rules from an external file.
 
 -   **Usage**: `cx set-rules <path-to-rules-file>`
--   **Description**: Copies the content of a specified file into `.grove/rules`, making it the active rule set for the project. This is useful for switching between different context configurations for different tasks.
+-   **Description**: Copies the content of a specified file into `.grove/rules`, making it the active rule set for the project. This is used for switching between different context configurations for different tasks.
 -   **Arguments**:
     -   `<path-to-rules-file>` (required): The path to the file containing the desired rules.
 -   **Flags**: None
