@@ -7,13 +7,51 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
+	"github.com/mattsolo1/grove-core/tui/components/help"
+	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
 )
+
+// Keymap for the dashboard TUI
+type dashboardKeyMap struct {
+	keymap.Base
+	Refresh key.Binding
+}
+
+func (k dashboardKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Help, k.Refresh, k.Quit}
+}
+
+func (k dashboardKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{
+			key.NewBinding(key.WithHelp("", "Dashboard:")),
+			key.NewBinding(key.WithHelp("Hot Context", "Files actively included in the primary context.")),
+			key.NewBinding(key.WithHelp("Cold Context", "Files included for background or reference.")),
+			key.NewBinding(key.WithHelp("Auto-Update", "Statistics refresh automatically on file changes.")),
+		},
+		{
+			key.NewBinding(key.WithHelp("", "Actions:")),
+			k.Refresh,
+			k.Quit,
+			k.Help,
+		},
+	}
+}
+
+var dashboardKeys = dashboardKeyMap{
+	Base: keymap.NewBase(),
+	Refresh: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "refresh"),
+	),
+}
 
 // NewDashboardCmd creates the dashboard command
 func NewDashboardCmd() *cobra.Command {
@@ -73,6 +111,7 @@ type dashboardModel struct {
 	lastUpdate  time.Time
 	isUpdating  bool
 	horizontal  bool
+	help        help.Model
 }
 
 // newDashboardModel creates a new dashboard model
@@ -88,10 +127,16 @@ func newDashboardModel(horizontal bool) (*dashboardModel, error) {
 		return nil, fmt.Errorf("failed to watch directory: %w", err)
 	}
 
+	helpModel := help.NewBuilder().
+		WithKeys(dashboardKeys).
+		WithTitle("Grove Context Dashboard - Help").
+		Build()
+
 	return &dashboardModel{
 		watcher:    watcher,
 		lastUpdate: time.Now(),
 		horizontal: horizontal,
+		help:       helpModel,
 	}, nil
 }
 
@@ -171,6 +216,12 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickCmd()
 
 	case tea.KeyMsg:
+		// If help is visible, it consumes all key presses
+		if m.help.ShowAll {
+			m.help.Toggle() // Any key closes help
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			m.watcher.Close()
@@ -181,6 +232,8 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isUpdating = true
 				return m, fetchStatsCmd()
 			}
+		case "?":
+			m.help.Toggle()
 		}
 	}
 
@@ -190,6 +243,12 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View renders the UI
 func (m dashboardModel) View() string {
 	theme := core_theme.DefaultTheme
+
+	// If help is visible, show it and return
+	if m.help.ShowAll {
+		m.help.SetSize(m.width, m.height)
+		return m.help.View()
+	}
 
 	// Header
 	header := theme.Header.Render("Grove Context Dashboard")
@@ -222,16 +281,7 @@ func (m dashboardModel) View() string {
 	coldBox := renderSummaryBox("Cold Context Statistics", m.coldStats, m.horizontal)
 
 	// Help text
-	helpStyle := theme.Muted.Copy().MarginTop(1)
-
-	layoutIndicator := ""
-	if m.horizontal {
-		layoutIndicator = " (horizontal layout)"
-	} else {
-		layoutIndicator = " (vertical layout)"
-	}
-
-	help := helpStyle.Render("Watching for file changes... Press 'r' to refresh manually, 'q' to quit" + layoutIndicator)
+	help := m.help.View()
 
 	// Combine all elements based on layout
 	if m.horizontal {
