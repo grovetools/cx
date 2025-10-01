@@ -1,1 +1,310 @@
-{}
+{
+  "sections": {
+    "command-reference": {
+      "title": "Command Reference",
+      "content": "This document provides a reference for all `cx` commands, organized by functional category.",
+      "subsections": [
+        {
+          "title": "Core Commands",
+          "content": "These commands are for the fundamental workflow of creating, inspecting, and editing context.\n\n### cx generate\n\nGenerates the primary context file from the active rules.\n\n-   **Usage**: `cx generate`\n-   **Description**: Reads the patterns from the `.grove/rules` file, resolves all matching file paths, and concatenates their contents into the `.grove/context` file. It also generates the `.grove/cached-context` file for any rules in the \"cold\" section (below a `---` separator).\n-   **Arguments**: None\n-   **Flags**:\n    -   `--xml` (boolean, default: true): Use XML-style delimiters in the output file.\n-   **Examples**:\n    ```bash\n    # Generate the context and cached-context files from .grove/rules\n    cx generate\n    ```\n-   **Related Commands**: `cx list`, `cx show`, `cx edit`\n\n---\n\n### cx list\n\nLists all files included in the hot context.\n\n-   **Usage**: `cx list`\n-   **Description**: Resolves the active rules and prints the absolute paths of all files included in the \"hot\" context (rules above the `---` separator). This command is used to verify which files will be included in the final context before generation.\n-   **Arguments**: None\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # List all files currently in the hot context\n    cx list\n\n    # Pipe the file list to another command\n    cx list | xargs wc -l\n    ```\n-   **Related Commands**: `cx generate`, `cx list-cache`, `cx stats`\n\n---\n\n### cx show\n\nPrints the entire generated hot context file to standard output.\n\n-   **Usage**: `cx show`\n-   **Description**: Outputs the complete contents of the `.grove/context` file. This is useful for piping the generated context directly to other tools. If the file doesn't exist, it will return an error prompting you to run `cx generate`.\n-   **Arguments**: None\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # Display the full context in the terminal\n    cx show\n\n    # Pipe the context to a language model CLI\n    cx show | ollama run llama3\n    ```\n-   **Related Commands**: `cx generate`\n\n---\n\n### cx edit\n\nOpens the active rules file in your default editor.\n\n-   **Usage**: `cx edit`\n-   **Description**: Opens the `.grove/rules` file in the editor specified by the `$EDITOR` environment variable. If no rules file exists, it creates one with boilerplate content.\n-   **Arguments**: None\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # Open .grove/rules in vim, nano, or VS Code (based on $EDITOR)\n    cx edit\n    ```\n-   **Related Commands**: `cx reset`, `cx set-rules`\n\n---"
+        },
+        {
+          "title": "Git Integration",
+          "content": "Commands for creating context based on Git repository history.\n\n### cx from-git\n\nGenerates a new rules file based on Git history.\n\n-   **Usage**: `cx from-git`\n-   **Description**: Overwrites the `.grove/rules` file with explicit paths to files that have changed according to the specified Git criteria. This is used for creating a context focused on recent work or specific changes.\n-   **Arguments**: None\n-   **Flags**:\n    -   `--staged`: Include only files that are staged for the next commit.\n    -   `--branch \u003crange\u003e`: Include files changed in a branch range (e.g., `main..HEAD`).\n    -   `--commits \u003cn\u003e`: Include files from the last `n` commits.\n    -   `--since \u003cdate|commit\u003e`: Include files changed since a specific date (e.g., `\"2 days ago\"`) or commit hash.\n-   **Examples**:\n    ```bash\n    # Create context from all files staged for commit\n    cx from-git --staged\n\n    # Create context from changes on the current branch compared to main\n    cx from-git --branch main..HEAD\n\n    # Create context from changes in the last 3 commits\n    cx from-git --commits 3\n    ```\n-   **Related Commands**: `cx diff`\n\n---\n\n### cx diff\n\nCompares the current context with a saved snapshot.\n\n-   **Usage**: `cx diff [snapshot|current]`\n-   **Description**: Shows the differences between the files resolved from the current `.grove/rules` and the files resolved from a saved snapshot. It lists added and removed files and provides a summary of changes in file count, token count, and total size.\n-   **Arguments**:\n    -   `[snapshot|current]` (optional): The name of the snapshot to compare against. Defaults to comparing against an empty context if omitted.\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # See what has changed since the 'initial-setup' snapshot was saved\n    cx diff initial-setup\n\n    # See what the current context includes compared to an empty state\n    cx diff\n    ```\n-   **Related Commands**: `cx save`, `cx list-snapshots`\n\n---"
+        },
+        {
+          "title": "Snapshots",
+          "content": "Commands for saving, loading, and managing different rule configurations.\n\n### cx save\n\nSaves the current rules file as a named snapshot.\n\n-   **Usage**: `cx save \u003cname\u003e`\n-   **Description**: Creates a copy of the current `.grove/rules` file and stores it in `.grove/context-snapshots/` with the given name.\n-   **Arguments**:\n    -   `\u003cname\u003e` (required): The name to give the snapshot.\n-   **Flags**:\n    -   `--desc \u003cdescription\u003e`: An optional description for the snapshot.\n-   **Examples**:\n    ```bash\n    # Save the current rules as 'feature-x-setup'\n    cx save feature-x-setup --desc \"Rules for developing feature X\"\n    ```\n-   **Related Commands**: `cx load`, `cx list-snapshots`\n\n---\n\n### cx load\n\nLoads a saved snapshot into the active rules file.\n\n-   **Usage**: `cx load \u003cname\u003e`\n-   **Description**: Overwrites the current `.grove/rules` file with the content of a previously saved snapshot.\n-   **Arguments**:\n    -   `\u003cname\u003e` (required): The name of the snapshot to load.\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # Restore the rules from the 'feature-x-setup' snapshot\n    cx load feature-x-setup\n    ```\n-   **Related Commands**: `cx save`, `cx list-snapshots`\n\n---\n\n### cx list-snapshots\n\nLists all saved snapshots.\n\n-   **Usage**: `cx list-snapshots`\n-   **Description**: Displays a table of all available snapshots with metadata, including name, creation date, file count, token count, size, and description.\n-   **Arguments**: None\n-   **Flags**:\n    -   `--sort \u003ccolumn\u003e` (string, default: \"date\"): Sort by column: `date`, `name`, `size`, `tokens`, `files`.\n    -   `--desc` (boolean, default: true): Sort in descending order.\n-   **Examples**:\n    ```bash\n    # List all snapshots, sorted by name in ascending order\n    cx list-snapshots --sort name --desc=false\n    ```\n-   **Related Commands**: `cx save`, `cx load`\n\n---"
+        },
+        {
+          "title": "Interactive Tools",
+          "content": "Commands that provide a terminal-based user interface for inspecting context.\n\n### cx view\n\nLaunches an interactive TUI to inspect context composition.\n\n-   **Usage**: `cx view`\n-   **Description**: Starts a terminal user interface that displays a file tree of your project. It visually indicates whether each file is included in the hot context, cold context, excluded by a rule, or omitted. You can navigate the tree and modify the rules file by pressing keys (`h` for hot, `c` for cold, `x` for exclude).\n-   **Arguments**: None\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # Start the interactive context viewer\n    cx view\n    ```\n-   **Related Commands**: `cx stats`, `cx dashboard`\n\n---\n\n### cx dashboard\n\nDisplays a live-updating dashboard of context statistics.\n\n-   **Usage**: `cx dashboard`\n-   **Description**: Launches a terminal UI that displays real-time statistics for both hot and cold contexts. The dashboard automatically updates when files in the project are changed, created, or deleted.\n-   **Arguments**: None\n-   **Flags**:\n    -   `-H, --horizontal`: Display statistics side by side.\n    -   `-p, --plain`: Output plain text statistics without launching the TUI.\n-   **Examples**:\n    ```bash\n    # Launch the live dashboard TUI\n    cx dashboard\n\n    # Print a one-time stats summary to the console\n    cx dashboard --plain\n    ```\n-   **Related Commands**: `cx stats`, `cx view`\n\n---\n\n### cx stats\n\nProvides a detailed analysis of the context composition.\n\n-   **Usage**: `cx stats`\n-   **Description**: Generates and displays a report on the composition of both the hot and cold contexts. The report includes a summary of file counts, token counts, and total size, as well as breakdowns by language and a list of the largest files.\n-   **Arguments**: None\n-   **Flags**:\n    -   `--top \u003cn\u003e` (int, default: 5): The number of largest files to show in the report.\n-   **Examples**:\n    ```bash\n    # Show standard statistics\n    cx stats\n\n    # Show the top 10 largest files in the context\n    cx stats --top 10\n    ```\n-   **Related Commands**: `cx dashboard`, `cx list`\n\n---"
+        },
+        {
+          "title": "Repository Management",
+          "content": "Commands for managing external Git repositories used in the context.\n\n### cx repo\n\nManages external Git repositories included in the context.\n\n-   **Usage**: `cx repo [command]`\n-   **Description**: A parent command for managing Git repositories that are cloned and tracked by `cx`. Repositories are added to the context by including their URL in the `.grove/rules` file.\n-   **Subcommands**:\n    -   `cx repo list`: Lists all tracked repositories, their pinned versions, and audit status.\n    -   `cx repo sync`: Fetches the latest changes for all tracked repositories.\n    -   `cx repo audit \u003curl\u003e`: Initiates an interactive, LLM-based security audit for a repository.\n-   **Examples**:\n    ```bash\n    # List all external repositories used in the context\n    cx repo list\n\n    # Fetch updates for all external repositories\n    cx repo sync\n\n    # Run a security audit on a new repository before adding it to rules\n    cx repo audit https://github.com/some/dependency\n    ```\n-   **Related Commands**: None\n\n---"
+        },
+        {
+          "title": "Validation \u0026 Maintenance",
+          "content": "Commands for maintaining and validating your context configuration.\n\n### cx validate\n\nVerifies the integrity and accessibility of files in the context.\n\n-   **Usage**: `cx validate`\n-   **Description**: Checks all files resolved from the active rules to ensure they exist and are readable. It reports any missing files or permission issues.\n-   **Arguments**: None\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # Check the current context for any issues\n    cx validate\n    ```\n-   **Related Commands**: `cx fix`\n\n---\n\n### cx fix\n\n(Deprecated) Automatically fix context validation issues.\n\n-   **Usage**: `cx fix`\n-   **Description**: This command is deprecated because context is now resolved dynamically from rules. It no longer performs any action but prints a message advising the user to edit their rules file directly to fix issues.\n-   **Arguments**: None\n-   **Flags**: None\n-   **Related Commands**: `cx validate`, `cx edit`\n\n---\n\n### cx reset\n\nResets the rules file to project defaults.\n\n-   **Usage**: `cx reset`\n-   **Description**: Replaces the content of `.grove/rules` with a default configuration. If a `context.default_rules_path` is defined in `grove.yml`, it uses that file. Otherwise, it creates a boilerplate rules file.\n-   **Arguments**: None\n-   **Flags**:\n    -   `-f, --force`: Reset without asking for confirmation.\n-   **Examples**:\n    ```bash\n    # Reset the rules file, which will prompt for confirmation\n    cx reset\n\n    # Reset without a prompt\n    cx reset --force\n    ```\n-   **Related Commands**: `cx edit`, `cx set-rules`\n\n---\n\n### cx set-rules\n\nSets the active rules from an external file.\n\n-   **Usage**: `cx set-rules \u003cpath-to-rules-file\u003e`\n-   **Description**: Copies the content of a specified file into `.grove/rules`, making it the active rule set for the project. This is used for switching between different context configurations for different tasks.\n-   **Arguments**:\n    -   `\u003cpath-to-rules-file\u003e` (required): The path to the file containing the desired rules.\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # Switch to a rule set designed for documentation generation\n    cx set-rules .grove/docs.rules\n    ```\n-   **Related Commands**: `cx edit`, `cx reset`\n\n---"
+        },
+        {
+          "title": "Cache Management",
+          "content": "Commands related to the cold (cached) context.\n\n### cx list-cache\n\nLists all files included in the cold (cached) context.\n\n-   **Usage**: `cx list-cache`\n-   **Description**: Resolves the active rules and prints the absolute paths of all files included in the \"cold\" context (rules below the `---` separator).\n-   **Arguments**: None\n-   **Flags**: None\n-   **Examples**:\n    ```bash\n    # List all files currently in the cold context\n    cx list-cache\n    ```\n-   **Related Commands**: `cx list`\n\n---"
+        },
+        {
+          "title": "Utility",
+          "content": "General-purpose utility commands.\n\n### cx version\n\nPrints the version information for the binary.\n\n-   **Usage**: `cx version`\n-   **Description**: Displays the version, commit hash, branch, and build date for the `cx` binary.\n-   **Arguments**: None\n-   **Flags**:\n    -   `--json`: Output version information in JSON format.\n-   **Examples**:\n    ```bash\n    # Show version information\n    cx version\n\n    # Get version info as JSON for scripting\n    cx version --json\n    ```\n-   **Related Commands**: None"
+        }
+      ]
+    },
+    "context-generation": {
+      "title": "Context Generation",
+      "content": "Grove Context (`cx`) transforms a set of rules into a structured, file-based context that can be provided to Large Language Models (LLMs). This document explains the pipeline from rules definition to the final output file.",
+      "subsections": [
+        {
+          "title": "Generation Pipeline Overview",
+          "content": "The core function of `cx` is to execute a repeatable pipeline:\n\n1.  **Rules Definition**: File inclusion and exclusion is defined in a `.grove/rules` file using a `.gitignore`-style syntax.\n2.  **File Resolution**: `cx` reads the rules, walks the specified file paths, and resolves a final list of files. It filters out binary files and respects `.gitignore` patterns by default.\n3.  **Context Generation**: The content of the resolved files is concatenated into a single, structured XML file located at `.grove/context`.\n\nThis process is triggered either manually by running `cx generate` or automatically by other Grove tools like `grove-gemini` before making a request to an LLM."
+        },
+        {
+          "title": "Inspecting the File List with `cx list`",
+          "content": "Before generating the full context, `cx list` can be used to verify which files will be included in the **hot context**. This command resolves the patterns in the active rules file and prints a list of the resulting absolute file paths. It is used for debugging rules to ensure the correct files are being included.\n\n**Example:**\n\n**Expected Output:**",
+          "code_blocks": [
+            "# Given .grove/rules:\n# **/*.go\n# !**/*_test.go\n\ncx list",
+            "/path/to/project/main.go\n/path/to/project/pkg/server/server.go"
+          ]
+        },
+        {
+          "title": "The `.grove/context` Output File",
+          "content": "The output of the generation process is the `.grove/context` file. This file contains the concatenated contents of all files from the hot context, wrapped in a structured XML format.\n\n**File Location**:\n-   **Hot Context**: `.grove/context`\n-   **Cold Context**: `.grove/cached-context`\n\n**Format Specification**:\n\nThe generated context uses XML tags. Each file's content is enclosed in a `\u003cfile\u003e` tag that includes a `path` attribute.\n\n\nThe cold context file (`.grove/cached-context`) follows the same structure but uses a `\u003ccold-context\u003e` root tag.",
+          "code_blocks": [
+            "\u003c?xml version=\"1.0\" encoding=\"UTF-8\"?\u003e\n\u003ccontext\u003e\n  \u003chot-context files=\"2\" description=\"...\"\u003e\n    \u003cfile path=\"src/main.go\"\u003e\n    // file content here\n    \u003c/file\u003e\n    \u003cfile path=\"pkg/config.yaml\"\u003e\n    # yaml content here\n    \u003c/file\u003e\n  \u003c/hot-context\u003e\n\u003c/context\u003e"
+          ]
+        },
+        {
+          "title": "Analyzing Composition with `cx stats`",
+          "content": "The `cx stats` command provides a detailed analysis of both the hot and cold contexts. The output includes:\n\n-   Total file count, estimated token count, and total size.\n-   A breakdown of languages by file count and token percentage.\n-   A list of the largest files by token count.\n-   Token distribution statistics across all included files.\n\nThis command is used for managing context size and identifying which files contribute most to the token count."
+        },
+        {
+          "title": "File Handling and Security",
+          "content": "### Automatic Binary File Exclusion\n\nBy default, `cx` excludes binary files. The detection process is as follows:\n1.  Checks for common binary file extensions (e.g., `.exe`, `.png`, `.so`, `.zip`).\n2.  If the file has no extension, it inspects the file's first 512 bytes for binary signatures of common executable formats (ELF, Mach-O, PE).\n3.  As a fallback, it analyzes the file content for a high percentage of non-printable characters or null bytes.\n\n### Filesystem Access and Security Best Practices\n\n**⚠️ WARNING: FILESYSTEM ACCESS**\n\nThe patterns in `.grove/rules` can match any readable file on your filesystem, including sensitive files outside your project directory if broad or parent-relative patterns (`../`) are used.\n\n-   **ALWAYS** review the output of `cx list` before using the generated context, especially after modifying rules.\n-   **NEVER** use overly broad, unqualified patterns like `/**/*` or `~/**`.\n-   **AVOID** patterns that traverse excessively up the directory tree (e.g., `../../../../**`).\n-   **EXPLICITLY EXCLUDE** sensitive files or directories (e.g., `!config/secrets.yml`, `!~/.ssh/**`).\n-   **ADD** `.grove/` to your project's `.gitignore` file to prevent committing generated context files."
+        },
+        {
+          "title": "Integration Points",
+          "content": "`grove-context` is used by other tools in the Grove ecosystem:\n-   **`grove-gemini` / `grove-openai`**: The `grove llm request` command uses `cx` to gather context. `grove-gemini` uses the hot/cold context separation to interact with Gemini's caching API.\n-   **`grove-docgen`**: The documentation generator uses `cx` to build an understanding of a codebase before generating documentation."
+        },
+        {
+          "title": "Complete Workflow Example",
+          "content": "This example demonstrates the flow from rules to final output.\n\n**1. Project Structure and Rules:**\n\n-   `main.go`\n-   `README.md`\n-   `.grove/rules`:\n    ```gitignore\n    *.go\n    *.md\n    ```\n\n**2. Verify with `cx list`:**\n\n\n\n**3. Generate the context:**\n\n\n**4. Inspect the output (`.grove/context`):**",
+          "code_blocks": [
+            "cx list",
+            "/path/to/project/main.go\n/path/to/project/README.md",
+            "cx generate",
+            "\u003c?xml version=\"1.0\" encoding=\"UTF-8\"?\u003e\n\u003ccontext\u003e\n  \u003chot-context files=\"2\" description=\"...\"\u003e\n    \u003cfile path=\"main.go\"\u003e\n    package main\n    // ...\n    \u003c/file\u003e\n    \u003cfile path=\"README.md\"\u003e\n    # My Project\n    // ...\n    \u003c/file\u003e\n  \u003c/hot-context\u003e\n\u003c/context\u003e"
+          ]
+        }
+      ]
+    },
+    "context-tui": {
+      "title": "Context TUI",
+      "content": "The `cx view` command starts a terminal user interface (TUI) for browsing a project's files and modifying context rules. It displays a file tree that shows the status of each file and directory relative to the patterns in the active `.grove/rules` file.",
+      "subsections": [
+        {
+          "title": "Overview",
+          "content": "The TUI provides the following functions:\n-   Navigate a file tree that shows file status relative to the context.\n-   Modify the `.grove/rules` file by pressing keys to include or exclude files and directories.\n-   View token counts, a summary of context statistics, and the content of the rules file.\n-   Switch to a repository list to manage context for local workspaces and cloned repositories."
+        },
+        {
+          "title": "Interface Components",
+          "content": "The `cx view` interface is split into two primary views that can be toggled using the `Tab` key.\n\n### File Tree View\n\nThis is the default view, organized into two main panels:\n\n1.  **File Tree Pane (Left)**: Displays an expandable tree of the project and any external directories included in the rules. Each entry is color-coded and prefixed with a status indicator.\n2.  **Rules \u0026 Stats Panel (Right)**:\n    *   The top section shows the content of the active `.grove/rules` file.\n    *   The bottom section displays summary statistics for hot and cold contexts, including file and token counts.\n\n### Repository Management View\n\nPressing `Tab` switches to this view, which provides a list of all discovered repositories:\n-   **Workspace Repos**: Local repositories found within the Grove ecosystem workspace.\n-   **Worktrees**: Git worktrees associated with workspace repositories.\n-   **Cloned Repositories**: External Git repositories managed by `cx repo`.\n\nFrom this view, a repository's version and audit status can be seen, and the entire repository can be added to or removed from the context."
+        },
+        {
+          "title": "File Status Indicators",
+          "content": "Each file and directory in the TUI is prefixed with an icon to indicate its context status:\n\n| Indicator | Status           | Description                                                               |\n| :-------- | :--------------- | :------------------------------------------------------------------------ |\n| `✓`       | **Hot Context**  | The file is included in the main context (`.grove/context`).              |\n| `❄️`      | **Cold Context** | The file is included in the cached context (`.grove/cached-context`).     |\n| `🚫`      | **Excluded**     | The file was matched by an exclusion rule (`!pattern`).                   |\n| `🙈`      | **Git Ignored**  | The file is ignored by `.gitignore` (and not in context).                 |\n| `(none)`  | **Omitted**      | The file does not match any inclusion patterns and is not in the context. |\n| `⚠️`      | **Risky Path**   | The path is outside the project and may be unsafe to add.               |"
+        },
+        {
+          "title": "Navigation and Modification",
+          "content": "Interaction is keyboard-driven, with controls for navigation and rule modification.\n\n-   **Navigation**: Use arrow keys or `j`/`k` to move the cursor. `g` and `G` jump to the top and bottom.\n-   **Context Modification**: With the cursor on a file or directory, press a key to modify its inclusion status. Changes are saved directly to the `.grove/rules` file.\n    -   `h`: Toggle inclusion in **hot context**.\n    -   `c`: Toggle inclusion in **cold context**.\n    -   `x`: Toggle **exclusion**.\n-   **View Control**:\n    -   `p`: Toggle pruning mode, which hides directories that do not contain any context files.\n    -   `H` or `.`: Toggle visibility of git-ignored files.\n    -   `/`: Search for files by name."
+        },
+        {
+          "title": "Keyboard Shortcuts Reference",
+          "content": "### File Tree View\n| Key(s)            | Action                                     |\n| :---------------- | :----------------------------------------- |\n| `q`, `Ctrl+c`     | Quit the application                       |\n| `?`               | Toggle help screen                         |\n| `Tab`             | Switch to Repository Management View       |\n| `↑`/`k`           | Move cursor up                             |\n| `↓`/`j`           | Move cursor down                           |\n| `Enter`/`Space`   | Toggle directory expand/collapse           |\n| `g` / `G`         | Jump to top / bottom                       |\n| `Ctrl+d`/`Ctrl+u` | Scroll down / up half a page               |\n| `/`               | Start searching for a file                 |\n| `n` / `N`         | Go to next / previous search result        |\n| `h`               | Toggle item's inclusion in **hot context** |\n| `c`               | Toggle item's inclusion in **cold context**|\n| `x`               | Toggle item's **exclusion**                |\n| `p`               | Toggle pruning mode                        |\n| `H` / `.`         | Toggle visibility of git-ignored files     |\n| `r`               | Refresh the view                           |\n| `zo`/`zc`         | Open/close fold at cursor (Vim-style)      |\n| `zR`/`zM`         | Open/close all folds (Vim-style)           |\n\n### Repository Management View\n| Key(s)            | Action                                         |\n| :---------------- | :--------------------------------------------- |\n| `q`, `Ctrl+c`     | Quit the application                           |\n| `?`               | Toggle help screen                             |\n| `Tab`, `Esc`      | Switch back to File Tree View                  |\n| `↑`/`↓`/`j`/`k`   | Move cursor up/down                            |\n| `/`               | Filter repository list                         |\n| `h`               | Toggle repository's inclusion in **hot context**|\n| `c`               | Toggle repository's inclusion in **cold context**|\n| `x`               | Toggle repository's **exclusion**              |\n| `a`               | Add/remove repository from tree view (`@view`) |\n| `A`               | Run security audit on the selected repository  |\n| `R`               | View audit report for the selected repository  |\n| `r`               | Refresh repository list                        |"
+        },
+        {
+          "title": "Practical Example: Refining Context Interactively",
+          "content": "This workflow shows how to use `cx view` to add a documentation directory to your cold context and exclude a specific file.\n\n1.  **Launch the TUI**\n    ```bash\n    cx view\n    ```\n\n2.  **Navigate to the `docs` Directory**\n    -   Use the `j` key or down arrow to move the cursor down to the `docs` directory entry.\n\n3.  **Expand the Directory**\n    -   Press `Enter`. The contents of the `docs` directory are now visible.\n\n4.  **Add the Directory to Cold Context**\n    -   With the cursor on the `docs` directory, press `c`.\n    -   The directory and all its children will be marked with the `❄️` indicator.\n\n5.  **Exclude a Specific File**\n    -   Navigate down into the expanded `docs` directory to a file named `wip.md`.\n    -   With the cursor on `wip.md`, press `x`.\n    -   The file is now marked with the `🚫` indicator.\n\n6.  **Quit and Inspect Changes**\n    -   Press `q` to exit.\n    -   The `.grove/rules` file is automatically updated with these changes. It will now contain an entry for `docs/**` in the cold section and an exclusion for `!docs/wip.md`."
+        }
+      ]
+    },
+    "examples": {
+      "title": "Examples",
+      "content": "This document provides examples of using Grove Context (`cx`) in common development workflows.",
+      "subsections": [
+        {
+          "title": "Example 1: Quick Start - Pattern-Based Context",
+          "content": "This example covers the basic workflow for a new project: creating rules, generating context, and inspecting the results.\n\nAssume a Go project with the following structure:\n\n\n#### 1. Create a Rules File\n\nCreate a `.grove/rules` file to define the context. This file will include all Go source files but exclude test files.\n\n\nYour `.grove/rules` file now contains:\n\n\n#### 2. Edit Rules\n\nThe `cx edit` command opens the rules file in the editor defined by the `$EDITOR` environment variable. This can be bound to a keyboard shortcut for frequent editing.\n\n\n#### 3. List the Context Files\n\nRun `cx list` to see which files are included based on the rules. `cx` filters out binary files and files ignored by Git.\n\n\n**Expected Output:**\n\n\nThe file `utils_test.go` is excluded by the `!**/*_test.go` pattern.\n\n#### 4. Analyze Context Statistics\n\nUse `cx stats` to get a summary of the context, including file counts, token estimates, and language breakdown.\n\n\nThe command outputs a summary of total files and tokens, a distribution of languages, and a list of the largest files by token count.",
+          "code_blocks": [
+            "my-go-app/\n├── main.go\n├── utils.go\n├── utils_test.go\n└── README.md",
+            "# Create the directory\nmkdir -p .grove\n\n# Create the rules file\necho \"**/*.go\" \u003e .grove/rules\necho \"!**/*_test.go\" \u003e\u003e .grove/rules",
+            "**/*.go\n!**/*_test.go",
+            "# Example for .zshrc or .bashrc\nbindkey -s '^x^c' 'cx edit\\n'",
+            "cx list",
+            "/path/to/my-go-app/main.go\n/path/to/my-go-app/utils.go",
+            "cx stats"
+          ]
+        },
+        {
+          "title": "Example 2: Managing Projects with Multiple Components",
+          "content": "`cx` can manage context for workspaces containing multiple projects. This example demonstrates features for such scenarios.\n\nAssume a workspace with a web frontend, a backend API, and a shared library:\n\n\n#### 1. Switch Between Different Rule Sets\n\nDifferent tasks may require different contexts. You can maintain multiple rule files and switch between them using `cx set-rules`.\n\n-   **`docs.rules`:** For generating documentation.\n-   **`api-dev.rules`:** For working on the API, including the shared library.\n\n\n\nSwitch to the API development context:\n\n\nThis command copies the content of `api-dev.rules` into `.grove/rules`, making it the active configuration.\n\n#### 2. Visually Browse and Modify Context\n\nThe `cx view` command starts an interactive terminal interface to inspect and modify the context.\n\n\nIn the TUI, you can:\n-   Navigate the file tree.\n-   View status indicators for each file (hot, cold, excluded, omitted).\n-   Modify the `.grove/rules` file by toggling a file's inclusion in hot (`h`), cold (`c`), or excluded (`x`) contexts.\n-   Press `Tab` to switch to the repository management view.\n\n#### 3. Manage Repositories and Worktrees\n\nIn the `cx view` TUI, pressing `Tab` shows a list of local workspaces, Git worktrees, and cloned external repositories. From this view, you can add an entire repository to your hot or cold context or run a security audit on an external repository.\n\n#### 4. Generate Context from Git History\n\nTo generate context from recent changes, use `cx from-git`. This command overwrites `.grove/rules` with explicit paths to the changed files.\n\n\n#### 5. Include External Repositories\n\nYou can include files from other repositories by adding their Git URL to the rules file. `cx` will clone the repository locally. It is recommended to audit the repository first.\n\n\n#### 6. Reset to Defaults\n\nThe `cx reset` command restores `.grove/rules` to a default state. If `context.default_rules_path` is defined in `grove.yml`, it will use that file; otherwise, it creates a boilerplate file.",
+          "code_blocks": [
+            "my-workspace/\n├── api/\n│   ├── main.go\n│   └── handlers/\n│       └── user.go\n├── frontend/\n│   ├── src/\n│   │   └── App.tsx\n│   └── package.json\n└── shared-lib/\n    ├── utils.go\n    └── README.md",
+            "# docs.rules\nREADME.md\nshared-lib/README.md",
+            "# api-dev.rules\napi/**/*.go\nshared-lib/**/*.go\n!**/*_test.go",
+            "cx set-rules api-dev.rules",
+            "cx view",
+            "# Include all files staged for commit\ncx from-git --staged\n\n# Include all files changed on the current branch against 'main'\ncx from-git --branch main..HEAD",
+            "# 1. Audit the repository to check its contents.\ncx repo audit https://github.com/charmbracelet/lipgloss\n\n# 2. Add the URL to .grove/rules, optionally pinning to a version.\necho \"https://github.com/charmbracelet/lipgloss@v0.13.0\" \u003e\u003e .grove/rules",
+            "# Reset .grove/rules to the project's default configuration.\ncx reset"
+          ]
+        }
+      ]
+    },
+    "experimental": {
+      "title": "Experimental Features",
+      "content": "This section describes features that are under active development or have specialized use cases. These features may change or be removed in future versions.",
+      "subsections": [
+        {
+          "title": "Hot \u0026 Cold Context Separation (⚠️ WARNING: EXPERIMENTAL)",
+          "content": "**CRITICAL WARNING:** This feature is experimental and can result in substantial costs when used with caching-enabled LLM APIs like Google's Gemini API. It is **not recommended for general use**. Misconfiguration or frequent changes to the cold context can consume a large number of cached tokens.\n\nThis feature separates context into two files based on a `---` separator in the `.grove/rules` file.\n\n*   **Hot Context**: Patterns above the separator are resolved into `.grove/context`. This is intended for files that change frequently.\n*   **Cold Context**: Patterns below the separator are resolved into `.grove/cached-context`. This is intended for stable files like libraries or dependencies.\n\nThe intended function is to send the cold context once to an LLM provider and have it cached. The caching behavior and cost implications are not fully evaluated."
+        },
+        {
+          "title": "MCP Integration for Automatic Context Management",
+          "content": "`grove-context` can be integrated with `grove-mcp` (Model Context Protocol server), which allows LLM-based agents to interact with local development tools. Through the MCP protocol, an agent can be granted permissions to execute `cx` commands.\n\nThis allows an agent to perform actions such as:\n*   Analyzing the current context with `cx stats`.\n*   Modifying the context rules with `cx edit` or `cx set-rules`.\n*   Generating context from recent Git changes using `cx from-git`.\n\nThis integration enables an agent to manage its own file-based understanding of a codebase during a task."
+        }
+      ]
+    },
+    "external-repositories": {
+      "title": "External Repositories",
+      "content": "`grove-context` (`cx`) can include files from sources outside the current project's directory. This is managed through path patterns, Git URL references in the rules file, and a dedicated set of `repo` commands.",
+      "subsections": [
+        {
+          "title": "1. Including External Sources",
+          "content": "There are three methods for including files from external sources in your context.\n\n### Git Repository References\n\nA Git repository URL can be added directly to the `.grove/rules` file. `cx` will clone or update the repository locally and apply patterns to its files. A specific version (tag, branch, or commit hash) can be pinned using the `@` symbol.\n\nRepositories are cloned to a central cache directory (`~/.grove/cx/repos`).\n\n**Example `.grove/rules`:**\n\n### Local Path References\n\nRelative or absolute filesystem paths can be used to include files from other local projects, such as in a monorepo workspace.\n\n**Example `.grove/rules`:**\n\n### The `@default` Directive\n\nThe `@default` directive imports rules from another local Grove project. When `cx` encounters `@default: \u003cpath\u003e`, it performs the following steps:\n\n1.  Locates the `grove.yml` file in the specified `\u003cpath\u003e`.\n2.  Reads the `context.default_rules_path` value from that `grove.yml`.\n3.  Loads the rules from that file and prepends `\u003cpath\u003e` to all relative patterns to ensure they resolve from the external project's location.\n\n**Example:**\nAssume a `grove-core` project with its own default rules.\n\n**`../grove-core/.grove/default.rules`:**\n\n**Your project's `.grove/rules`:**\nThis configuration includes all `.js` files from the local `src` directory and all non-test `.go` files from the `grove-core` project.",
+          "code_blocks": [
+            "# Include the entire lipgloss repository at a specific tag\nhttps://github.com/charmbracelet/lipgloss@v0.13.0\n\n# Exclude specific parts of the cloned repository\n!**/examples/**\n!**/*_test.go",
+            "# Include all Go files from a sibling 'shared-lib' project\n../shared-lib/**/*.go\n\n# Include the API definition from a sibling 'api' project\n../api/schema.openapi.yaml",
+            "*.go\n!*_test.go",
+            "# Include local files\nsrc/**/*.js\n\n# Include all default files from grove-core\n@default: ../grove-core"
+          ]
+        },
+        {
+          "title": "2. Managing External Repositories",
+          "content": "The `cx repo` command suite manages the Git repositories that `cx` tracks and clones from rules files.\n\n### Listing Tracked Repositories (`cx repo list`)\n\nThis command displays a table of all Git repositories that have been cloned by `cx`, including their pinned version, resolved commit, and audit status.\n\n\n**Example Output:**\n\n### Syncing Repositories (`cx repo sync`)\n\nThis command fetches the latest changes for all tracked repositories and checks out their pinned versions to ensure local copies are up-to-date.",
+          "code_blocks": [
+            "cx repo list",
+            "URL                                     VERSION  COMMIT   STATUS       REPORT  LAST SYNCED\n---                                     -------  ------   ------       ------  -----------\nhttps://github.com/charmbracelet/lipgloss v0.13.0  a1a2b3c  passed       ✓       2 hours ago\nhttps://github.com/user/another-repo    default  b4c5d6e  not_audited          1 day ago",
+            "cx repo sync"
+          ]
+        },
+        {
+          "title": "3. Repository Audit (`cx repo audit`)",
+          "content": "Before including an unknown third-party repository, the `cx repo audit` command can be used to analyze its contents. It provides an interactive workflow assisted by an LLM.\n\nThe workflow is as follows:\n1.  **Clone**: `cx` clones the repository to a temporary location.\n2.  **Context Refinement**: The command launches `cx view`, allowing interactive selection of files to be included in the audit context.\n3.  **LLM Analysis**: `cx` generates a context from the selection and sends it to an LLM with a prompt to analyze it for security vulnerabilities.\n4.  **Review and Approve**: The analysis is saved to a report file and opened in your editor. You are then prompted to approve or reject the audit.\n5.  **Manifest Update**: The result (\"passed\" or \"failed\") is recorded in a central manifest, which is visible in `cx repo list`.\n\n**Example Audit Workflow:**",
+          "code_blocks": [
+            "# 1. Start the interactive audit for a repository\ncx repo audit https://github.com/charmbracelet/lipgloss\n\n# --\u003e This launches `cx view` to select files for the audit.\n# --\u003e After quitting `cx view`, it runs the LLM analysis.\n# --\u003e After the report is generated and reviewed:\n\n# 2. Approve the audit\nApprove this audit and mark repository as 'passed'? (y/n): y\n\n# 3. Add the audited repository to your rules file\necho \"https://github.com/charmbracelet/lipgloss\" \u003e\u003e .grove/rules"
+          ]
+        },
+        {
+          "title": "4. Best Practices",
+          "content": "-   Run `cx repo audit` on external repositories before adding them to rules to prevent including malicious or unexpectedly large codebases.\n-   Pin Git repositories to a specific tag or commit hash (e.g., `url@v1.2.3`) for reproducible context.\n-   When including an external repository, add specific exclusion patterns to limit the context to necessary files.\n-   For shared context between local Grove projects, use the `@default` directive to avoid duplicating rule definitions."
+        }
+      ]
+    },
+    "git-workflows": {
+      "title": "Git Workflows",
+      "content": "`grove-context` can generate rules based on Git history. This is used to create temporary, task-specific contexts that focus on a set of changes within a repository.",
+      "subsections": [
+        {
+          "title": "The `cx from-git` Command",
+          "content": "The `cx from-git` command queries the Git history and overwrites the `.grove/rules` file with explicit paths to files that match the specified criteria.\n\nBecause this command overwrites existing rules, it is common to save the primary rule set as a snapshot before use and restore it afterward.\n\n\n### Command Syntax and Options\n\n**Usage:**\n\n**Flags:**\n\n| Flag        | Description                                                 | Example                        |\n|-------------|-------------------------------------------------------------|--------------------------------|\n| `--staged`  | Includes files that are currently staged for commit.        | `cx from-git --staged`         |\n| `--branch`  | Includes files changed between two branches or commits.     | `cx from-git --branch main..HEAD` |\n| `--commits` | Includes files changed in the last `N` commits.             | `cx from-git --commits 3`      |\n| `--since`   | Includes files changed since a specific date or commit hash. | `cx from-git --since \"2 days ago\"` |\n\nAt least one flag must be specified.",
+          "code_blocks": [
+            "# Save the current pattern-based rules\ncx save my-dev-rules\n\n# Generate a temporary context from staged files\ncx from-git --staged\n\n# ... use the generated context ...\n\n# Restore the original rules\ncx load my-dev-rules",
+            "cx from-git [flags]"
+          ]
+        },
+        {
+          "title": "Use Cases",
+          "content": "### 1. Preparing for a Commit\n\nTo generate a context containing only files in the staging area, which can be used for writing a commit message or performing a final review.\n\n**Command:**\n\n**Mechanism:**\nThis command executes `git diff --cached --name-only` and writes the resulting file paths to `.grove/rules`.\n\n### 2. Working on a Feature Branch\n\nTo generate a context that includes every file changed on a feature branch relative to a base branch.\n\n**Scenario:** On a feature branch `feat/user-auth`, generate a context of all changes relative to `main`.\n\n**Command:**\n\n**Mechanism:**\nThe command populates `.grove/rules` with the output of `git diff --name-only main..HEAD`, listing all files added, modified, or renamed on the current branch.\n\n### 3. Summarizing Recent Work\n\nTo generate context from files modified in the last few commits.\n\n**Scenario:** Generate a context of all files affected by the last five commits.\n\n**Command:**\n\n**Mechanism:**\nThis command uses `git log` to find all unique files modified in the last five commits and writes their paths to `.grove/rules`.\n\n### 4. Code Review Workflows\n\nTo generate the exact context of a pull request's changes for review.\n\n**Scenario:** Reviewing a colleague's branch named `fix/api-bug`.\n\n**Commands:**\n\n**Outcome:**\nThe `.grove/rules` file is populated with the specific files changed in the pull request, creating an isolated context for the review.\n\n### 5. Merge Conflict Resolution\n\nTo build a context of incoming changes when a merge conflict occurs.\n\n**Scenario:** A `git pull` on the `main` branch results in a merge conflict with `origin/main`.\n\n**Command:**\n\n**Outcome:**\nThis command provides the file paths of the remote changes. This context can be provided to an LLM, along with the conflicted file content, to assist in resolving the merge.",
+          "code_blocks": [
+            "cx from-git --staged",
+            "cx from-git --branch main..HEAD",
+            "cx from-git --commits 5",
+            "# Check out the branch\ngit checkout fix/api-bug\n\n# Generate context for the changes relative to the main branch\ncx from-git --branch main..HEAD",
+            "# Generate context of the remote changes being merged\ncx from-git --branch HEAD..origin/main"
+          ]
+        }
+      ]
+    },
+    "loading-rules": {
+      "title": "Loading Rules",
+      "content": "This document describes three mechanisms for managing the `.grove/rules` file: setting rules from an external file, resetting to a default state, and using named snapshots.",
+      "subsections": [
+        {
+          "title": "Setting Rules from an External File (`cx set-rules`)",
+          "content": "The `cx set-rules \u003cpath\u003e` command copies the content of a specified file into `.grove/rules`, making it the active configuration for all subsequent `cx` commands. This is used for maintaining separate, task-specific rule sets.\n\n#### Use Case: Switching Between Rule Sets\n\nA project may have different rule files for different tasks, such as one for API development and another for documentation generation.\n\n**`api-dev.rules`:**\n\n**`docs-gen.rules`:**\n\nTo switch to the API development context:\nThis command overwrites `.grove/rules` with the content of `api-dev.rules`. To switch to the documentation context:",
+          "code_blocks": [
+            "# Rules for API development\n**/*.go\n!**/*_test.go\n!docs/**",
+            "# Rules for documentation generation\n*.md\ndocs/**/*.md\ncmd/**/*.go",
+            "cx set-rules api-dev.rules",
+            "cx set-rules docs-gen.rules"
+          ]
+        },
+        {
+          "title": "Resetting to Project Defaults (`cx reset`)",
+          "content": "The `cx reset` command restores the `.grove/rules` file to a default state, overwriting any current rules. This is used to clear temporary changes (e.g., from `cx from-git`) or to revert to a known configuration.\n\nThe command functions in one of two ways:\n\n1.  **Project-Defined Default**: If a `default_rules_path` is specified in `grove.yml`, `cx reset` copies the content of that file to `.grove/rules`.\n2.  **Boilerplate Default**: If no default is configured, `cx reset` creates a basic `.grove/rules` file that includes all files (`*`) and contains commented-out examples.\n\n#### Example: Configuring and Using a Project Default\n\nA default rules file can be defined in `grove.yml`:\nWith this configuration, `cx reset` will restore `.grove/rules` from `.grove/default.rules`.",
+          "code_blocks": [
+            "# grove.yml\nname: my-project\ndescription: A sample project.\ncontext:\n  default_rules_path: .grove/default.rules",
+            "# Overwrite the current rules with the project's default configuration.\n# This will prompt for confirmation.\ncx reset\n\n# Reset without a confirmation prompt.\ncx reset --force"
+          ]
+        },
+        {
+          "title": "Using Snapshots for Rule Configurations",
+          "content": "Snapshots are named versions of a `.grove/rules` file that can be saved, listed, and loaded. They are stored in the `.grove/context-snapshots/` directory.\n\n#### The Snapshot Workflow\n\n1.  **Save a Configuration (`cx save`)**: Saves the current `.grove/rules` file as a named snapshot.\n    ```bash\n    # Save the current rules with a name and an optional description.\n    cx save feature-x-api --desc \"Context for developing the new user API\"\n    ```\n\n2.  **List Available Snapshots (`cx list-snapshots`)**: Displays all saved snapshots.\n    ```bash\n    cx list-snapshots\n    ```\n    **Example Output:**\n    ```\n    Available snapshots:\n\n    NAME                 DATE         FILES  TOKENS   SIZE      DESCRIPTION\n    --------------------------------------------------------------------------------\n    feature-x-api        2025-09-26   15     ~2.1k    8.4 KB    Context for developing the new user API\n    ```\n\n3.  **Load a Snapshot (`cx load`)**: Restores a previously saved configuration.\n    ```bash\n    # This overwrites .grove/rules with the content from the snapshot.\n    cx load feature-x-api\n    ```"
+        }
+      ]
+    },
+    "overview": {
+      "title": "Overview",
+      "content": "\u003cimg src=\"./images/grove-context-readme.svg\" width=\"60%\" /\u003e\n\n`grove-context` (`cx`) is a command-line tool that generates file-based context for Large Language Models (LLMs) from a set of user-defined patterns. It reads files matching these patterns and concatenates their content into a structured format.\n\n\u003c!-- placeholder for animated gif --\u003e\n\n### Key Features\n\n*   **Pattern-Based File Selection**: Reads include/exclude patterns from a `.grove/rules` file using a `.gitignore`-style syntax.\n*   **Context Generation**: Generates a concatenated context file with XML delimiters.\n*   **Rules Editing**: Opens the `.grove/rules` file in the default editor via the `cx edit` command.\n*   **Context Inspection**: Lists included files (`cx list`) and displays token/file counts and language distribution (`cx stats`).\n*   **Interactive TUI**: Provides a terminal interface (`cx view`) to browse the file tree, view file statuses, and modify rules.\n*   **Rule Management**: Switches the active rules by copying an external file (`cx set-rules`), restores a project-defined default (`cx reset`), or saves/loads named rule configurations (`cx save`/`load`).\n*   **Git Integration**: Generates a temporary rules file from Git history (`cx from-git`), such as files changed on a branch or staged for commit.\n*   **External Repository Management**: Includes files from external Git repositories specified by URL in the rules file and manages local clones via the `cx repo` command, which includes an audit workflow.",
+      "subsections": [
+        {
+          "title": "Ecosystem Integration",
+          "content": "`grove-context` is a foundational tool within the Grove ecosystem that provides context to other LLM-powered tools.\n\n*   **`grove-gemini` and `grove-openai`**: The `grove llm request` command calls the `cx` binary to generate context before sending a request to an LLM provider. The hot/cold context separation allows `grove-gemini` to send a stable \"cold\" context for caching, which is useful for large contexts.\n*   **`grove-docgen`**: The documentation generator uses `cx` to gather a codebase's files before generating documentation.\n\nThis allows different tools in the ecosystem to operate on a consistent and reproducible set of files defined by a single `.grove/rules` file."
+        },
+        {
+          "title": "Installation",
+          "content": "Install via the Grove meta-CLI:\n\nVerify installation:\n\nRequires the `grove` meta-CLI. See the [Grove Installation Guide](https://github.com/mattsolo1/grove-meta/blob/main/docs/02-installation.md) if you don't have it installed.",
+          "code_blocks": [
+            "grove install context",
+            "cx version"
+          ]
+        }
+      ]
+    },
+    "rules-and-patterns": {
+      "title": "Rules \u0026 Patterns",
+      "content": "The `.grove/rules` file defines which files and directories are included in or excluded from the context using a pattern-matching syntax.",
+      "subsections": [
+        {
+          "title": "Rules File Basics",
+          "content": "-   **Location**: The active rules file is `.grove/rules`. The legacy `.grovectx` file is read as a fallback if `.grove/rules` is not found.\n-   **Format**: The file is plain text, with one pattern per line.\n-   **Comments**: Lines beginning with `#` are ignored.\n-   **Directives**: Special commands like `@default:` or Git URLs can be included. See the \"External Repositories\" documentation for details.\n-   **Paths**: Patterns can be relative to the project root (`src/**/*.go`), relative to a parent directory (`../other-repo/**`), or absolute (`/path/to/shared/lib`)."
+        },
+        {
+          "title": "Pattern Syntax Reference",
+          "content": "The syntax is based on `.gitignore` conventions.\n\n| Pattern             | Description                                                                     | Example                       |\n| ------------------- | ------------------------------------------------------------------------------- | ----------------------------- |\n| `*`                 | Matches any sequence of characters except directory separators (`/`).             | `*.go`                        |\n| `**`                | Matches directories recursively.                                                | `src/**/*.js`                 |\n| `src/`              | Matches a directory named `src`. A trailing slash is optional.                  | `docs/` or `docs`             |\n| `/path/to/file.txt` | An absolute path matches a specific file or directory on the filesystem.        | `/Users/dev/project/file.txt` |\n| `!pattern`          | Excludes files that match the pattern.                                          | `!**/*_test.go`               |\n\n**Note**: An inclusion pattern for a plain directory name (e.g., `docs`) is treated as a recursive pattern (`docs/**`) to include all its contents."
+        },
+        {
+          "title": "Include/Exclude Logic",
+          "content": "`cx` processes rules to determine the final set of files.\n\n1.  **Default Behavior**: A file is omitted unless it matches at least one inclusion pattern.\n2.  **Exclusion**: If a file matches an inclusion pattern, it can be subsequently excluded by a pattern prefixed with `!`.\n3.  **Precedence**: The last pattern in the rules file that matches a file determines its inclusion or exclusion.\n4.  **.gitignore**: Files listed in `.gitignore` are excluded by default unless explicitly included by a rule."
+        },
+        {
+          "title": "Pattern Writing Strategies",
+          "content": "-   Begin with broad inclusion patterns (`**/*.go`) and follow them with specific exclusions (`!vendor/**`).\n-   Use relative paths (`../other-project/**/*.go`) to include files from sibling projects.\n-   Group related patterns with comments for readability.\n-   To exclude a directory and its contents, use `!dist/**`. A pattern without a slash, like `!tests`, excludes any file or directory named `tests` at any level."
+        },
+        {
+          "title": "Editing Rules with `cx edit`",
+          "content": "The `cx edit` command opens the `.grove/rules` file in the editor specified by the `$EDITOR` environment variable. This is intended for rapid iteration and can be bound to a shell keyboard shortcut."
+        },
+        {
+          "title": "Examples",
+          "content": "### Go Project\n\n### JavaScript/TypeScript Project\n\n### Mixed-Language Monorepo\n\n### Multi-Repo Workspace\n\n### Rules with a GitHub Repository",
+          "code_blocks": [
+            "# Include all Go files, plus mod and sum files\n**/*.go\ngo.mod\ngo.sum\n\n# Exclude test files and the vendor directory\n!**/*_test.go\n!vendor/**",
+            "# Include all source files from the src directory\nsrc/**/*.ts\nsrc/**/*.js\n\n# Exclude build outputs and dependencies\n!node_modules/**\n!dist/**\n!build/**",
+            "# Python backend\napi/**/*.py\n!api/tests/**\n\n# TypeScript frontend\nweb/src/**/*.ts\n!web/node_modules/**\n\n# Shared Protobuf definitions\nproto/**/*.proto",
+            "# Include the current project's source\nsrc/**/*.go\n\n# Include the source from a sibling API project\n../api/**/*.go\n\n# Include shared libraries, but exclude their tests\n../shared-lib/**/*.go\n!../shared-lib/**/tests/**",
+            "# Include the current project's source\n**/*.go\n\n# Also include a specific version of an external library\nhttps://github.com/charmbracelet/lipgloss@v0.13.0\n\n# Exclude examples from the cloned library\n!**/examples/**"
+          ]
+        }
+      ]
+    }
+  }
+}

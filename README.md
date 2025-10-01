@@ -2,7 +2,7 @@
 
 <img src="docs/images/grove-context-readme.svg" width="60%" />
 
-`grove-context` (`cx`) is a command-line tool that generates file-based context for Large Language Models (LLMs) from a set of user-defined patterns. It reads files matching these patterns, concatenates their content into a structured format, and excludes binary files by default.
+`grove-context` (`cx`) is a command-line tool that generates file-based context for Large Language Models (LLMs) from a set of user-defined patterns. It reads files matching these patterns and concatenates their content into a structured format.
 
 <!-- placeholder for animated gif -->
 
