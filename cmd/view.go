@@ -495,7 +495,7 @@ func (m *viewModel) filterRepos() {
 func (m *viewModel) ensureRepoCursorVisible() {
 	// Calculate the actual list height (must match renderRepoSelect)
 	viewportHeight := m.height - 8 // Account for header, footer, and more margins
-	listHeight := viewportHeight - 4 // Leave more space for top and bottom margins
+	listHeight := viewportHeight // Use full viewport like tree view
 	
 	if listHeight < 5 {
 		listHeight = 5
@@ -669,45 +669,40 @@ func (m *viewModel) renderRepoSelect() string {
 	}
 	
 	// Header
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12")).
-		MarginBottom(1)
-	header := headerStyle.Render("Select Repository")
+	header := core_theme.DefaultTheme.Header.Render("Select Repository")
+	
+	// Subtitle as separate element
+	subtitle := core_theme.DefaultTheme.Muted.Render("Add repositories to rules file for further context refinement")
 	
 	// Filter display
 	if m.repoFilter != "" {
-		filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+		filterStyle := core_theme.DefaultTheme.Muted
 		header += filterStyle.Render(fmt.Sprintf(" (filter: %s)", m.repoFilter))
 	}
 	
 	// Calculate dimensions (matching tree view layout exactly)
-	viewportHeight := m.height - 8 // Account for header, footer, and more margins
+	viewportHeight := m.height - 12 // Account for header, subtitle, footer, and margins
 	rulesWidth := int(float64(m.width) * 0.4)      // Right panel is 40% of width (was 33%)
 	repoListWidth := m.width - rulesWidth - 2 // Left panel gets the rest
 	
-	// Split the right panel height for rules and stats (make them smaller)
-	rulesHeight := (viewportHeight * 2 / 3) - 2  // Reduce by 2 for padding
-	statsHeight := viewportHeight - rulesHeight - 1 // Account for gap between panels
+	// Split the right panel height for rules and stats (use fixed heights like main view)
+	statsHeight := 8 // Fixed height for stats
+	rulesHeight := viewportHeight - statsHeight - 1 // -1 for spacing
 	
 	// Build the repository list (left panel)
 	var b strings.Builder
 	
 	// Styles for repo list
-	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("170")).
-		Bold(true)
+	selectedStyle := core_theme.DefaultTheme.Selected
 	normalStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
-	pathStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-	worktreeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243"))
+		Foreground(core_theme.DefaultColors.LightText)
+	// pathStyle := core_theme.DefaultTheme.Muted // Temporarily unused
+	worktreeStyle := core_theme.DefaultTheme.Faint
 	clonedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("214"))
+		Foreground(core_theme.DefaultColors.Orange)
 	
 	// Calculate visible range for repo list (use a smaller height for the actual list)
-	listHeight := viewportHeight - 4 // Leave more space for top and bottom margins
+	listHeight := viewportHeight // Use full viewport like tree view
 	visibleEnd := m.repoScrollOffset + listHeight
 	if visibleEnd > len(m.filteredRepos) {
 		visibleEnd = len(m.filteredRepos)
@@ -742,11 +737,11 @@ func (m *viewModel) renderRepoSelect() string {
 		// Add section separator BEFORE the line when transitioning
 		if i > m.repoScrollOffset && currentIsWorkspace && !isWorkspace {
 			// Add separator as a separate line with no cursor indicator
-			separatorLine := "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("238")).
+			separatorLine := "  " + core_theme.DefaultTheme.Faint.
 				Render("─────────────────────────────────────────────────")
 			b.WriteString(separatorLine + "\n")
 			// Add header for cloned repos section
-			headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Bold(true)
+			headerStyle := core_theme.DefaultTheme.TableHeader
 			b.WriteString("  " + headerStyle.Render("URL                                      VERSION  COMMIT   STATUS       REPORT") + "\n")
 		}
 		currentIsWorkspace = isWorkspace
@@ -761,21 +756,21 @@ func (m *viewModel) renderRepoSelect() string {
 		
 		if isInView {
 			// Blue eye icon for in view
-			viewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+			viewStyle := core_theme.DefaultTheme.Info
 			line += viewStyle.Render("👁️") + " "
 		} else if isExcluded {
 			// Red exclude symbol
-			excludeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+			excludeStyle := core_theme.DefaultTheme.Error
 			line += excludeStyle.Render("🚫") + " "
 		} else {
 			switch status {
 			case "hot":
 				// Green checkmark for hot context
-				hotStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+				hotStyle := core_theme.DefaultTheme.Success
 				line += hotStyle.Render("✓") + " "
 			case "cold":
 				// Light blue snowflake for cold context
-				coldStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+				coldStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
 				line += coldStyle.Render("❄️") + " "
 			default:
 				line += "  " // Empty space for none
@@ -806,25 +801,26 @@ func (m *viewModel) renderRepoSelect() string {
 			}
 			line += nameStyled + "  "
 			
-			// Path (truncated if needed)
-			path := repo.Path
-			if repo.IsWorktree && repo.ParentPath != "" {
-				// Show relative path for worktrees
-				if rel, err := filepath.Rel(repo.ParentPath, repo.Path); err == nil {
-					path = "./" + rel
-				}
-			}
+			// Path (truncated if needed) - temporarily disabled
+			// path := repo.Path
+			// if repo.IsWorktree && repo.ParentPath != "" {
+			// 	// Show relative path for worktrees
+			// 	if rel, err := filepath.Rel(repo.ParentPath, repo.Path); err == nil {
+			// 		path = "./" + rel
+			// 	}
+			// }
 			
-			// Truncate path if it's too long
-			maxPathWidth := m.width - maxNameWidth - 10
-			if maxPathWidth < 20 {
-				maxPathWidth = 20
-			}
-			if len(path) > maxPathWidth {
-				path = "..." + path[len(path)-maxPathWidth+3:]
-			}
-			
-			line += pathStyle.Render(path)
+			// Temporarily remove path display to prevent wrapping
+			// TODO: Re-enable with proper truncation
+			// maxPathWidth := m.width - maxNameWidth - 10
+			// if maxPathWidth < 20 {
+			// 	maxPathWidth = 20
+			// }
+			// if len(path) > maxPathWidth {
+			// 	path = "..." + path[len(path)-maxPathWidth+3:]
+			// }
+			// 
+			// line += pathStyle.Render(path)
 		} else {
 			// Cloned repos - render in tabular format matching cx repo list
 			url := repo.Name
@@ -887,7 +883,7 @@ func (m *viewModel) renderRepoSelect() string {
 			if i == m.repoCursor {
 				line += selectedStyle.Render(fmt.Sprintf("%-6s", reportIndicator))
 			} else if reportIndicator != "" {
-				line += lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Render(reportIndicator)
+				line += core_theme.DefaultTheme.Success.Render(reportIndicator)
 			} else {
 				line += fmt.Sprintf("%-6s", reportIndicator)
 			}
@@ -903,9 +899,11 @@ func (m *viewModel) renderRepoSelect() string {
 			visibleEnd, 
 			len(m.filteredRepos))
 		b.WriteString(lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
 			Render(scrollInfo))
 	}
+	
+	// Remove complex padding logic - let lipgloss handle it like tree view
 	
 	// Create scrollbar for the repository list
 	scrollbar := ""
@@ -918,9 +916,10 @@ func (m *viewModel) renderRepoSelect() string {
 		)
 	}
 	
-	// Create the repository list content
+	// Create the repository list content (match tree view approach)
 	repoListContent := lipgloss.NewStyle().
-		Width(repoListWidth - 4). // Make room for scrollbar
+		Width(repoListWidth - 4). // Make room for scrollbar  
+		MaxWidth(repoListWidth - 4). // Ensure no overflow
 		Render(b.String())
 	
 	// Combine repo list with scrollbar
@@ -936,31 +935,27 @@ func (m *viewModel) renderRepoSelect() string {
 		repoWithScrollbar = repoListContent
 	}
 	
-	// Create the left panel (repository list with scrollbar)
+	// Create the left panel (repository list with scrollbar) - with top padding
 	repoPanel := lipgloss.NewStyle().
 		Width(repoListWidth).
-		Height(viewportHeight - 1). // Reduce height slightly
-		Padding(1, 1). // Add top/bottom padding for better visual spacing
+		Height(viewportHeight).
+		Padding(1, 1). // Add 1 row top padding: top/bottom: 1, left/right: 1
 		Render(repoWithScrollbar)
 	
 	// Create the right panel with rules and stats (exactly like tree view)
 	// Rules panel (top part of right panel)
-	rulesStyle := lipgloss.NewStyle().
+	rulesStyle := core_theme.DefaultTheme.Box.Copy().
 		Width(rulesWidth).
 		Height(rulesHeight).
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("241")).
-		Padding(0, 1)
+		Padding(1, 2) // Add more padding for better spacing
 	
 	rulesPanel := rulesStyle.Render(m.renderRules(rulesWidth, rulesHeight))
 	
 	// Stats panel (bottom part of right panel)
-	statsStyle := lipgloss.NewStyle().
+	statsStyle := core_theme.DefaultTheme.Box.Copy().
 		Width(rulesWidth).
 		Height(statsHeight).
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("241")).
-		Padding(0, 1)
+		Padding(1, 2) // Add more padding for better spacing
 	
 	statsPanel := statsStyle.Render(m.renderStats())
 	
@@ -973,17 +968,18 @@ func (m *viewModel) renderRepoSelect() string {
 	// Footer with help hint or status message
 	var footer string
 	if m.statusMessage != "" {
-		statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+		statusStyle := core_theme.DefaultTheme.Success
 		footer = statusStyle.Render(m.statusMessage)
 	} else {
 		footer = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
 			Render("Press ? for help • Tab for tree view")
 	}
 	
 	// Combine all parts
 	parts := []string{
 		header,
+		subtitle,
 		mainContent,
 		footer,
 	}
@@ -997,7 +993,7 @@ func (m *viewModel) renderReportView() string {
 	
 	// Header
 	headerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("12")).
+		Foreground(core_theme.DefaultTheme.Info.GetForeground()).
 		Bold(true)
 	b.WriteString(headerStyle.Render(m.reportTitle))
 	b.WriteString("\n")
@@ -1021,7 +1017,7 @@ func (m *viewModel) renderReportView() string {
 		end = len(lines)
 	}
 	
-	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	contentStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.LightText)
 	for i := m.reportScrollOffset; i < end; i++ {
 		b.WriteString(contentStyle.Render(lines[i]))
 		b.WriteString("\n")
@@ -1040,13 +1036,13 @@ func (m *viewModel) renderReportView() string {
 			end, 
 			len(lines))
 		b.WriteString(lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
 			Render(scrollInfo))
 		b.WriteString("\n")
 	}
 	
 	// Help text
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	helpStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Muted.GetForeground())
 	help := "↑/↓ scroll • C-d/u half page • q/esc back • g/G top/bottom"
 	b.WriteString(helpStyle.Render(help))
 	
@@ -1334,7 +1330,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Scroll up half page
 				// Calculate the actual list height (must match renderRepoSelect)
 				viewportHeight := m.height - 8
-				listHeight := viewportHeight - 4
+				listHeight := viewportHeight
 				if listHeight < 5 {
 					listHeight = 5
 				}
@@ -1347,7 +1343,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Scroll down half page
 				// Calculate the actual list height (must match renderRepoSelect)
 				viewportHeight := m.height - 8
-				listHeight := viewportHeight - 4
+				listHeight := viewportHeight
 				if listHeight < 5 {
 					listHeight = 5
 				}
@@ -1988,7 +1984,7 @@ func (m *viewModel) View() string {
 			Width(m.width).
 			Height(m.height).
 			Align(lipgloss.Center, lipgloss.Center).
-			Foreground(lipgloss.Color("1")).
+			Foreground(core_theme.DefaultTheme.Error.GetForeground()).
 			Render(fmt.Sprintf("Error: %v", m.err))
 	}
 
@@ -2022,13 +2018,16 @@ func (m *viewModel) View() string {
 		pruningIndicator = " (Pruning)"
 	}
 	header := core_theme.DefaultTheme.Header.Render("Grove Context Visualization" + pruningIndicator)
+	
+	// Subtitle for file tree view
+	treeSubtitle := core_theme.DefaultTheme.Muted.Render("Navigate files and directories to add/exclude from context")
 
 	// Calculate split widths (60% for tree, 40% for rules)
 	treeWidth := int(float64(m.width) * 0.6)
 	rulesWidth := m.width - treeWidth - 3 // -3 for border and padding
 	
 	// Tree view
-	viewportHeight := m.height - 10 // Account for header, footer, and margins - add more padding
+	viewportHeight := m.height - 15 // Account for header, subtitle, spacing, footer, and margins
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
@@ -2070,7 +2069,7 @@ func (m *viewModel) View() string {
 	rulesStyle := core_theme.DefaultTheme.Box.Copy().
 		Width(rulesWidth).
 		Height(rulesHeight).
-		BorderForeground(core_theme.DefaultTheme.Colors.Border)
+		BorderForeground(core_theme.DefaultColors.Border)
 	
 	rulesPanel := rulesStyle.Render(m.renderRules(rulesWidth, rulesHeight))
 	
@@ -2078,7 +2077,7 @@ func (m *viewModel) View() string {
 	statsStyle := core_theme.DefaultTheme.Box.Copy().
 		Width(rulesWidth).
 		Height(statsHeight).
-		BorderForeground(core_theme.DefaultTheme.Colors.Border)
+		BorderForeground(core_theme.DefaultColors.Border)
 	
 	statsPanel := statsStyle.Render(m.renderStats())
 	
@@ -2117,23 +2116,25 @@ func (m *viewModel) View() string {
 	var footer string
 	if m.isSearching {
 		searchStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("34")).
+			Foreground(core_theme.DefaultTheme.Success.GetForeground()).
 			Bold(true)
 		footer = searchStyle.Render(fmt.Sprintf("/%s_", m.searchQuery))
 	} else if len(m.searchResults) > 0 {
 		resultsStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("34"))
+			Foreground(core_theme.DefaultTheme.Success.GetForeground())
 		footer = resultsStyle.Render(fmt.Sprintf("Found %d results (%d of %d) - n/N to navigate", 
 			len(m.searchResults), m.searchCursor+1, len(m.searchResults)))
 	} else {
 		footer = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
 			Render("Press ? for help • Tab for repository view")
 	}
 
 	// Combine all parts
 	parts := []string{
 		header,
+		treeSubtitle,
+		"", // Add margin after subtitle
 		mainContent,
 		"",
 	}
@@ -2214,13 +2215,13 @@ func (m *viewModel) renderNode(index int) string {
 	if node.TokenCount > 0 {
 		var tokenStyle lipgloss.Style
 		if node.TokenCount >= 100000 {
-			tokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // Red for 100K+
+			tokenStyle = core_theme.DefaultTheme.Error // Red for 100K+
 		} else if node.TokenCount >= 50000 {
-			tokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("208")) // Orange for 50K+
+			tokenStyle = core_theme.DefaultTheme.Warning // Orange for 50K+
 		} else if node.TokenCount >= 10000 {
-			tokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("226")) // Yellow for 10K+
+			tokenStyle = core_theme.DefaultTheme.Highlight // Yellow for 10K+
 		} else {
-			tokenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // Dim gray for < 10K
+			tokenStyle = core_theme.DefaultTheme.Faint // Dim gray for < 10K
 		}
 		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", context.FormatTokenCount(node.TokenCount)))
 	}
@@ -2234,7 +2235,7 @@ func (m *viewModel) renderNode(index int) string {
 func (m *viewModel) getIcon(node *context.FileNode) string {
 	if node.IsDir {
 		// Return blue-styled directory icon
-		dirStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")) // Blue
+		dirStyle := core_theme.DefaultTheme.Info // Blue
 		return dirStyle.Render("📁")
 	}
 	return "📄"
@@ -2244,10 +2245,10 @@ func (m *viewModel) getIcon(node *context.FileNode) string {
 func (m *viewModel) getStatusSymbol(node *context.FileNode) string {
 	switch node.Status {
 	case context.StatusIncludedHot:
-		greenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")) // Green
+		greenStyle := core_theme.DefaultTheme.Success // Green
 		return greenStyle.Render(" ✓")
 	case context.StatusIncludedCold:
-		lightBlueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117")) // Light blue
+		lightBlueStyle := core_theme.DefaultTheme.Accent // Light blue
 		return lightBlueStyle.Render(" ❄️")
 	case context.StatusExcludedByRule:
 		return " 🚫"
@@ -2275,7 +2276,7 @@ func (m *viewModel) getStyle(node *context.FileNode) lipgloss.Style {
 	case context.StatusDirectory:
 		style = lipgloss.NewStyle().Foreground(theme.Colors.LightText)
 	case context.StatusIgnoredByGit:
-		style = lipgloss.NewStyle().Foreground(lipgloss.Color("238")) // Very dark grey for gitignored
+		style = lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Muted.GetForeground()) // Very dark grey for gitignored
 	default:
 		style = lipgloss.NewStyle()
 	}
@@ -2314,14 +2315,14 @@ func (m *viewModel) renderRepoHelp() string {
 	// Create styles
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("241")).
+		BorderForeground(core_theme.DefaultColors.Border).
 		Padding(2, 3).
 		Width(80).
 		Align(lipgloss.Center)
 	
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("12")).
+		Foreground(core_theme.DefaultTheme.Info.GetForeground()).
 		MarginBottom(1)
 	
 	columnStyle := lipgloss.NewStyle().
@@ -2329,7 +2330,7 @@ func (m *viewModel) renderRepoHelp() string {
 		MarginRight(4)
 	
 	keyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("34")).
+		Foreground(core_theme.DefaultTheme.Success.GetForeground()).
 		Bold(true)
 	
 	// Navigation column
@@ -2418,14 +2419,14 @@ func (m *viewModel) renderHelp() string {
 	// Create styles
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("241")).
+		BorderForeground(core_theme.DefaultColors.Border).
 		Padding(2, 3).
 		Width(70).
 		Align(lipgloss.Center)
 	
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("12")).
+		Foreground(core_theme.DefaultTheme.Info.GetForeground()).
 		MarginBottom(1)
 	
 	columnStyle := lipgloss.NewStyle().
@@ -2433,7 +2434,7 @@ func (m *viewModel) renderHelp() string {
 		MarginRight(4)
 	
 	keyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("34")).
+		Foreground(core_theme.DefaultTheme.Success.GetForeground()).
 		Bold(true)
 	
 	// Navigation column
@@ -2551,7 +2552,7 @@ func (m *viewModel) renderScrollbar(totalItems, visibleItems, scrollOffset, heig
 	}
 	
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
+		Foreground(core_theme.DefaultTheme.Faint.GetForeground()).
 		Render(scrollbar.String())
 }
 
@@ -2567,7 +2568,7 @@ func max(a, b int) int {
 func (m *viewModel) renderRules(width, height int) string {
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("12")).
+		Foreground(core_theme.DefaultTheme.Info.GetForeground()).
 		MarginBottom(1)
 	
 	rulesHeader := headerStyle.Render(".grove/rules")
@@ -2587,22 +2588,23 @@ func (m *viewModel) renderRules(width, height int) string {
 			// Add indicator that there are more lines
 			remaining := len(rulesLines) - i
 			moreStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241")).
+				Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
 				Italic(true)
 			numberedLines = append(numberedLines, moreStyle.Render(fmt.Sprintf("... (%d more lines)", remaining)))
 			break
 		}
 		
 		lineNum := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
 			Width(3).
 			Align(lipgloss.Right).
 			Render(fmt.Sprintf("%d", i+1))
 		
-		// Truncate line if too long
-		maxLineWidth := width - 6 // Account for line numbers and padding
+		// Truncate line if too long, showing the end (file path)
+		maxLineWidth := (width - 6) * 2 / 3 // Cut max width by 1/3 and account for line numbers and padding
 		if len(line) > maxLineWidth && maxLineWidth > 0 {
-			line = line[:maxLineWidth-1] + "…"
+			// Show the last part of the path with "..." at the beginning
+			line = "..." + line[len(line)-(maxLineWidth-3):]
 		}
 		
 		numberedLines = append(numberedLines, fmt.Sprintf("%s  %s", lineNum, line))
@@ -2615,18 +2617,18 @@ func (m *viewModel) renderRules(width, height int) string {
 // renderStats renders the context statistics
 func (m *viewModel) renderStats() string {
 	statsStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")).
+		Foreground(core_theme.DefaultColors.LightText).
 		Padding(0, 1)
 	
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("12"))
+		Foreground(core_theme.DefaultTheme.Info.GetForeground())
 	
 	greenStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("34"))
+		Foreground(core_theme.DefaultTheme.Success.GetForeground())
 		
 	blueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("117"))
+		Foreground(core_theme.DefaultTheme.Accent.GetForeground())
 	
 	// Format token counts
 	hotTokensStr := context.FormatTokenCount(m.hotTokens)
@@ -2659,6 +2661,6 @@ func (m *viewModel) renderLegend() string {
 	}
 
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
+		Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
 		Render(strings.Join(legendItems, "\n"))
 }
