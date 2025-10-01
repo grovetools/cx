@@ -1,3 +1,97 @@
+## v0.5.0 (2025-10-01)
+
+This release introduces a complete documentation overhaul, replacing the previous content with a new, comprehensive set of guides covering everything from core concepts to advanced workflows (8be1720, 99a7e71). The documentation structure has been standardized with numbered filenames (57de7c0), and the `docgen` configuration has been updated to support automatic Table of Contents generation and syncing the main `README.md` from a template (a101d8f, 83db5c0). The content has also been refined to be more focused and succinct (3647741, da8ba98).
+
+The interactive TUIs have been improved by unifying their styling with the `grove-core` theme package, resulting in a consistent visual experience (b1eccab, 15e7e57). Both the `cx view` and `cx dashboard` commands now use a standardized, multi-context help system, replacing custom help rendering with a full-screen, searchable overlay (7150fca, b50ba80). The `cx view` layout has been refined with descriptive subtitles and stability improvements to eliminate content shifting during scrolling (15e7e57).
+
+A new `@view` directive has been added, allowing repositories to be mounted for browsing in the `cx view` TUI without being automatically included in the context, providing more fine-grained control over external dependencies (66d690f). Additionally, the CI workflow has been updated to use the `branches: [ none ]` syntax to prevent execution on pushes, and the README template format has been cleaned up (a4c67af, a17dab7).
+
+### Features
+
+*   Add a comprehensive new set of documentation guides (8be1720, 99a7e71)
+*   Unify TUI styling with the `grove-core` theme package (b1eccab)
+*   Improve context visualization UI with theme integration and layout fixes (15e7e57)
+*   Migrate `cx view` TUI to a standardized, multi-context help system (7150fca)
+*   Implement standardized help component in `cx dashboard` TUI (b50ba80)
+*   Add `@view` directive for selectively browsing repositories in `cx view` (66d690f)
+*   Add `README.md` generation from a template file (83db5c0)
+*   Add Table of Contents generation and update docgen configuration (a101d8f)
+*   Refine documentation content to be more succinct and focused (da8ba98, 3647741)
+
+### Bug Fixes
+
+*   Update CI workflow to use `branches: [ none ]` to disable triggers (a4c67af)
+*   Clean up `README.md.tpl` template format (a17dab7)
+*   Add logo to README (83db5c0)
+
+### Documentation
+
+*   Update docgen configuration and README template for TOC support (dd3629b)
+*   Update docgen config and overview prompt (c0e9e5b)
+*   Rename documentation sections from Introduction to Overview (85fd237)
+*   Simplify installation instructions to point to main Grove guide (66d93a4)
+
+### Chores
+
+*   Standardize documentation filenames to `DD-name.md` convention (57de7c0)
+*   Temporarily disable CI workflow (07732e3)
+
+### File Changes
+
+```
+ .github/workflows/ci.yml                 |    5 +-
+ Makefile                                 |    9 +-
+ README.md                                |  186 +----
+ cmd/dashboard.go                         |  138 ++--
+ cmd/view.go                              |  679 ++++++++----------
+ docs/01-overview.md                      |   41 ++
+ docs/02-examples.md                      |  173 +++++
+ docs/03-rules-and-patterns.md            |  110 +++
+ docs/04-context-generation.md            |  147 ++++
+ docs/05-loading-rules.md                 |   97 +++
+ docs/06-context-tui.md                   |  128 ++++
+ docs/07-git-workflows.md                 |  115 +++
+ docs/08-external-repositories.md         |  125 ++++
+ docs/09-experimental.md                  |   25 +
+ docs/10-command-reference.md             |  403 +++++++++++
+ docs/README.md.tpl                       |    6 +
+ docs/advanced-topics.md                  |  259 -------
+ docs/best-practices.md                   |  195 ------
+ docs/command-reference.md                |  339 ---------
+ docs/contributing.md                     |  154 -----
+ docs/core-concepts.md                    |  161 -----
+ docs/docgen.config.yml                   |   97 +--
+ docs/docs.rules                          |    2 +-
+ docs/getting-started.md                  |  155 -----
+ docs/images/grove-context-readme.svg     | 1116 ++++++++++++++++++++++++++++++
+ docs/installation.md                     |   30 -
+ docs/interactive-tools.md                |  175 -----
+ docs/overview.md                         |  108 ---
+ docs/prompts/01-overview.md              |   45 ++
+ docs/prompts/02-examples.md              |   31 +
+ docs/prompts/03-rules-and-patterns.md    |   54 ++
+ docs/prompts/04-context-generation.md    |   83 +++
+ docs/prompts/05-loading-rules.md         |   36 +
+ docs/prompts/06-context-tui.md           |   69 ++
+ docs/prompts/07-git-workflows.md         |   22 +
+ docs/prompts/08-external-repositories.md |   47 ++
+ docs/prompts/09-experimental.md          |   20 +
+ docs/prompts/10-command-reference.md     |   49 ++
+ docs/prompts/advanced-topics.md          |   23 -
+ docs/prompts/best-practices.md           |   16 -
+ docs/prompts/command-reference.md        |   17 -
+ docs/prompts/contributing.md             |   15 -
+ docs/prompts/core-concepts.md            |   24 -
+ docs/prompts/getting-started.md          |   12 -
+ docs/prompts/installation.md             |   12 -
+ docs/prompts/interactive-tools.md        |   22 -
+ docs/prompts/overview.md                 |   21 -
+ pkg/context/manager.go                   |  156 ++++-
+ pkg/context/view.go                      |   19 +-
+ pkg/docs/docs.json                       |  352 ++++++++--
+ 50 files changed, 3871 insertions(+), 2452 deletions(-)
+```
+
 ## v0.4.0 (2025-09-26)
 
 This release introduces more flexible rules management and standardizes command-line output. A new `cx set-rules <path>` command allows setting the active rules from an external file, and the core logic has been refactored for programmatic context generation (695b3b0). Projects can now define a default rules path in `grove.yml`, which can be used to reset `.grove/rules` with pre-defined rules. A corresponding `cx reset` command has been added to restore these project defaults (a4854db).
