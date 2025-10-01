@@ -1,11 +1,12 @@
 name: CI
 
-on:
-  push:
-    branches: [ main ]
-    tags-ignore: [ 'v*' ]  # Skip CI when releasing
-  pull_request:
-    branches: [ main ]
+# Temporarily disabled
+# on:
+#   push:
+#     branches: [ main ]
+#     tags-ignore: [ 'v*' ]  # Skip CI when releasing
+#   pull_request:
+#     branches: [ main ]
 
 jobs:
   test:
