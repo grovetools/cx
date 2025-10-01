@@ -6,12 +6,102 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattsolo1/grove-core/tui/components/help"
+	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-context/pkg/discovery"
 	"github.com/spf13/cobra"
+)
+
+// --- Keymaps for Help View ---
+
+type treeViewKeyMap struct {
+	keymap.Base
+}
+
+func (k treeViewKeyMap) ShortHelp() []key.Binding {
+	// Abridged help for the footer
+	return []key.Binding{k.Help, key.NewBinding(key.WithHelp("tab", "repos")), k.Quit}
+}
+
+func (k treeViewKeyMap) FullHelp() [][]key.Binding {
+	// Replicates the content from the old renderHelp function in a structured format
+	return [][]key.Binding{
+		{
+			key.NewBinding(key.WithHelp("", "Navigation:")),
+			key.NewBinding(key.WithKeys("up", "down", "j", "k"), key.WithHelp("↑/↓, j/k", "Move up/down")),
+			key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter, space", "Toggle expand")),
+			key.NewBinding(key.WithKeys("g"), key.WithHelp("gg", "Go to top")),
+			key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "Go to bottom")),
+			key.NewBinding(key.WithKeys("ctrl+d", "ctrl+u"), key.WithHelp("ctrl-d/u", "Page down/up")),
+			key.NewBinding(key.WithHelp("", "Folding (vim-style):")),
+			key.NewBinding(key.WithKeys("z"), key.WithHelp("za", "Toggle fold")),
+			key.NewBinding(key.WithKeys("z"), key.WithHelp("zo/zc", "Open/close fold")),
+			key.NewBinding(key.WithKeys("z"), key.WithHelp("zR/zM", "Open/close all")),
+			key.NewBinding(key.WithHelp("", "Search:")),
+			key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "Search for files")),
+			key.NewBinding(key.WithKeys("n", "N"), key.WithHelp("n/N", "Next/prev result")),
+		},
+		{
+			key.NewBinding(key.WithHelp("", "Actions:")),
+			key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "Toggle hot context")),
+			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Toggle cold context")),
+			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "Toggle exclude")),
+			key.NewBinding(key.WithKeys("tab", "A"), key.WithHelp("tab/A", "Repository view")),
+			key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "Toggle pruning")),
+			key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "Toggle gitignored")),
+			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "Refresh view")),
+			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "Quit")),
+			key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "Toggle this help")),
+		},
+	}
+}
+
+type repoSelectKeyMap struct {
+	keymap.Base
+}
+
+func (k repoSelectKeyMap) ShortHelp() []key.Binding {
+	// Abridged help for the footer
+	return []key.Binding{k.Help, key.NewBinding(key.WithHelp("tab", "tree")), k.Quit}
+}
+
+func (k repoSelectKeyMap) FullHelp() [][]key.Binding {
+	// Replicates the content from the old renderRepoHelp function
+	return [][]key.Binding{
+		{
+			key.NewBinding(key.WithHelp("", "Navigation:")),
+			key.NewBinding(key.WithKeys("up", "down", "j", "k"), key.WithHelp("↑/↓, j/k", "Move up/down")),
+			key.NewBinding(key.WithKeys("ctrl+u", "ctrl+d"), key.WithHelp("ctrl-u/d", "Half page up/down")),
+			key.NewBinding(key.WithKeys("g", "G"), key.WithHelp("g/G", "Go to top/bottom")),
+			key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "Filter repositories")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "Clear filter")),
+			key.NewBinding(key.WithHelp("", "Context Actions:")),
+			key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "Toggle hot context")),
+			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Toggle cold context")),
+			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "Toggle exclude")),
+			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "Add/remove from tree")),
+		},
+		{
+			key.NewBinding(key.WithHelp("", "Repository Actions:")),
+			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "Refresh list")),
+			key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "Audit repository")),
+			key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "View audit report")),
+			key.NewBinding(key.WithHelp("", "View Control:")),
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "Switch to tree view")),
+			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "Quit")),
+			key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "Toggle this help")),
+		},
+	}
+}
+
+var (
+	treeKeys = treeViewKeyMap{Base: keymap.NewBase()}
+	repoKeys = repoSelectKeyMap{Base: keymap.NewBase()}
 )
 
 // NewViewCmd creates the view command
@@ -90,7 +180,7 @@ type viewModel struct {
 	lastKey       string // Track last key for multi-key commands like "gg"
 	statusMessage string // Status message for user feedback
 	pruning       bool   // Whether to show only directories with context files
-	showHelp      bool   // Whether to show help popup
+	help          help.Model
 	rulesContent  string // Content of .grove/rules file
 	showGitIgnored bool  // Whether to show gitignored files
 	// Search functionality
@@ -137,6 +227,12 @@ type nodeWithLevel struct {
 // newViewModel creates a new view model
 func newViewModel() *viewModel {
 	workDir, _ := os.Getwd()
+
+	helpModel := help.NewBuilder().
+		WithKeys(treeKeys).
+		WithTitle("Grove Context Visualization - Help").
+		Build()
+
 	return &viewModel{
 		expandedPaths:  make(map[string]bool),
 		loading:        true,
@@ -144,6 +240,7 @@ func newViewModel() *viewModel {
 		showGitIgnored: false,
 		mode:           modeTree,
 		workDir:        workDir,
+		help:           helpModel,
 	}
 }
 
@@ -663,10 +760,6 @@ func (m *viewModel) getAuditStatusStyle(status string) lipgloss.Style {
 
 // renderRepoSelect renders the repository selection view in compact tabular format
 func (m *viewModel) renderRepoSelect() string {
-	// Show help popup if active
-	if m.showHelp {
-		return m.renderRepoHelp()
-	}
 	
 	// Header
 	header := core_theme.DefaultTheme.Header.Render("Select Repository")
@@ -971,9 +1064,7 @@ func (m *viewModel) renderRepoSelect() string {
 		statusStyle := core_theme.DefaultTheme.Success
 		footer = statusStyle.Render(m.statusMessage)
 	} else {
-		footer = lipgloss.NewStyle().
-			Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
-			Render("Press ? for help • Tab for tree view")
+		footer = m.help.View()
 	}
 	
 	// Combine all parts
@@ -1080,19 +1171,20 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.mode {
 		case modeRepoSelect:
 			// Handle help popup first
-			if m.showHelp {
+			if m.help.ShowAll {
+				// Handle keys to close help
 				switch msg.String() {
-				case "?", "q", "esc", "ctrl+c":
-					m.showHelp = false
-					return m, nil
-				default:
+				case "?", "q", "esc", "enter", " ":
+					m.help.Toggle()
 					return m, nil
 				}
+				// Ignore all other keys when help is shown
+				return m, nil
 			}
-			
+
 			switch keypress := msg.String(); keypress {
 			case "?":
-				m.showHelp = true
+				m.help.Toggle()
 				return m, nil
 			case "R":
 				// View audit report - only works for audited repos
@@ -1291,6 +1383,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "tab":
 				// Toggle back to tree view
 				m.mode = modeTree
+				m.help.SetKeys(treeKeys)
+				m.help.Title = "Grove Context Visualization - Help"
 				m.statusMessage = ""
 				m.repoFilter = ""
 				m.repoFiltering = false
@@ -1381,6 +1475,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					// Normal escape behavior - return to tree view
 					m.mode = modeTree
+					m.help.SetKeys(treeKeys)
+					m.help.Title = "Grove Context Visualization - Help"
 					m.statusMessage = "Repository selection cancelled."
 					m.repoFilter = ""
 					m.repoFiltering = false
@@ -1498,21 +1594,22 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		
 		// Handle help popup keys next
-		if m.showHelp {
+		if m.help.ShowAll {
+			// Handle keys to close help
 			switch msg.String() {
-			case "?", "q", "esc", "ctrl+c":
-				m.showHelp = false
-				return m, nil
-			default:
+			case "?", "q", "esc", "enter", " ":
+				m.help.Toggle()
 				return m, nil
 			}
+			// Ignore all other keys when help is shown
+			return m, nil
 		}
 		
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "?":
-			m.showHelp = true
+			m.help.Toggle()
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
@@ -1642,6 +1739,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab":
 			// Tab - Toggle to repository selection view
 			m.mode = modeRepoSelect
+			m.help.SetKeys(repoKeys)
+			m.help.Title = "Repository Selection - Help"
 			// Only discover repos if we haven't already
 			if m.discoveredRepos == nil {
 				m.statusMessage = "Discovering repositories..."
@@ -1656,6 +1755,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "A":
 			// 'A' - Add repository (same as Tab but always rediscovers)
 			m.mode = modeRepoSelect
+			m.help.SetKeys(repoKeys)
+			m.help.Title = "Repository Selection - Help"
 			m.statusMessage = "Discovering repositories..."
 			return m, m.discoverReposCmd()
 		case "x":
@@ -1988,25 +2089,20 @@ func (m *viewModel) View() string {
 			Render(fmt.Sprintf("Error: %v", m.err))
 	}
 
+	// Show help overlay if active
+	if m.help.ShowAll {
+		m.help.SetSize(m.width, m.height)
+		return m.help.View()
+	}
+
 	// Show repository selection if active (check this first)
 	if m.mode == modeRepoSelect {
 		if m.discoveredRepos == nil {
 			return "Discovering repositories..."
 		}
-		// renderRepoSelect handles its own help popup
 		return m.renderRepoSelect()
 	}
 
-	// Show help popup if active (for tree view)
-	if m.showHelp {
-		helpView := m.renderHelp()
-		return lipgloss.NewStyle().
-			Width(m.width).
-			Height(m.height).
-			Align(lipgloss.Center, lipgloss.Center).
-			Render(helpView)
-	}
-	
 	// Show report view if active
 	if m.mode == modeReportView {
 		return m.renderReportView()
@@ -2125,9 +2221,7 @@ func (m *viewModel) View() string {
 		footer = resultsStyle.Render(fmt.Sprintf("Found %d results (%d of %d) - n/N to navigate", 
 			len(m.searchResults), m.searchCursor+1, len(m.searchResults)))
 	} else {
-		footer = lipgloss.NewStyle().
-			Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
-			Render("Press ? for help • Tab for repository view")
+		footer = m.help.View()
 	}
 
 	// Combine all parts
@@ -2289,231 +2383,8 @@ func (m *viewModel) getStyle(node *context.FileNode) lipgloss.Style {
 	return style
 }
 
-// renderRepoHelp renders the help popup for repository selection mode
-// equalizeColumnHeights ensures all column arrays have the same length by padding with empty strings
-func equalizeColumnHeights(cols ...[]string) [][]string {
-	// Find the maximum height
-	maxHeight := 0
-	for _, col := range cols {
-		if len(col) > maxHeight {
-			maxHeight = len(col)
-		}
-	}
-	
-	// Pad all columns to the same height
-	result := make([][]string, len(cols))
-	for i, col := range cols {
-		result[i] = make([]string, maxHeight)
-		copy(result[i], col)
-		// Fill remaining with empty strings (already done by make)
-	}
-	
-	return result
-}
-
-func (m *viewModel) renderRepoHelp() string {
-	// Create styles
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(core_theme.DefaultColors.Border).
-		Padding(2, 3).
-		Width(80).
-		Align(lipgloss.Center)
-	
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(core_theme.DefaultTheme.Info.GetForeground()).
-		MarginBottom(1)
-	
-	columnStyle := lipgloss.NewStyle().
-		Width(36).
-		MarginRight(4)
-	
-	keyStyle := lipgloss.NewStyle().
-		Foreground(core_theme.DefaultTheme.Success.GetForeground()).
-		Bold(true)
-	
-	// Navigation column
-	navItems := []string{
-		"Navigation:",
-		"",
-		keyStyle.Render("↑/↓, j/k") + " - Move up/down",
-		keyStyle.Render("Ctrl-u/d") + " - Half page up/down",
-		keyStyle.Render("PgUp/PgDn") + " - Page up/down",
-		keyStyle.Render("g") + " - Go to top",
-		keyStyle.Render("G") + " - Go to bottom",
-		keyStyle.Render("/") + " - Start filtering repos",
-		keyStyle.Render("ESC") + " - Clear filter (when filtering)",
-		"",
-		"Context Actions:",
-		"",
-		keyStyle.Render("h") + " - Toggle hot context",
-		keyStyle.Render("c") + " - Toggle cold context",
-		keyStyle.Render("x") + " - Toggle exclude",
-		keyStyle.Render("a") + " - Add/remove from tree view",
-		"",
-		"Repository Actions:",
-		"",
-		keyStyle.Render("r") + " - Refresh repository list",
-		keyStyle.Render("A") + " - Audit repository",
-		keyStyle.Render("R") + " - View audit report",
-		"",
-		"View Control:",
-		"",
-		keyStyle.Render("tab") + " - Switch to tree view",
-		keyStyle.Render("q") + " - Quit cx view",
-		keyStyle.Render("?") + " - Toggle this help",
-	}
-	
-	// Info column
-	infoItems := []string{
-		"Toggle Behavior:",
-		"",
-		"Press " + keyStyle.Render("h") + " on a repo:",
-		"  If hot → removes from hot",
-		"  If cold/none → adds to hot",
-		"",
-		"Press " + keyStyle.Render("c") + " on a repo:",
-		"  If cold → removes from cold",
-		"  If hot/none → adds to cold",
-		"",
-		"Press " + keyStyle.Render("x") + " on a repo:",
-		"  If excluded → removes exclusion",
-		"  Otherwise → adds exclusion",
-		"",
-		"Status Indicators:",
-		"",
-		"  " + keyStyle.Render("✓") + " - In hot context",
-		"  " + keyStyle.Render("❄️") + " - In cold context",
-		"  " + keyStyle.Render("🚫") + " - Excluded",
-		"  " + keyStyle.Render("👁️") + " - In tree view (via @view)",
-		"  (none) - Not in rules",
-		"",
-		"Repository Types:",
-		"",
-		"  Regular: - Workspace repo",
-		"  └─ - Worktree branch",
-		"  URL: - Cloned external repo",
-	}
-	
-	// Render columns
-	navColumn := columnStyle.Render(strings.Join(navItems, "\n"))
-	infoColumn := columnStyle.Copy().MarginRight(0).Render(strings.Join(infoItems, "\n"))
-	
-	// Combine columns
-	content := lipgloss.JoinHorizontal(lipgloss.Top, navColumn, infoColumn)
-	
-	// Add title and wrap in box
-	title := titleStyle.Render("Repository Selection - Help")
-	fullContent := lipgloss.JoinVertical(lipgloss.Center, title, content)
-	
-	return lipgloss.NewStyle().
-		Width(m.width).
-		Height(m.height).
-		Align(lipgloss.Center, lipgloss.Center).
-		Render(boxStyle.Render(fullContent))
-}
-
-// renderHelp renders the help popup with legend and navigation
-func (m *viewModel) renderHelp() string {
-	// Create styles
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(core_theme.DefaultColors.Border).
-		Padding(2, 3).
-		Width(70).
-		Align(lipgloss.Center)
-	
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(core_theme.DefaultTheme.Info.GetForeground()).
-		MarginBottom(1)
-	
-	columnStyle := lipgloss.NewStyle().
-		Width(30).
-		MarginRight(4)
-	
-	keyStyle := lipgloss.NewStyle().
-		Foreground(core_theme.DefaultTheme.Success.GetForeground()).
-		Bold(true)
-	
-	// Navigation column
-	navItems := []string{
-		"Navigation:",
-		"",
-		keyStyle.Render("↑/↓, j/k") + " - Move up/down",
-		keyStyle.Render("Enter, Space") + " - Toggle expand",
-		keyStyle.Render("gg") + " - Go to top",
-		keyStyle.Render("G") + " - Go to bottom",
-		keyStyle.Render("Ctrl-D") + " - Page down",
-		keyStyle.Render("Ctrl-U") + " - Page up",
-		"",
-		"Folding (vim-style):",
-		"",
-		keyStyle.Render("za") + " - Toggle fold",
-		keyStyle.Render("zo") + " - Open fold",
-		keyStyle.Render("zc") + " - Close fold",
-		keyStyle.Render("zR") + " - Open all folds",
-		keyStyle.Render("zM") + " - Close all folds",
-		"",
-		"Search:",
-		"",
-		keyStyle.Render("/") + " - Search for files",
-		keyStyle.Render("n") + " - Next search result",
-		keyStyle.Render("N") + " - Previous search result",
-		"",
-		"Actions:",
-		"",
-		keyStyle.Render("h") + " - Toggle hot context",
-		keyStyle.Render("c") + " - Toggle cold context",
-		keyStyle.Render("x") + " - Toggle exclude",
-		keyStyle.Render("tab/A") + " - Repository view",
-		keyStyle.Render("p") + " - Toggle pruning",
-		keyStyle.Render("H") + " - Toggle gitignored files",
-		keyStyle.Render("r") + " - Refresh view",
-		"",
-		keyStyle.Render("q") + " - Quit",
-		keyStyle.Render("?") + " - Toggle this help",
-	}
-	
-	// Legend column
-	legendItems := []string{
-		"Legend:",
-		"",
-		"File Types:",
-		"  📁 - Directory",
-		"  📄 - File",
-		"",
-		"Context Status:",
-		"  " + keyStyle.Render("✓") + " - Hot Context",
-		"  " + keyStyle.Render("❄️") + " - Cold Context",
-		"  " + keyStyle.Render("🚫") + " - Excluded",
-		"  " + keyStyle.Render("🙈") + " - Git Ignored",
-		"  " + keyStyle.Render("⚠️") + " - Potentially risky path",
-		"  (none) - Omitted",
-		"",
-		"Colors:",
-		"  Bold - Directories",
-		"  Green-grey - Hot items",
-		"  Blue-grey - Cold items",
-		"  Red-grey - Excluded items",
-		"  Grey - Omitted items",
-		"  Dark grey - Git ignored",
-	}
-	
-	// Render columns
-	navColumn := columnStyle.Render(strings.Join(navItems, "\n"))
-	legendColumn := columnStyle.Copy().MarginRight(0).Render(strings.Join(legendItems, "\n"))
-	
-	// Combine columns
-	content := lipgloss.JoinHorizontal(lipgloss.Top, navColumn, legendColumn)
-	
-	// Add title and wrap in box
-	title := titleStyle.Render("Grove Context View - Help")
-	fullContent := lipgloss.JoinVertical(lipgloss.Center, title, content)
-	
-	return boxStyle.Render(fullContent)
-}
+// renderRepoHelp, renderHelp, and equalizeColumnHeights have been removed.
+// Their logic has been migrated to the FullHelp methods of the new keymap structs.
 
 // renderScrollbar creates a vertical scrollbar indicator
 func (m *viewModel) renderScrollbar(totalItems, visibleItems, scrollOffset, height int) string {
