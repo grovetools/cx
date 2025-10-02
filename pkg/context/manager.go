@@ -313,6 +313,36 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for rules file: %w", err)
 	}
+
+	// Read and display the rules file content
+	rulesContent, err := os.ReadFile(absRulesFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read rules file: %w", err)
+	}
+
+	// Print rules file info to stderr
+	fmt.Fprintf(os.Stderr, "📋 Using rules file: %s\n", absRulesFilePath)
+	content := strings.TrimSpace(string(rulesContent))
+	if content != "" {
+		lines := strings.Split(content, "\n")
+		fmt.Fprintf(os.Stderr, "📋 Rules content (%d lines):\n", len(lines))
+
+		// Display with indentation, limit to first 10 lines
+		maxLines := 10
+		displayLines := lines
+		if len(lines) > maxLines {
+			displayLines = lines[:maxLines]
+		}
+
+		for _, line := range displayLines {
+			fmt.Fprintf(os.Stderr, "   %s\n", line)
+		}
+
+		if len(lines) > maxLines {
+			fmt.Fprintf(os.Stderr, "   ... (%d more lines)\n", len(lines)-maxLines)
+		}
+		fmt.Fprintln(os.Stderr)
+	}
 	
 	hotPatterns, coldPatterns, _, err := m.resolveAllPatterns(absRulesFilePath, make(map[string]bool))
 	if err != nil {
@@ -1058,6 +1088,56 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 
 	// No cold patterns, return hot files as is
 	return hotFiles, nil
+}
+
+// ResolveFilesFromCustomRulesFile resolves both hot and cold files from a custom rules file path.
+func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFiles []string, coldFiles []string, err error) {
+	// Get absolute path for the rules file
+	absRulesFilePath, err := filepath.Abs(rulesFilePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get absolute path for rules file: %w", err)
+	}
+
+	// Check if the rules file exists
+	if _, err := os.Stat(absRulesFilePath); os.IsNotExist(err) {
+		return nil, nil, fmt.Errorf("rules file not found: %s", absRulesFilePath)
+	}
+
+	// Resolve all patterns recursively from the custom rules file
+	hotPatterns, coldPatterns, _, err := m.resolveAllPatterns(absRulesFilePath, make(map[string]bool))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to resolve patterns from rules file: %w", err)
+	}
+
+	// Resolve files from hot patterns
+	hotFiles, err = m.resolveFilesFromPatterns(hotPatterns)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error resolving hot context files: %w", err)
+	}
+
+	// Resolve files from cold patterns
+	if len(coldPatterns) > 0 {
+		coldFiles, err = m.resolveFilesFromPatterns(coldPatterns)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error resolving cold context files: %w", err)
+		}
+
+		// Apply cold-over-hot precedence: remove hot files that are also in cold
+		coldFilesMap := make(map[string]bool)
+		for _, file := range coldFiles {
+			coldFilesMap[file] = true
+		}
+
+		var finalHotFiles []string
+		for _, file := range hotFiles {
+			if !coldFilesMap[file] {
+				finalHotFiles = append(finalHotFiles, file)
+			}
+		}
+		hotFiles = finalHotFiles
+	}
+
+	return hotFiles, coldFiles, nil
 }
 
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.

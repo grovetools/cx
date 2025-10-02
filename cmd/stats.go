@@ -14,22 +14,49 @@ var (
 
 func NewStatsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "stats",
+		Use:   "stats [rules-file]",
 		Short: "Provide detailed analysis of context composition",
-		Long:  `Show language breakdown by tokens/files, identify largest token consumers, and display token distribution statistics.`,
+		Long: `Show language breakdown by tokens/files, identify largest token consumers, and display token distribution statistics.
+
+If a rules file path is provided, stats will be computed from that file.
+Otherwise, stats will be computed from the active rules file (.grove/rules).
+
+Examples:
+  cx stats                              # Use active .grove/rules
+  cx stats plans/my-plan/rules/job.rules  # Use custom rules file`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := cli.GetOptions(cmd)
 			mgr := context.NewManager("")
-			
+
 			// Collect stats for both hot and cold contexts
 			var allStats []*context.ContextStats
-			
-			// First get hot context stats
-			hotFiles, err := mgr.ResolveFilesFromRules()
-			if err != nil {
-				return err
+			var hotFiles, coldFiles []string
+			var err error
+
+			// Check if a custom rules file was provided
+			if len(args) > 0 {
+				rulesFilePath := args[0]
+
+				// Resolve files from the custom rules file
+				hotFiles, coldFiles, err = mgr.ResolveFilesFromCustomRulesFile(rulesFilePath)
+				if err != nil {
+					return fmt.Errorf("failed to resolve files from custom rules file: %w", err)
+				}
+			} else {
+				// Use default behavior - resolve from active rules
+				hotFiles, err = mgr.ResolveFilesFromRules()
+				if err != nil {
+					return err
+				}
+
+				coldFiles, err = mgr.ResolveColdContextFiles()
+				if err != nil {
+					return err
+				}
 			}
-			
+
+			// Get stats for hot files
 			if len(hotFiles) > 0 {
 				hotStats, err := mgr.GetStats("hot", hotFiles, topN)
 				if err != nil {
@@ -37,13 +64,8 @@ func NewStatsCmd() *cobra.Command {
 				}
 				allStats = append(allStats, hotStats)
 			}
-			
-			// Then get cold context stats
-			coldFiles, err := mgr.ResolveColdContextFiles()
-			if err != nil {
-				return err
-			}
-			
+
+			// Get stats for cold files
 			if len(coldFiles) > 0 {
 				coldStats, err := mgr.GetStats("cold", coldFiles, topN)
 				if err != nil {
