@@ -91,6 +91,8 @@ Interaction is keyboard-driven, with controls for navigation and rule modificati
 | `Tab`, `Esc`      | Switch back to File Tree View                  |
 | `↑`/`↓`/`j`/`k`   | Move cursor up/down                            |
 | `/`               | Filter repository list                         |
+| `zo`/`zc`         | Open/close fold at cursor (Vim-style)          |
+| `zR`/`zM`         | Open/close all folds (Vim-style)               |
 | `h`               | Toggle repository's inclusion in **hot context**|
 | `c`               | Toggle repository's inclusion in **cold context**|
 | `x`               | Toggle repository's **exclusion**              |

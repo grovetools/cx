@@ -80,6 +80,9 @@ func (k repoSelectKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys("g", "G"), key.WithHelp("g/G", "Go to top/bottom")),
 			key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "Filter repositories")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "Clear filter")),
+			key.NewBinding(key.WithHelp("", "Folding (vim-style):")),
+			key.NewBinding(key.WithKeys("z"), key.WithHelp("zo/zc", "Open/close fold")),
+			key.NewBinding(key.WithKeys("z"), key.WithHelp("zR/zM", "Open/close all")),
 			key.NewBinding(key.WithHelp("", "Context Actions:")),
 			key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "Toggle hot context")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Toggle cold context")),
@@ -216,6 +219,8 @@ type viewModel struct {
 	hotRules        []string           // Rules in hot context section
 	coldRules       []string           // Rules in cold context section
 	viewPaths       []string           // Paths from @view directives
+	// Worktree folding
+	expandedRepos   map[string]bool    // Tracks which workspace repos have expanded worktrees
 }
 
 // nodeWithLevel stores a node with its display level
@@ -235,6 +240,7 @@ func newViewModel() *viewModel {
 
 	return &viewModel{
 		expandedPaths:  make(map[string]bool),
+		expandedRepos:  make(map[string]bool),
 		loading:        true,
 		pruning:        false,
 		showGitIgnored: false,
@@ -550,18 +556,28 @@ func (m *viewModel) discoverReposCmd() tea.Cmd {
 	}
 }
 
-// filterRepos filters the repository list based on the current filter string
+// filterRepos filters the repository list based on the current filter string and expansion state
 func (m *viewModel) filterRepos() {
+	m.filteredRepos = []discovery.Repo{}
+
 	if m.repoFilter == "" {
-		// No filter, show all
-		m.filteredRepos = []discovery.Repo{}
-		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.WorkspaceRepos...)
+		// No filter, show repos based on expansion state
+		for _, repo := range m.discoveredRepos.WorkspaceRepos {
+			// If it's a worktree, only include it if its parent is expanded
+			if repo.IsWorktree {
+				if m.expandedRepos[repo.ParentPath] {
+					m.filteredRepos = append(m.filteredRepos, repo)
+				}
+			} else {
+				// Always show non-worktree workspace repos
+				m.filteredRepos = append(m.filteredRepos, repo)
+			}
+		}
 		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.ClonedRepos...)
 	} else {
-		// Apply filter
-		m.filteredRepos = []discovery.Repo{}
+		// Apply filter (when filtering, show all matching repos regardless of expansion state)
 		filter := strings.ToLower(m.repoFilter)
-		
+
 		for _, repo := range m.discoveredRepos.WorkspaceRepos {
 			if strings.Contains(strings.ToLower(repo.Name), filter) ||
 			   strings.Contains(strings.ToLower(repo.Path), filter) ||
@@ -569,7 +585,7 @@ func (m *viewModel) filterRepos() {
 				m.filteredRepos = append(m.filteredRepos, repo)
 			}
 		}
-		
+
 		for _, repo := range m.discoveredRepos.ClonedRepos {
 			if strings.Contains(strings.ToLower(repo.Name), filter) ||
 			   strings.Contains(strings.ToLower(repo.Path), filter) {
@@ -577,7 +593,7 @@ func (m *viewModel) filterRepos() {
 			}
 		}
 	}
-	
+
 	// Reset cursor if it's out of bounds
 	if m.repoCursor >= len(m.filteredRepos) {
 		m.repoCursor = len(m.filteredRepos) - 1
@@ -882,8 +898,25 @@ func (m *viewModel) renderRepoSelect() string {
 			name := repo.Name
 			if repo.IsWorktree {
 				name = "└─ " + name
+			} else {
+				// Check if this repo has worktrees
+				hasWorktrees := false
+				for _, wt := range m.discoveredRepos.WorkspaceRepos {
+					if wt.IsWorktree && wt.ParentPath == repo.Path {
+						hasWorktrees = true
+						break
+					}
+				}
+				if hasWorktrees {
+					// Add fold indicator
+					if m.expandedRepos[repo.Path] {
+						name = "▾ " + name // Expanded indicator
+					} else {
+						name = "▸ " + name // Collapsed indicator
+					}
+				}
 			}
-			
+
 			var nameStyled string
 			if i == m.repoCursor {
 				nameStyled = selectedStyle.Render(fmt.Sprintf("%-*s", maxNameWidth, name))
@@ -1186,28 +1219,6 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "?":
 				m.help.Toggle()
 				return m, nil
-			case "R":
-				// View audit report - only works for audited repos
-				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-					repo := m.filteredRepos[m.repoCursor]
-					if repo.ReportPath != "" {
-						// Check if report file exists and load it
-						content, err := os.ReadFile(repo.ReportPath)
-						if err == nil {
-							m.mode = modeReportView
-							m.reportContent = string(content)
-							m.reportTitle = fmt.Sprintf("Audit Report: %s", repo.Name)
-							m.reportScrollOffset = 0
-							return m, nil
-						} else {
-							m.statusMessage = "Could not read audit report file"
-						}
-					} else if repo.AuditStatus == "not_audited" || repo.AuditStatus == "" {
-						m.statusMessage = "No audit report available - repository has not been audited"
-					} else {
-						m.statusMessage = "Audit report path not available"
-					}
-				}
 			case "r":
 				// Refresh repository list, rules, and stats
 				m.statusMessage = "Refreshing..."
@@ -1294,37 +1305,6 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Add to hot context
 						m.statusMessage = fmt.Sprintf("Adding %s to hot context...", repo.Name)
 						if err := manager.AppendRule(path, "hot"); err != nil {
-							m.statusMessage = fmt.Sprintf("Error: %v", err)
-							return m, nil
-						}
-					}
-					
-					// Reload rules to reflect changes
-					m.loadAndParseRules()
-					// Trigger background tree reload to update stats
-					return m, m.loadTreeCmd()
-				}
-			case "c":
-				// Toggle cold context
-				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-					repo := m.filteredRepos[m.repoCursor]
-					path := m.getPathForRule(repo.Path) + "/**" // Add /** for directory inclusion
-					manager := context.NewManager("")
-					
-					// Check current status
-					status := m.getRepoStatus(repo)
-					
-					if status == "cold" {
-						// Remove from cold context
-						m.statusMessage = fmt.Sprintf("Removing %s from cold context...", repo.Name)
-						if err := manager.RemoveRuleForPath(path); err != nil {
-							m.statusMessage = fmt.Sprintf("Error: %v", err)
-							return m, nil
-						}
-					} else {
-						// Add to cold context
-						m.statusMessage = fmt.Sprintf("Adding %s to cold context...", repo.Name)
-						if err := manager.AppendRule(path, "cold"); err != nil {
 							m.statusMessage = fmt.Sprintf("Error: %v", err)
 							return m, nil
 						}
@@ -1457,6 +1437,124 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.repoFiltering = true
 				m.repoFilter = ""
 				m.statusMessage = "Type to filter repositories (ESC to clear)..."
+			case "z":
+				// Handle vim-style folding commands
+				m.lastKey = "z"
+				m.statusMessage = "Folding: o=open, c=close, R=open all, M=close all"
+				return m, nil
+			case "o":
+				// Open fold at cursor (zo)
+				if m.lastKey == "z" {
+					m.lastKey = ""
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+						repo := m.filteredRepos[m.repoCursor]
+						if !repo.IsWorktree {
+							// It's a workspace repo, expand it
+							m.expandedRepos[repo.Path] = true
+							m.filterRepos()
+							m.statusMessage = fmt.Sprintf("Expanded %s", repo.Name)
+						} else {
+							m.statusMessage = "Can only expand workspace repos, not worktrees"
+						}
+					}
+				}
+			case "c":
+				// Close fold at cursor (zc) OR toggle cold context (c alone)
+				if m.lastKey == "z" {
+					m.lastKey = ""
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+						repo := m.filteredRepos[m.repoCursor]
+						if !repo.IsWorktree {
+							// It's a workspace repo, collapse it
+							m.expandedRepos[repo.Path] = false
+							m.filterRepos()
+							m.statusMessage = fmt.Sprintf("Collapsed %s", repo.Name)
+						} else {
+							m.statusMessage = "Can only collapse workspace repos, not worktrees"
+						}
+					}
+				} else {
+					// This is the existing cold context toggle functionality
+					// Toggle cold context
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+						repo := m.filteredRepos[m.repoCursor]
+						path := m.getPathForRule(repo.Path) + "/**" // Add /** for directory inclusion
+						manager := context.NewManager("")
+
+						// Check current status
+						status := m.getRepoStatus(repo)
+
+						if status == "cold" {
+							// Remove from cold context
+							m.statusMessage = fmt.Sprintf("Removing %s from cold context...", repo.Name)
+							if err := manager.RemoveRuleForPath(path); err != nil {
+								m.statusMessage = fmt.Sprintf("Error: %v", err)
+								return m, nil
+							}
+						} else {
+							// Add to cold context
+							m.statusMessage = fmt.Sprintf("Adding %s to cold context...", repo.Name)
+							if err := manager.AppendRule(path, "cold"); err != nil {
+								m.statusMessage = fmt.Sprintf("Error: %v", err)
+								return m, nil
+							}
+						}
+
+						// Reload rules to reflect changes
+						m.loadAndParseRules()
+						// Trigger background tree reload to update stats
+						return m, m.loadTreeCmd()
+					}
+				}
+			case "R":
+				// Open all folds (zR) OR view audit report (R alone)
+				if m.lastKey == "z" {
+					m.lastKey = ""
+					// Expand all workspace repos
+					for _, repo := range m.discoveredRepos.WorkspaceRepos {
+						if !repo.IsWorktree {
+							m.expandedRepos[repo.Path] = true
+						}
+					}
+					m.filterRepos()
+					m.statusMessage = "Expanded all workspace repos"
+				} else {
+					// This is the existing audit report viewing functionality
+					// View audit report - only works for audited repos
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
+						repo := m.filteredRepos[m.repoCursor]
+						if repo.ReportPath != "" {
+							// Check if report file exists and load it
+							content, err := os.ReadFile(repo.ReportPath)
+							if err == nil {
+								m.mode = modeReportView
+								m.reportContent = string(content)
+								m.reportTitle = fmt.Sprintf("Audit Report: %s", repo.Name)
+								m.reportScrollOffset = 0
+								return m, nil
+							} else {
+								m.statusMessage = "Could not read audit report file"
+							}
+						} else if repo.AuditStatus == "not_audited" || repo.AuditStatus == "" {
+							m.statusMessage = "No audit report available - repository has not been audited"
+						} else {
+							m.statusMessage = "Audit report path not available"
+						}
+					}
+				}
+			case "M":
+				// Close all folds (zM)
+				if m.lastKey == "z" {
+					m.lastKey = ""
+					// Collapse all workspace repos
+					for _, repo := range m.discoveredRepos.WorkspaceRepos {
+						if !repo.IsWorktree {
+							m.expandedRepos[repo.Path] = false
+						}
+					}
+					m.filterRepos()
+					m.statusMessage = "Collapsed all workspace repos"
+				}
 			case "backspace":
 				if m.repoFiltering && len(m.repoFilter) > 0 {
 					m.repoFilter = m.repoFilter[:len(m.repoFilter)-1]
@@ -1860,24 +1958,29 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.discoveredRepos = msg.repos
 		m.statusMessage = ""
-		
-		// Build combined list of all repos
-		m.filteredRepos = []discovery.Repo{}
-		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.WorkspaceRepos...)
-		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.ClonedRepos...)
-		
+
+		// Initialize all workspace repos to collapsed state (zM style)
+		for _, repo := range m.discoveredRepos.WorkspaceRepos {
+			if !repo.IsWorktree {
+				m.expandedRepos[repo.Path] = false
+			}
+		}
+
+		// Build filtered list (will respect collapsed state)
+		m.filterRepos()
+
 		if len(m.filteredRepos) == 0 {
 			m.statusMessage = "No repositories found. Returning to tree view."
 			m.mode = modeTree
 			return m, nil
 		}
-		
+
 		// Reset cursor and scroll
 		m.repoCursor = 0
 		m.repoScrollOffset = 0
 		m.repoFilter = ""
 		m.repoFiltering = false
-		
+
 		return m, nil
 
 	case ruleChangeResultMsg:
@@ -2201,7 +2304,7 @@ func (m *viewModel) View() string {
 		Width(treeWidth).
 		Height(viewportHeight).
 		Padding(0, 1) // top/bottom: 0, left/right: 1
-	
+
 	treePanel := treeStyle.Render(treeWithScrollbar)
 	
 	// Combine panels horizontally
@@ -2232,13 +2335,13 @@ func (m *viewModel) View() string {
 		mainContent,
 		"",
 	}
-	
+
 	if statusMsg != "" {
 		parts = append(parts, statusMsg, "")
 	}
-	
+
 	parts = append(parts, footer)
-	
+
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
