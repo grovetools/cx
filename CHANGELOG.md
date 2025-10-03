@@ -1,3 +1,5 @@
+## v0.5.1-nightly.97e3155 (2025-10-03)
+
 ## v0.5.0 (2025-10-01)
 
 This release introduces a complete documentation overhaul, replacing the previous content with a new, comprehensive set of guides covering everything from core concepts to advanced workflows (8be1720, 99a7e71). The documentation structure has been standardized with numbered filenames (57de7c0), and the `docgen` configuration has been updated to support automatic Table of Contents generation and syncing the main `README.md` from a template (a101d8f, 83db5c0). The content has also been refined to be more focused and succinct (3647741, da8ba98).
