@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,11 +11,12 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
-	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-context/pkg/discovery"
+	grove_context "github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -139,7 +142,7 @@ func NewViewCmd() *cobra.Command {
 
 // Message types
 type treeLoadedMsg struct {
-	tree *context.FileNode
+	tree *grove_context.FileNode
 	err  error
 }
 
@@ -157,8 +160,8 @@ type confirmActionMsg struct {
 }
 
 type reposLoadedMsg struct {
-	repos *discovery.DiscoveredRepos
-	err   error
+	projects []*workspace.ProjectInfo
+	err      error
 }
 
 type viewMode int
@@ -171,7 +174,7 @@ const (
 
 // viewModel is the model for the interactive tree view
 type viewModel struct {
-	tree          *context.FileNode
+	tree          *grove_context.FileNode
 	cursor        int
 	visibleNodes  []*nodeWithLevel
 	expandedPaths map[string]bool
@@ -201,13 +204,13 @@ type viewModel struct {
 	totalFiles   int
 	totalTokens  int
 	// Repository selection
-	mode            viewMode
-	discoveredRepos *discovery.DiscoveredRepos
-	filteredRepos   []discovery.Repo  // Filtered list of repos
-	repoCursor      int                // Current selection in repo list
-	repoScrollOffset int               // Scroll offset for repo list
-	repoFilter      string             // Filter string for repos
-	repoFiltering   bool               // Whether we're actively filtering
+	mode             viewMode
+	projects         []*workspace.ProjectInfo // All discovered projects
+	filteredProjects []*workspace.ProjectInfo // Filtered list of projects
+	repoCursor       int                      // Current selection in repo list
+	repoScrollOffset int                      // Scroll offset for repo list
+	repoFilter       string                   // Filter string for repos
+	repoFiltering    bool                     // Whether we're actively filtering
 	workDir         string
 	// Audit request
 	auditRepoURL    string             // URL of repository to audit after exit
@@ -225,7 +228,7 @@ type viewModel struct {
 
 // nodeWithLevel stores a node with its display level
 type nodeWithLevel struct {
-	node  *context.FileNode
+	node  *grove_context.FileNode
 	level int
 }
 
@@ -260,7 +263,7 @@ func (m *viewModel) Init() tea.Cmd {
 // loadTreeCmd returns a command to load the project tree analysis
 func (m *viewModel) loadTreeCmd() tea.Cmd {
 	return func() tea.Msg {
-		manager := context.NewManager("")
+		manager := grove_context.NewManager("")
 		tree, err := manager.AnalyzeProjectTree(m.pruning, m.showGitIgnored)
 		return treeLoadedMsg{tree: tree, err: err}
 	}
@@ -348,7 +351,7 @@ func (m *viewModel) calculateStats() {
 }
 
 // calculateNodeStats recursively calculates stats for a node and its children
-func (m *viewModel) calculateNodeStats(node *context.FileNode) {
+func (m *viewModel) calculateNodeStats(node *grove_context.FileNode) {
 	if node == nil {
 		return
 	}
@@ -356,12 +359,12 @@ func (m *viewModel) calculateNodeStats(node *context.FileNode) {
 	// Count files (not directories)
 	if !node.IsDir {
 		switch node.Status {
-		case context.StatusIncludedHot:
+		case grove_context.StatusIncludedHot:
 			m.hotFiles++
 			m.hotTokens += node.TokenCount
 			m.totalFiles++
 			m.totalTokens += node.TokenCount
-		case context.StatusIncludedCold:
+		case grove_context.StatusIncludedCold:
 			m.coldFiles++
 			m.coldTokens += node.TokenCount
 			m.totalFiles++
@@ -378,7 +381,7 @@ func (m *viewModel) calculateNodeStats(node *context.FileNode) {
 // toggleRuleCmd creates a command to toggle rules
 func (m *viewModel) toggleRuleCmd(path, targetType string, isDirectory bool) tea.Cmd {
 	return func() tea.Msg {
-		manager := context.NewManager("")
+		manager := grove_context.NewManager("")
 		
 		// Check current status
 		currentStatus := manager.GetRuleStatus(path)
@@ -396,9 +399,9 @@ func (m *viewModel) toggleRuleCmd(path, targetType string, isDirectory bool) tea
 		switch targetType {
 		case "hot":
 			switch currentStatus {
-			case context.RuleNotFound, context.RuleCold, context.RuleExcluded:
+			case grove_context.RuleNotFound, grove_context.RuleCold, grove_context.RuleExcluded:
 				// Remove existing rule first if it exists
-				if currentStatus != context.RuleNotFound {
+				if currentStatus != grove_context.RuleNotFound {
 					if removeErr := manager.RemoveRule(path); removeErr != nil {
 						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
 					}
@@ -406,16 +409,16 @@ func (m *viewModel) toggleRuleCmd(path, targetType string, isDirectory bool) tea
 				// Add to hot context
 				err = manager.AppendRule(path, "hot")
 				successMsg = fmt.Sprintf("Added %s to hot context: %s", itemType, path)
-			case context.RuleHot:
+			case grove_context.RuleHot:
 				// Remove from hot context
 				err = manager.RemoveRule(path)
 				successMsg = fmt.Sprintf("Removed %s from hot context: %s", itemType, path)
 			}
 		case "cold":
 			switch currentStatus {
-			case context.RuleNotFound, context.RuleHot, context.RuleExcluded:
+			case grove_context.RuleNotFound, grove_context.RuleHot, grove_context.RuleExcluded:
 				// Remove existing rule first if it exists
-				if currentStatus != context.RuleNotFound {
+				if currentStatus != grove_context.RuleNotFound {
 					if removeErr := manager.RemoveRule(path); removeErr != nil {
 						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
 					}
@@ -423,29 +426,29 @@ func (m *viewModel) toggleRuleCmd(path, targetType string, isDirectory bool) tea
 				// Add to cold context
 				err = manager.AppendRule(path, "cold")
 				successMsg = fmt.Sprintf("Added %s to cold context: %s", itemType, path)
-			case context.RuleCold:
+			case grove_context.RuleCold:
 				// Remove from cold context
 				err = manager.RemoveRule(path)
 				successMsg = fmt.Sprintf("Removed %s from cold context: %s", itemType, path)
 			}
 		case "exclude":
 			switch currentStatus {
-			case context.RuleNotFound, context.RuleHot, context.RuleCold:
+			case grove_context.RuleNotFound, grove_context.RuleHot, grove_context.RuleCold:
 				// Remove existing rule first if it exists
-				if currentStatus != context.RuleNotFound {
+				if currentStatus != grove_context.RuleNotFound {
 					if removeErr := manager.RemoveRule(path); removeErr != nil {
 						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
 					}
 				}
 				// Add exclusion rule
 				// If the item is currently in cold context, add exclusion to cold section
-				if currentStatus == context.RuleCold {
+				if currentStatus == grove_context.RuleCold {
 					err = manager.AppendRule(path, "exclude-cold")
 				} else {
 					err = manager.AppendRule(path, "exclude")
 				}
 				successMsg = fmt.Sprintf("Excluded %s: %s", itemType, path)
-			case context.RuleExcluded:
+			case grove_context.RuleExcluded:
 				// Remove exclusion
 				err = manager.RemoveRule(path)
 				successMsg = fmt.Sprintf("Removed exclusion for %s: %s", itemType, path)
@@ -477,8 +480,8 @@ func (m *viewModel) performSearch() {
 
 // getRelativePath converts node path to relative path suitable for rules file
 // For directories, it returns a glob pattern like "dirname/**" to include all contents
-func (m *viewModel) getRelativePath(node *context.FileNode) (string, error) {
-	manager := context.NewManager("")
+func (m *viewModel) getRelativePath(node *grove_context.FileNode) (string, error) {
+	manager := grove_context.NewManager("")
 	workDir := manager.GetWorkDir()
 	
 	// Get relative path from current working directory
@@ -551,52 +554,75 @@ func (m *viewModel) handleRuleAction(relPath string, action string, isDir bool) 
 // discoverReposCmd returns a command to discover available repositories
 func (m *viewModel) discoverReposCmd() tea.Cmd {
 	return func() tea.Msg {
-		repos, err := discovery.DiscoverAllRepos()
-		return reposLoadedMsg{repos: repos, err: err}
+		logger := logrus.New()
+		logger.SetOutput(io.Discard)
+		discoverySvc := workspace.NewDiscoveryService(logger)
+
+		result, err := discoverySvc.DiscoverAll()
+		if err != nil {
+			return reposLoadedMsg{err: fmt.Errorf("failed to run discovery: %w", err)}
+		}
+
+		projectInfos := workspace.TransformToProjectInfo(result)
+		enrichOpts := &workspace.EnrichmentOptions{
+			FetchGitStatus:      true,
+			FetchClaudeSessions: true,
+		}
+		workspace.EnrichProjects(context.Background(), projectInfos, enrichOpts)
+
+		return reposLoadedMsg{projects: projectInfos, err: nil}
 	}
 }
 
 // filterRepos filters the repository list based on the current filter string and expansion state
 func (m *viewModel) filterRepos() {
-	m.filteredRepos = []discovery.Repo{}
+	m.filteredProjects = []*workspace.ProjectInfo{}
 
 	if m.repoFilter == "" {
 		// No filter, show repos based on expansion state
-		for _, repo := range m.discoveredRepos.WorkspaceRepos {
-			// If it's a worktree, only include it if its parent is expanded
-			if repo.IsWorktree {
-				if m.expandedRepos[repo.ParentPath] {
-					m.filteredRepos = append(m.filteredRepos, repo)
+		for _, proj := range m.projects {
+			// Workspace repos (including ecosystem projects and worktrees)
+			isWorkspaceRepo := proj.ParentEcosystemPath != "" || proj.IsWorktree || proj.IsEcosystem
+
+			if isWorkspaceRepo {
+				// If it's a worktree, only include it if its parent is expanded
+				if proj.IsWorktree {
+					if m.expandedRepos[proj.ParentPath] {
+						m.filteredProjects = append(m.filteredProjects, proj)
+					}
+				} else {
+					// Always show non-worktree workspace repos
+					m.filteredProjects = append(m.filteredProjects, proj)
 				}
 			} else {
-				// Always show non-worktree workspace repos
-				m.filteredRepos = append(m.filteredRepos, repo)
+				// Cloned repos - always show
+				m.filteredProjects = append(m.filteredProjects, proj)
 			}
 		}
-		m.filteredRepos = append(m.filteredRepos, m.discoveredRepos.ClonedRepos...)
 	} else {
 		// Apply filter (when filtering, show all matching repos regardless of expansion state)
 		filter := strings.ToLower(m.repoFilter)
 
-		for _, repo := range m.discoveredRepos.WorkspaceRepos {
-			if strings.Contains(strings.ToLower(repo.Name), filter) ||
-			   strings.Contains(strings.ToLower(repo.Path), filter) ||
-			   strings.Contains(strings.ToLower(repo.Branch), filter) {
-				m.filteredRepos = append(m.filteredRepos, repo)
+		for _, proj := range m.projects {
+			// Get branch from GitStatus if available
+			branch := ""
+			if proj.GitStatus != nil {
+				if extStatus, ok := proj.GitStatus.(*workspace.ExtendedGitStatus); ok && extStatus.StatusInfo != nil {
+					branch = extStatus.StatusInfo.Branch
+				}
 			}
-		}
 
-		for _, repo := range m.discoveredRepos.ClonedRepos {
-			if strings.Contains(strings.ToLower(repo.Name), filter) ||
-			   strings.Contains(strings.ToLower(repo.Path), filter) {
-				m.filteredRepos = append(m.filteredRepos, repo)
+			if strings.Contains(strings.ToLower(proj.Name), filter) ||
+			   strings.Contains(strings.ToLower(proj.Path), filter) ||
+			   strings.Contains(strings.ToLower(branch), filter) {
+				m.filteredProjects = append(m.filteredProjects, proj)
 			}
 		}
 	}
 
 	// Reset cursor if it's out of bounds
-	if m.repoCursor >= len(m.filteredRepos) {
-		m.repoCursor = len(m.filteredRepos) - 1
+	if m.repoCursor >= len(m.filteredProjects) {
+		m.repoCursor = len(m.filteredProjects) - 1
 		if m.repoCursor < 0 {
 			m.repoCursor = 0
 		}
@@ -625,7 +651,7 @@ func (m *viewModel) ensureRepoCursorVisible() {
 	}
 	
 	// Ensure scroll offset doesn't go beyond the list
-	maxScrollOffset := len(m.filteredRepos) - listHeight
+	maxScrollOffset := len(m.filteredProjects) - listHeight
 	if maxScrollOffset < 0 {
 		maxScrollOffset = 0
 	}
@@ -636,8 +662,8 @@ func (m *viewModel) ensureRepoCursorVisible() {
 
 // getPathForRule determines whether to use relative or absolute path for a repository
 // isRepoInView checks if a repository is included via a @view directive.
-func (m *viewModel) isRepoInView(repo discovery.Repo) bool {
-	repoPath := m.getPathForRule(repo.Path)
+func (m *viewModel) isRepoInView(proj *workspace.ProjectInfo) bool {
+	repoPath := m.getPathForRule(proj.Path)
 	for _, viewPath := range m.viewPaths {
 		if viewPath == repoPath {
 			return true
@@ -666,9 +692,9 @@ func (m *viewModel) getPathForRule(repoPath string) string {
 }
 
 // getRepoStatus checks if a repository path matches any rule in hot or cold context
-func (m *viewModel) getRepoStatus(repo discovery.Repo) string {
+func (m *viewModel) getRepoStatus(proj *workspace.ProjectInfo) string {
 	// Get the path we'll check against rules
-	repoPath := m.getPathForRule(repo.Path)
+	repoPath := m.getPathForRule(proj.Path)
 	
 	// Check hot rules
 	for _, rule := range m.hotRules {
@@ -706,8 +732,8 @@ func (m *viewModel) getRepoStatus(repo discovery.Repo) string {
 }
 
 // isRepoExcluded checks if a repository is explicitly excluded
-func (m *viewModel) isRepoExcluded(repo discovery.Repo) bool {
-	repoPath := m.getPathForRule(repo.Path)
+func (m *viewModel) isRepoExcluded(proj *workspace.ProjectInfo) bool {
+	repoPath := m.getPathForRule(proj.Path)
 	
 	// Check all rules for exclusion patterns
 	allRules := append(m.hotRules, m.coldRules...)
@@ -813,13 +839,13 @@ func (m *viewModel) renderRepoSelect() string {
 	// Calculate visible range for repo list (use a smaller height for the actual list)
 	listHeight := viewportHeight // Use full viewport like tree view
 	visibleEnd := m.repoScrollOffset + listHeight
-	if visibleEnd > len(m.filteredRepos) {
-		visibleEnd = len(m.filteredRepos)
+	if visibleEnd > len(m.filteredProjects) {
+		visibleEnd = len(m.filteredProjects)
 	}
 	
 	// Find max name width for alignment
 	maxNameWidth := 20
-	for _, repo := range m.filteredRepos {
+	for _, repo := range m.filteredProjects {
 		nameLen := len(repo.Name)
 		if repo.IsWorktree {
 			nameLen += 3 // Account for "└─ " prefix
@@ -832,17 +858,12 @@ func (m *viewModel) renderRepoSelect() string {
 	currentIsWorkspace := false
 	
 	for i := m.repoScrollOffset; i < visibleEnd; i++ {
-		repo := m.filteredRepos[i]
-		
+		repo := m.filteredProjects[i]
+
 		// Check if we're transitioning from workspace to cloned repos
-		isWorkspace := false
-		for _, wsRepo := range m.discoveredRepos.WorkspaceRepos {
-			if wsRepo.Path == repo.Path {
-				isWorkspace = true
-				break
-			}
-		}
-		
+		// Workspace repos are those with ParentEcosystemPath set or are ecosystems/worktrees
+		isWorkspace := repo.ParentEcosystemPath != "" || repo.IsWorktree || repo.IsEcosystem
+
 		// Add section separator BEFORE the line when transitioning
 		if i > m.repoScrollOffset && currentIsWorkspace && !isWorkspace {
 			// Add separator as a separate line with no cursor indicator
@@ -901,8 +922,8 @@ func (m *viewModel) renderRepoSelect() string {
 			} else {
 				// Check if this repo has worktrees
 				hasWorktrees := false
-				for _, wt := range m.discoveredRepos.WorkspaceRepos {
-					if wt.IsWorktree && wt.ParentPath == repo.Path {
+				for _, proj := range m.projects {
+					if proj.IsWorktree && proj.ParentPath == repo.Path {
 						hasWorktrees = true
 						break
 					}
@@ -1019,11 +1040,11 @@ func (m *viewModel) renderRepoSelect() string {
 	}
 	
 	// Show scroll indicator if needed
-	if len(m.filteredRepos) > listHeight {
+	if len(m.filteredProjects) > listHeight {
 		scrollInfo := fmt.Sprintf("\n[%d-%d of %d]", 
 			m.repoScrollOffset+1, 
 			visibleEnd, 
-			len(m.filteredRepos))
+			len(m.filteredProjects))
 		b.WriteString(lipgloss.NewStyle().
 			Foreground(core_theme.DefaultTheme.Muted.GetForeground()).
 			Render(scrollInfo))
@@ -1033,9 +1054,9 @@ func (m *viewModel) renderRepoSelect() string {
 	
 	// Create scrollbar for the repository list
 	scrollbar := ""
-	if len(m.filteredRepos) > listHeight {
+	if len(m.filteredProjects) > listHeight {
 		scrollbar = m.renderScrollbar(
-			len(m.filteredRepos),
+			len(m.filteredProjects),
 			listHeight,
 			m.repoScrollOffset,
 			listHeight,
@@ -1225,8 +1246,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Reload rules
 				m.loadAndParseRules()
 				// Clear and rediscover repos
-				m.discoveredRepos = nil
-				m.filteredRepos = nil
+				m.projects = nil
+				m.filteredProjects = nil
 				m.repoFilter = ""
 				m.repoFiltering = false
 				// Trigger tree reload in background to update stats
@@ -1236,10 +1257,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				)
 			case "a":
 				// Add/remove repo from view
-				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-					repo := m.filteredRepos[m.repoCursor]
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+					repo := m.filteredProjects[m.repoCursor]
 					path := m.getPathForRule(repo.Path)
-					manager := context.NewManager("")
+					manager := grove_context.NewManager("")
 					
 					if err := manager.ToggleViewDirective(path); err != nil {
 						m.statusMessage = fmt.Sprintf("Error: %v", err)
@@ -1266,16 +1287,11 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "A":
 				// Audit repository - only works for cloned repos
-				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-					repo := m.filteredRepos[m.repoCursor]
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+					repo := m.filteredProjects[m.repoCursor]
 					// Check if it's a cloned repo (not a workspace repo)
-					isCloned := false
-					for _, clonedRepo := range m.discoveredRepos.ClonedRepos {
-						if clonedRepo.Path == repo.Path {
-							isCloned = true
-							break
-						}
-					}
+					// Cloned repos are those without ParentEcosystemPath and not worktrees/ecosystems
+					isCloned := repo.ParentEcosystemPath == "" && !repo.IsWorktree && !repo.IsEcosystem
 					if isCloned {
 						// Set the audit URL and quit to trigger audit
 						m.auditRepoURL = repo.Name // repo.Name contains the URL for cloned repos
@@ -1286,10 +1302,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "h":
 				// Toggle hot context
-				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-					repo := m.filteredRepos[m.repoCursor]
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+					repo := m.filteredProjects[m.repoCursor]
 					path := m.getPathForRule(repo.Path) + "/**" // Add /** for directory inclusion
-					manager := context.NewManager("")
+					manager := grove_context.NewManager("")
 					
 					// Check current status
 					status := m.getRepoStatus(repo)
@@ -1317,10 +1333,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "x":
 				// Toggle exclude - add exclusion rule or remove it
-				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-					repo := m.filteredRepos[m.repoCursor]
+				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+					repo := m.filteredProjects[m.repoCursor]
 					path := m.getPathForRule(repo.Path) + "/**"
-					manager := context.NewManager("")
+					manager := grove_context.NewManager("")
 					
 					// Check if already excluded
 					isExcluded := false
@@ -1384,7 +1400,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ensureRepoCursorVisible()
 				}
 			case "down", "j":
-				if m.repoCursor < len(m.filteredRepos)-1 {
+				if m.repoCursor < len(m.filteredProjects)-1 {
 					m.repoCursor++
 					m.ensureRepoCursorVisible()
 				}
@@ -1396,8 +1412,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ensureRepoCursorVisible()
 			case "pgdown":
 				m.repoCursor += 10
-				if m.repoCursor >= len(m.filteredRepos) {
-					m.repoCursor = len(m.filteredRepos) - 1
+				if m.repoCursor >= len(m.filteredProjects) {
+					m.repoCursor = len(m.filteredProjects) - 1
 				}
 				m.ensureRepoCursorVisible()
 			case "ctrl+u":
@@ -1422,15 +1438,15 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					listHeight = 5
 				}
 				m.repoCursor += listHeight / 2
-				if m.repoCursor >= len(m.filteredRepos) {
-					m.repoCursor = len(m.filteredRepos) - 1
+				if m.repoCursor >= len(m.filteredProjects) {
+					m.repoCursor = len(m.filteredProjects) - 1
 				}
 				m.ensureRepoCursorVisible()
 			case "home", "g":
 				m.repoCursor = 0
 				m.repoScrollOffset = 0
 			case "end", "G":
-				m.repoCursor = len(m.filteredRepos) - 1
+				m.repoCursor = len(m.filteredProjects) - 1
 				m.ensureRepoCursorVisible()
 			case "/":
 				// Start filtering
@@ -1446,8 +1462,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Open fold at cursor (zo)
 				if m.lastKey == "z" {
 					m.lastKey = ""
-					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-						repo := m.filteredRepos[m.repoCursor]
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+						repo := m.filteredProjects[m.repoCursor]
 						if !repo.IsWorktree {
 							// It's a workspace repo, expand it
 							m.expandedRepos[repo.Path] = true
@@ -1462,8 +1478,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Close fold at cursor (zc) OR toggle cold context (c alone)
 				if m.lastKey == "z" {
 					m.lastKey = ""
-					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-						repo := m.filteredRepos[m.repoCursor]
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+						repo := m.filteredProjects[m.repoCursor]
 						if !repo.IsWorktree {
 							// It's a workspace repo, collapse it
 							m.expandedRepos[repo.Path] = false
@@ -1476,10 +1492,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					// This is the existing cold context toggle functionality
 					// Toggle cold context
-					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-						repo := m.filteredRepos[m.repoCursor]
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+						repo := m.filteredProjects[m.repoCursor]
 						path := m.getPathForRule(repo.Path) + "/**" // Add /** for directory inclusion
-						manager := context.NewManager("")
+						manager := grove_context.NewManager("")
 
 						// Check current status
 						status := m.getRepoStatus(repo)
@@ -1511,9 +1527,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.lastKey == "z" {
 					m.lastKey = ""
 					// Expand all workspace repos
-					for _, repo := range m.discoveredRepos.WorkspaceRepos {
-						if !repo.IsWorktree {
-							m.expandedRepos[repo.Path] = true
+					for _, proj := range m.projects {
+						isWorkspaceRepo := proj.ParentEcosystemPath != "" || proj.IsEcosystem
+						if isWorkspaceRepo && !proj.IsWorktree {
+							m.expandedRepos[proj.Path] = true
 						}
 					}
 					m.filterRepos()
@@ -1521,8 +1538,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					// This is the existing audit report viewing functionality
 					// View audit report - only works for audited repos
-					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredRepos) {
-						repo := m.filteredRepos[m.repoCursor]
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+						repo := m.filteredProjects[m.repoCursor]
 						if repo.ReportPath != "" {
 							// Check if report file exists and load it
 							content, err := os.ReadFile(repo.ReportPath)
@@ -1547,9 +1564,10 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.lastKey == "z" {
 					m.lastKey = ""
 					// Collapse all workspace repos
-					for _, repo := range m.discoveredRepos.WorkspaceRepos {
-						if !repo.IsWorktree {
-							m.expandedRepos[repo.Path] = false
+					for _, proj := range m.projects {
+						isWorkspaceRepo := proj.ParentEcosystemPath != "" || proj.IsEcosystem
+						if isWorkspaceRepo && !proj.IsWorktree {
+							m.expandedRepos[proj.Path] = false
 						}
 					}
 					m.filterRepos()
@@ -1840,7 +1858,7 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.SetKeys(repoKeys)
 			m.help.Title = "Repository Selection - Help"
 			// Only discover repos if we haven't already
-			if m.discoveredRepos == nil {
+			if m.projects == nil {
 				m.statusMessage = "Discovering repositories..."
 				return m, m.discoverReposCmd()
 			} else {
@@ -1956,20 +1974,22 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeTree
 			return m, nil
 		}
-		m.discoveredRepos = msg.repos
+		m.projects = msg.projects
 		m.statusMessage = ""
 
 		// Initialize all workspace repos to collapsed state (zM style)
-		for _, repo := range m.discoveredRepos.WorkspaceRepos {
-			if !repo.IsWorktree {
-				m.expandedRepos[repo.Path] = false
+		// Workspace repos are those with ParentPath set (worktrees) or those that are ecosystems/part of ecosystems
+		for _, proj := range m.projects {
+			isWorkspaceRepo := proj.ParentEcosystemPath != "" || proj.IsEcosystem
+			if isWorkspaceRepo && !proj.IsWorktree {
+				m.expandedRepos[proj.Path] = false
 			}
 		}
 
 		// Build filtered list (will respect collapsed state)
 		m.filterRepos()
 
-		if len(m.filteredRepos) == 0 {
+		if len(m.filteredProjects) == 0 {
 			m.statusMessage = "No repositories found. Returning to tree view."
 			m.mode = modeTree
 			return m, nil
@@ -2080,7 +2100,7 @@ func (m *viewModel) collapseCurrent() {
 }
 
 // expandAllRecursive recursively marks all directories as expanded
-func (m *viewModel) expandAllRecursive(node *context.FileNode) {
+func (m *viewModel) expandAllRecursive(node *grove_context.FileNode) {
 	if node.IsDir && len(node.Children) > 0 {
 		m.expandedPaths[node.Path] = true
 		for _, child := range node.Children {
@@ -2090,7 +2110,7 @@ func (m *viewModel) expandAllRecursive(node *context.FileNode) {
 }
 
 // autoExpandToContent expands directories intelligently
-func (m *viewModel) autoExpandToContent(node *context.FileNode) {
+func (m *viewModel) autoExpandToContent(node *grove_context.FileNode) {
 	if !node.IsDir {
 		return
 	}
@@ -2146,7 +2166,7 @@ func (m *viewModel) updateVisibleNodes() {
 }
 
 // collectVisibleNodes recursively collects visible nodes
-func (m *viewModel) collectVisibleNodes(node *context.FileNode, level int) {
+func (m *viewModel) collectVisibleNodes(node *grove_context.FileNode, level int) {
 	m.visibleNodes = append(m.visibleNodes, &nodeWithLevel{
 		node:  node,
 		level: level,
@@ -2200,7 +2220,7 @@ func (m *viewModel) View() string {
 
 	// Show repository selection if active (check this first)
 	if m.mode == modeRepoSelect {
-		if m.discoveredRepos == nil {
+		if m.projects == nil {
 			return "Discovering repositories..."
 		}
 		return m.renderRepoSelect()
@@ -2403,7 +2423,7 @@ func (m *viewModel) renderNode(index int) string {
 	relPath, _ := m.getRelativePath(node)
 	isDangerous, _ := m.isPathPotentiallyDangerous(relPath)
 	dangerSymbol := ""
-	if isDangerous && node.Status == context.StatusOmittedNoMatch {
+	if isDangerous && node.Status == grove_context.StatusOmittedNoMatch {
 		dangerSymbol = " ⚠️"
 	}
 
@@ -2420,7 +2440,7 @@ func (m *viewModel) renderNode(index int) string {
 		} else {
 			tokenStyle = core_theme.DefaultTheme.Faint // Dim gray for < 10K
 		}
-		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", context.FormatTokenCount(node.TokenCount)))
+		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", grove_context.FormatTokenCount(node.TokenCount)))
 	}
 
 	// Combine all parts
@@ -2429,7 +2449,7 @@ func (m *viewModel) renderNode(index int) string {
 }
 
 // getIcon returns the appropriate icon for a node
-func (m *viewModel) getIcon(node *context.FileNode) string {
+func (m *viewModel) getIcon(node *grove_context.FileNode) string {
 	if node.IsDir {
 		// Return blue-styled directory icon
 		dirStyle := core_theme.DefaultTheme.Info // Blue
@@ -2439,17 +2459,17 @@ func (m *viewModel) getIcon(node *context.FileNode) string {
 }
 
 // getStatusSymbol returns the status symbol for a node
-func (m *viewModel) getStatusSymbol(node *context.FileNode) string {
+func (m *viewModel) getStatusSymbol(node *grove_context.FileNode) string {
 	switch node.Status {
-	case context.StatusIncludedHot:
+	case grove_context.StatusIncludedHot:
 		greenStyle := core_theme.DefaultTheme.Success // Green
 		return greenStyle.Render(" ✓")
-	case context.StatusIncludedCold:
+	case grove_context.StatusIncludedCold:
 		lightBlueStyle := core_theme.DefaultTheme.Accent // Light blue
 		return lightBlueStyle.Render(" ❄️")
-	case context.StatusExcludedByRule:
+	case grove_context.StatusExcludedByRule:
 		return " 🚫"
-	case context.StatusIgnoredByGit:
+	case grove_context.StatusIgnoredByGit:
 		return " 🙈" // Git ignored
 	default:
 		return ""
@@ -2457,22 +2477,22 @@ func (m *viewModel) getStatusSymbol(node *context.FileNode) string {
 }
 
 // getStyle returns the appropriate style for a status
-func (m *viewModel) getStyle(node *context.FileNode) lipgloss.Style {
+func (m *viewModel) getStyle(node *grove_context.FileNode) lipgloss.Style {
 	theme := core_theme.DefaultTheme
 	// Base style based on status
 	var style lipgloss.Style
 	switch node.Status {
-	case context.StatusIncludedHot:
+	case grove_context.StatusIncludedHot:
 		style = lipgloss.NewStyle().Foreground(theme.Colors.Green)
-	case context.StatusIncludedCold:
+	case grove_context.StatusIncludedCold:
 		style = lipgloss.NewStyle().Foreground(theme.Colors.Cyan)
-	case context.StatusExcludedByRule:
+	case grove_context.StatusExcludedByRule:
 		style = lipgloss.NewStyle().Foreground(theme.Colors.Red)
-	case context.StatusOmittedNoMatch:
+	case grove_context.StatusOmittedNoMatch:
 		style = lipgloss.NewStyle().Foreground(theme.Colors.MutedText)
-	case context.StatusDirectory:
+	case grove_context.StatusDirectory:
 		style = lipgloss.NewStyle().Foreground(theme.Colors.LightText)
-	case context.StatusIgnoredByGit:
+	case grove_context.StatusIgnoredByGit:
 		style = lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Muted.GetForeground()) // Very dark grey for gitignored
 	default:
 		style = lipgloss.NewStyle()
@@ -2605,9 +2625,9 @@ func (m *viewModel) renderStats() string {
 		Foreground(core_theme.DefaultTheme.Accent.GetForeground())
 	
 	// Format token counts
-	hotTokensStr := context.FormatTokenCount(m.hotTokens)
-	coldTokensStr := context.FormatTokenCount(m.coldTokens)
-	totalTokensStr := context.FormatTokenCount(m.totalTokens)
+	hotTokensStr := grove_context.FormatTokenCount(m.hotTokens)
+	coldTokensStr := grove_context.FormatTokenCount(m.coldTokens)
+	totalTokensStr := grove_context.FormatTokenCount(m.totalTokens)
 	
 	stats := []string{
 		headerStyle.Render("Context Statistics"),

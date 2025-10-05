@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-context/pkg/repo"
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/spf13/cobra"
 )
 

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 	
-	"github.com/mattsolo1/grove-context/pkg/repo"
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/pkg/repo"
 )
 
 // NodeStatus represents the classification of a file in the context
