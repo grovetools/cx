@@ -38,5 +38,3 @@ require (
 	golang.org/x/text v0.28.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/mattsolo1/grove-core => ../grove-core

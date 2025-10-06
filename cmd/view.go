@@ -66,6 +66,8 @@ func (k treeViewKeyMap) FullHelp() [][]key.Binding {
 
 type repoSelectKeyMap struct {
 	keymap.Base
+	FocusEcosystem key.Binding
+	ClearFocus     key.Binding
 }
 
 func (k repoSelectKeyMap) ShortHelp() []key.Binding {
@@ -107,7 +109,17 @@ func (k repoSelectKeyMap) FullHelp() [][]key.Binding {
 
 var (
 	treeKeys = treeViewKeyMap{Base: keymap.NewBase()}
-	repoKeys = repoSelectKeyMap{Base: keymap.NewBase()}
+	repoKeys = repoSelectKeyMap{
+		Base: keymap.NewBase(),
+		FocusEcosystem: key.NewBinding(
+			key.WithKeys("@"),
+			key.WithHelp("@", "focus ecosystem"),
+		),
+		ClearFocus: key.NewBinding(
+			key.WithKeys("ctrl+g"),
+			key.WithHelp("ctrl+g", "clear focus"),
+		),
+	}
 )
 
 // NewViewCmd creates the view command
@@ -224,6 +236,9 @@ type viewModel struct {
 	viewPaths       []string           // Paths from @view directives
 	// Worktree folding
 	expandedRepos   map[string]bool    // Tracks which workspace repos have expanded worktrees
+	// Focus mode
+	ecosystemPickerMode bool                       // True when showing only ecosystems for selection
+	focusedEcosystem    *workspace.ProjectInfo     // Currently focused ecosystem/worktree
 }
 
 // nodeWithLevel stores a node with its display level
@@ -575,35 +590,140 @@ func (m *viewModel) discoverReposCmd() tea.Cmd {
 }
 
 // filterRepos filters the repository list based on the current filter string and expansion state
+// Organizes repos into sections: Ecosystem repos, Main ecosystem projects, Worktree projects, Cloned repos
+// Supports ecosystem picker mode and focus mode
 func (m *viewModel) filterRepos() {
 	m.filteredProjects = []*workspace.ProjectInfo{}
 
-	if m.repoFilter == "" {
-		// No filter, show repos based on expansion state
-		for _, proj := range m.projects {
-			// Workspace repos (including ecosystem projects and worktrees)
-			isWorkspaceRepo := proj.ParentEcosystemPath != "" || proj.IsWorktree || proj.IsEcosystem
+	// Handle ecosystem picker mode - show only ecosystems with worktrees
+	if m.ecosystemPickerMode {
+		var ecosystemRepos []*workspace.ProjectInfo
+		var worktrees []*workspace.ProjectInfo
 
-			if isWorkspaceRepo {
-				// If it's a worktree, only include it if its parent is expanded
-				if proj.IsWorktree {
-					if m.expandedRepos[proj.ParentPath] {
-						m.filteredProjects = append(m.filteredProjects, proj)
-					}
-				} else {
-					// Always show non-worktree workspace repos
-					m.filteredProjects = append(m.filteredProjects, proj)
-				}
-			} else {
-				// Cloned repos - always show
-				m.filteredProjects = append(m.filteredProjects, proj)
+		for _, proj := range m.projects {
+			if proj.IsEcosystem && !proj.IsWorktree {
+				ecosystemRepos = append(ecosystemRepos, proj)
+			} else if proj.IsWorktree {
+				worktrees = append(worktrees, proj)
 			}
 		}
+
+		// Add ecosystems and their worktrees
+		for _, eco := range ecosystemRepos {
+			m.filteredProjects = append(m.filteredProjects, eco)
+
+			// Add worktrees of this ecosystem
+			for _, wt := range worktrees {
+				if wt.ParentPath == eco.Path {
+					m.filteredProjects = append(m.filteredProjects, wt)
+				}
+			}
+		}
+		return
+	}
+
+	// Determine which projects to filter from based on focus mode
+	var projectsToFilter []*workspace.ProjectInfo
+	if m.focusedEcosystem != nil {
+		// Focus mode - show only the focused ecosystem and its children
+		projectsToFilter = append(projectsToFilter, m.focusedEcosystem)
+
+		// If focused on a worktree, include only projects in that worktree
+		if m.focusedEcosystem.IsWorktree {
+			// A worktree's name is what child projects will have as WorktreeName
+			// Also need to find the parent ecosystem path
+			parentEcoPath := m.focusedEcosystem.ParentPath
+			for _, proj := range m.projects {
+				// Find projects that belong to this worktree
+				// They will have WorktreeName matching the worktree's Name
+				if proj.WorktreeName == m.focusedEcosystem.Name &&
+				   proj.ParentEcosystemPath == parentEcoPath &&
+				   proj.Path != m.focusedEcosystem.Path {
+					projectsToFilter = append(projectsToFilter, proj)
+				}
+			}
+		} else if m.focusedEcosystem.IsEcosystem {
+			// Focused on main ecosystem - include main projects and worktrees
+			for _, proj := range m.projects {
+				if proj.ParentEcosystemPath == m.focusedEcosystem.Path {
+					projectsToFilter = append(projectsToFilter, proj)
+				}
+			}
+		}
+	} else {
+		// No focus - use all projects
+		projectsToFilter = m.projects
+	}
+
+	if m.repoFilter == "" {
+		// No text filter - organize repos into hierarchical sections
+
+		// Categorize all projects
+		var ecosystemRepos []*workspace.ProjectInfo
+		var worktrees []*workspace.ProjectInfo
+		var mainEcosystemProjects []*workspace.ProjectInfo
+		var worktreeProjects []*workspace.ProjectInfo
+		var clonedRepos []*workspace.ProjectInfo
+
+		for _, proj := range projectsToFilter {
+			if proj.IsEcosystem {
+				ecosystemRepos = append(ecosystemRepos, proj)
+			} else if proj.IsWorktree {
+				worktrees = append(worktrees, proj)
+			} else if proj.WorktreeName != "" {
+				// Project inside a worktree
+				worktreeProjects = append(worktreeProjects, proj)
+			} else if proj.ParentEcosystemPath != "" {
+				// Project in main ecosystem repo
+				mainEcosystemProjects = append(mainEcosystemProjects, proj)
+			} else {
+				// Cloned repo
+				clonedRepos = append(clonedRepos, proj)
+			}
+		}
+
+		// Build hierarchical structure:
+		// Ecosystem -> Main projects + Worktrees -> Worktree projects
+		for _, eco := range ecosystemRepos {
+			m.filteredProjects = append(m.filteredProjects, eco)
+
+			// If ecosystem is expanded, show its children
+			if m.expandedRepos[eco.Path] {
+				// First, add sub-projects from main ecosystem
+				for _, proj := range mainEcosystemProjects {
+					if proj.ParentEcosystemPath == eco.Path {
+						m.filteredProjects = append(m.filteredProjects, proj)
+					}
+				}
+
+				// Then, add worktrees of this ecosystem
+				for _, wt := range worktrees {
+					if wt.ParentPath == eco.Path {
+						m.filteredProjects = append(m.filteredProjects, wt)
+
+						// If this worktree is expanded, add its sub-projects
+						if m.expandedRepos[wt.Path] {
+							for _, wtProj := range worktreeProjects {
+								if wtProj.WorktreeName == wt.WorktreeName && wtProj.ParentEcosystemPath == eco.Path {
+									m.filteredProjects = append(m.filteredProjects, wtProj)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Add cloned repos (not in focus mode)
+		if m.focusedEcosystem == nil {
+			m.filteredProjects = append(m.filteredProjects, clonedRepos...)
+		}
+
 	} else {
 		// Apply filter (when filtering, show all matching repos regardless of expansion state)
 		filter := strings.ToLower(m.repoFilter)
 
-		for _, proj := range m.projects {
+		for _, proj := range projectsToFilter {
 			// Get branch from GitStatus if available
 			branch := ""
 			if proj.GitStatus != nil {
@@ -803,12 +923,22 @@ func (m *viewModel) getAuditStatusStyle(status string) lipgloss.Style {
 // renderRepoSelect renders the repository selection view in compact tabular format
 func (m *viewModel) renderRepoSelect() string {
 	
-	// Header
-	header := core_theme.DefaultTheme.Header.Render("Select Repository")
-	
-	// Subtitle as separate element
-	subtitle := core_theme.DefaultTheme.Muted.Render("Add repositories to rules file for further context refinement")
-	
+	// Header - different based on mode
+	var header string
+	var subtitle string
+
+	if m.ecosystemPickerMode {
+		header = core_theme.DefaultTheme.Info.Render("[Select Ecosystem to Focus]")
+		subtitle = core_theme.DefaultTheme.Muted.Render("Press Enter to focus on selected ecosystem, Esc to cancel")
+	} else if m.focusedEcosystem != nil {
+		focusIndicator := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("[Focus: %s]", m.focusedEcosystem.Name))
+		header = core_theme.DefaultTheme.Header.Render("Select Repository") + " " + focusIndicator
+		subtitle = core_theme.DefaultTheme.Muted.Render("Press ctrl+g to clear focus")
+	} else {
+		header = core_theme.DefaultTheme.Header.Render("Select Repository")
+		subtitle = core_theme.DefaultTheme.Muted.Render("Add repositories to rules file for further context refinement")
+	}
+
 	// Filter display
 	if m.repoFilter != "" {
 		filterStyle := core_theme.DefaultTheme.Muted
@@ -855,26 +985,48 @@ func (m *viewModel) renderRepoSelect() string {
 		}
 	}
 	
-	currentIsWorkspace := false
-	
+	// Track current section for headers - now only 2 sections
+	type repoSection int
+	const (
+		sectionEcosystem repoSection = iota
+		sectionCloned
+	)
+
+	getSection := func(proj *workspace.ProjectInfo) repoSection {
+		// Everything that's part of an ecosystem (ecosystem itself, worktrees, or sub-projects)
+		if proj.IsEcosystem || proj.IsWorktree || proj.ParentEcosystemPath != "" || proj.WorktreeName != "" {
+			return sectionEcosystem
+		}
+		return sectionCloned
+	}
+
+	currentSection := repoSection(-1) // Start with invalid section to trigger first header
+
 	for i := m.repoScrollOffset; i < visibleEnd; i++ {
 		repo := m.filteredProjects[i]
+		section := getSection(repo)
 
-		// Check if we're transitioning from workspace to cloned repos
-		// Workspace repos are those with ParentEcosystemPath set or are ecosystems/worktrees
-		isWorkspace := repo.ParentEcosystemPath != "" || repo.IsWorktree || repo.IsEcosystem
+		// Add section separator and header when transitioning to a new section
+		if section != currentSection {
+			// Add separator (except before the first section)
+			if currentSection != repoSection(-1) {
+				separatorLine := "  " + core_theme.DefaultTheme.Faint.
+					Render("─────────────────────────────────────────────────")
+				b.WriteString(separatorLine + "\n")
+			}
 
-		// Add section separator BEFORE the line when transitioning
-		if i > m.repoScrollOffset && currentIsWorkspace && !isWorkspace {
-			// Add separator as a separate line with no cursor indicator
-			separatorLine := "  " + core_theme.DefaultTheme.Faint.
-				Render("─────────────────────────────────────────────────")
-			b.WriteString(separatorLine + "\n")
-			// Add header for cloned repos section
+			// Add section header
 			headerStyle := core_theme.DefaultTheme.TableHeader
-			b.WriteString("  " + headerStyle.Render("URL                                      VERSION  COMMIT   STATUS       REPORT") + "\n")
+			switch section {
+			case sectionEcosystem:
+				b.WriteString("  " + headerStyle.Render("ECOSYSTEM REPOSITORIES") + "\n")
+			case sectionCloned:
+				b.WriteString("  " + headerStyle.Render("CLONED REPOSITORIES") + "\n")
+				// For cloned repos, add column headers
+				b.WriteString("  " + headerStyle.Render("URL                                      VERSION  COMMIT   STATUS       REPORT") + "\n")
+			}
+			currentSection = section
 		}
-		currentIsWorkspace = isWorkspace
 		
 		// Build the line
 		var line string
@@ -913,22 +1065,22 @@ func (m *viewModel) renderRepoSelect() string {
 		} else {
 			line += "  "
 		}
-		
-		if isWorkspace {
-			// Workspace repos - render as before
+
+		if section == sectionEcosystem {
+			// Ecosystem section - render as hierarchical tree
 			name := repo.Name
-			if repo.IsWorktree {
-				name = "└─ " + name
-			} else {
-				// Check if this repo has worktrees
-				hasWorktrees := false
+
+			if repo.IsEcosystem {
+				// Top-level ecosystem - check if it has children (worktrees or sub-projects)
+				hasChildren := false
 				for _, proj := range m.projects {
-					if proj.IsWorktree && proj.ParentPath == repo.Path {
-						hasWorktrees = true
+					if (proj.IsWorktree && proj.ParentPath == repo.Path) ||
+					   (proj.ParentEcosystemPath == repo.Path && proj.WorktreeName == "") {
+						hasChildren = true
 						break
 					}
 				}
-				if hasWorktrees {
+				if hasChildren {
 					// Add fold indicator
 					if m.expandedRepos[repo.Path] {
 						name = "▾ " + name // Expanded indicator
@@ -936,6 +1088,31 @@ func (m *viewModel) renderRepoSelect() string {
 						name = "▸ " + name // Collapsed indicator
 					}
 				}
+			} else if repo.IsWorktree {
+				// Worktree under ecosystem - check if it has sub-projects
+				hasChildren := false
+				for _, proj := range m.projects {
+					if proj.WorktreeName == repo.WorktreeName && proj.ParentEcosystemPath == repo.ParentEcosystemPath {
+						hasChildren = true
+						break
+					}
+				}
+				if hasChildren {
+					// Add fold indicator
+					if m.expandedRepos[repo.Path] {
+						name = "▾ └─ " + name // Expanded worktree
+					} else {
+						name = "▸ └─ " + name // Collapsed worktree
+					}
+				} else {
+					name = "  └─ " + name // Worktree with no children
+				}
+			} else if repo.WorktreeName != "" {
+				// Sub-project under a worktree (level 2)
+				name = "    └─ " + name
+			} else if repo.ParentEcosystemPath != "" {
+				// Sub-project under main ecosystem (level 1)
+				name = "  └─ " + name
 			}
 
 			var nameStyled string
@@ -1236,6 +1413,38 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// Handle ecosystem picker mode
+			if m.ecosystemPickerMode {
+				switch msg.String() {
+				case "enter":
+					// Select ecosystem to focus
+					if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
+						m.focusedEcosystem = m.filteredProjects[m.repoCursor]
+						m.ecosystemPickerMode = false
+						m.filterRepos()
+						m.repoCursor = 0
+						m.statusMessage = fmt.Sprintf("Focused on: %s", m.focusedEcosystem.Name)
+					}
+					return m, nil
+				case "esc":
+					// Cancel ecosystem picker
+					m.ecosystemPickerMode = false
+					m.filterRepos()
+					return m, nil
+				}
+			}
+
+			// Handle focus mode keys first (before string switch)
+			if key.Matches(msg, repoKeys.ClearFocus) {
+				if m.focusedEcosystem != nil {
+					m.focusedEcosystem = nil
+					m.filterRepos()
+					m.repoCursor = 0
+					m.statusMessage = "Cleared focus"
+				}
+				return m, nil
+			}
+
 			switch keypress := msg.String(); keypress {
 			case "?":
 				m.help.Toggle()
@@ -1285,6 +1494,12 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loadAndParseRules()
 					return m, m.loadTreeCmd()
 				}
+			case "@":
+				// Enter ecosystem picker mode
+				m.ecosystemPickerMode = true
+				m.filterRepos()
+				m.repoCursor = 0
+				return m, nil
 			case "A":
 				// Audit repository - only works for cloned repos
 				if m.repoCursor >= 0 && m.repoCursor < len(m.filteredProjects) {
@@ -1534,6 +1749,8 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 					m.filterRepos()
+					// Keep cursor position but ensure it's visible
+					m.ensureRepoCursorVisible()
 					m.statusMessage = "Expanded all workspace repos"
 				} else {
 					// This is the existing audit report viewing functionality
@@ -1571,6 +1788,9 @@ func (m *viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 					m.filterRepos()
+					// Reset cursor and scroll to top
+					m.repoCursor = 0
+					m.repoScrollOffset = 0
 					m.statusMessage = "Collapsed all workspace repos"
 				}
 			case "backspace":
