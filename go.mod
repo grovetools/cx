@@ -7,8 +7,8 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/mattsolo1/grove-core v0.4.1-nightly.8d7daf2
-	github.com/mattsolo1/grove-tend v0.4.1-nightly.4e3f787
+	github.com/mattsolo1/grove-core v0.4.0
+	github.com/mattsolo1/grove-tend v0.4.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 )
