@@ -1,9 +1,11 @@
 package main
 
 import (
-    "os"
-    "github.com/mattsolo1/grove-core/cli"
-    "github.com/mattsolo1/grove-context/cmd"
+	"os"
+
+	"github.com/mattsolo1/grove-core/cli"
+	"github.com/mattsolo1/grove-context/cmd"
+	"github.com/mattsolo1/grove-context/cmd/view"
 )
 
 func main() {
@@ -29,7 +31,7 @@ func main() {
     rootCmd.AddCommand(cmd.NewFixCmd())
     rootCmd.AddCommand(cmd.NewStatsCmd())
     rootCmd.AddCommand(cmd.NewFromGitCmd())
-    rootCmd.AddCommand(cmd.NewViewCmd())
+    rootCmd.AddCommand(view.NewViewCmd())
     rootCmd.AddCommand(cmd.NewVersionCmd())
     rootCmd.AddCommand(cmd.NewRepoCmd())
     

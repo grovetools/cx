@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 )
 
 // LanguageStats contains statistics for a programming language
@@ -240,32 +243,28 @@ func calculateMedian(counts []int) int {
 	return sorted[mid]
 }
 
-// Color codes for terminal output
-const (
-	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
-	colorYellow = "\033[33m"
-	colorCyan   = "\033[36m"
-	colorBold   = "\033[1m"
-)
+// String displays context statistics in a formatted, lipgloss-styled string
+func (s *ContextStats) String(title string) string {
+	theme := core_theme.DefaultTheme
+	var b strings.Builder
 
-// Print displays context statistics in a formatted way
-func (s *ContextStats) Print(title string) {
-	fmt.Println(title + ":")
-	fmt.Println()
-	
+	b.WriteString(theme.Title.Render(title) + "\n\n")
+
 	// Summary box
-	fmt.Println("╭─ Summary ────────────────────────────────────────╮")
-	fmt.Printf("│ Total Files:    %-32d │\n", s.TotalFiles)
-	fmt.Printf("│ Total Tokens:   ~%-31s │\n", FormatTokenCount(s.TotalTokens))
-	fmt.Printf("│ Total Size:     %-32s │\n", FormatBytes(int(s.TotalSize)))
-	fmt.Println("╰──────────────────────────────────────────────────╯")
-	fmt.Println()
-	
+	summaryItems := []string{
+		fmt.Sprintf("Total Files:    %d", s.TotalFiles),
+		fmt.Sprintf("Total Tokens:   ~%s", FormatTokenCount(s.TotalTokens)),
+		fmt.Sprintf("Total Size:     %s", FormatBytes(int(s.TotalSize))),
+	}
+	summaryBox := theme.Box.Copy().
+		BorderForeground(theme.Colors.Cyan).
+		Padding(1, 2).
+		Render(strings.Join(summaryItems, "\n"))
+	b.WriteString(summaryBox + "\n\n")
+
 	// Language distribution
-	fmt.Println("Language Distribution:")
-	
-	// Sort languages by token count
+	b.WriteString(theme.Header.Render("Language Distribution:") + "\n")
+
 	var languages []LanguageStats
 	for _, lang := range s.Languages {
 		languages = append(languages, *lang)
@@ -273,56 +272,67 @@ func (s *ContextStats) Print(title string) {
 	sort.Slice(languages, func(i, j int) bool {
 		return languages[i].TotalTokens > languages[j].TotalTokens
 	})
-	
+
 	for _, lang := range languages {
-		fmt.Printf("  %-12s %5.1f%%  (%s tokens, %d files)\n",
-			lang.Name,
-			lang.Percentage,
+		langName := theme.Info.Render(fmt.Sprintf("%-12s", lang.Name))
+		percentage := theme.Highlight.Render(fmt.Sprintf("%5.1f%%", lang.Percentage))
+		details := theme.Muted.Render(fmt.Sprintf("(%s tokens, %d files)",
 			FormatTokenCount(lang.TotalTokens),
 			lang.FileCount,
-		)
+		))
+		b.WriteString(fmt.Sprintf("  %s %s  %s\n", langName, percentage, details))
 	}
-	
+
 	// Largest files
-	fmt.Printf("\nLargest Files (by tokens):\n")
+	b.WriteString("\n" + theme.Header.Render("Largest Files (by tokens):") + "\n")
 	for i, file := range s.LargestFiles {
-		// Truncate path for display
 		displayPath := file.Path
 		if len(displayPath) > 50 {
 			displayPath = "..." + displayPath[len(displayPath)-47:]
 		}
-		
-		// Color code based on token count
-		tokenColor := ""
+
+		var tokenStyle lipgloss.Style
 		if file.Tokens > 10000 {
-			tokenColor = colorRed
+			tokenStyle = theme.Error
 		} else if file.Tokens > 5000 {
-			tokenColor = colorYellow
+			tokenStyle = theme.Warning
+		} else {
+			tokenStyle = theme.Info
 		}
-		
-		fmt.Printf("  %2d. %-50s %s%s tokens%s (%4.1f%%)\n",
+
+		line := fmt.Sprintf("  %2d. %-50s %s (%4.1f%%)",
 			i+1,
 			displayPath,
-			tokenColor,
-			FormatTokenCount(file.Tokens),
-			colorReset,
+			tokenStyle.Render(FormatTokenCount(file.Tokens)+" tokens"),
 			file.Percentage,
 		)
+		b.WriteString(line + "\n")
 	}
-	
+
 	// Token distribution
-	fmt.Printf("\nToken Distribution:\n")
+	b.WriteString("\n" + theme.Header.Render("Token Distribution:") + "\n")
 	for _, dist := range s.Distribution {
 		bar := strings.Repeat("█", int(dist.Percentage/5))
-		fmt.Printf("  %-15s %3d files (%5.1f%%) %s\n",
+		barStyled := theme.Success.Render(bar)
+		line := fmt.Sprintf("  %-15s %3d files (%5.1f%%) %s",
 			dist.RangeLabel+":",
 			dist.FileCount,
 			dist.Percentage,
-			bar,
+			barStyled,
 		)
+		b.WriteString(line + "\n")
 	}
-	
+
 	// Summary statistics
-	fmt.Printf("\nAverage tokens per file: %s\n", FormatTokenCount(s.AvgTokens))
-	fmt.Printf("Median tokens per file: %s\n", FormatTokenCount(s.MedianTokens))
+	b.WriteString(fmt.Sprintf("\nAverage tokens per file: %s\n", theme.Highlight.Render(FormatTokenCount(s.AvgTokens))))
+	b.WriteString(fmt.Sprintf("Median tokens per file: %s\n", theme.Highlight.Render(FormatTokenCount(s.MedianTokens))))
+
+	return b.String()
+}
+
+// Print displays context statistics by printing the lipgloss-styled string output.
+func (s *ContextStats) Print(title string) {
+	// Get the styled string from String() and print it directly.
+	// This makes the CLI output for `cx stats` styled.
+	fmt.Println(s.String(title))
 }
