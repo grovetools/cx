@@ -48,7 +48,7 @@ func newPagerModel(startPage string) (*pagerModel, error) {
 
 	pages := []Page{
 		NewTreePage(state),
-		NewRepoPage(state),
+		NewRepoPageV2(state),
 		NewRulesPage(state),
 		NewStatsPage(state),
 		NewListPage(state),
