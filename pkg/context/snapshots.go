@@ -45,7 +45,7 @@ func (m *Manager) ListSnapshots() ([]SnapshotInfo, error) {
 		if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".desc") {
 			continue
 		}
-		
+
 		// Only process .rules files or files without extension (backward compatibility)
 		if !strings.HasSuffix(name, ".rules") && strings.Contains(name, ".") {
 			continue
@@ -68,7 +68,7 @@ func (m *Manager) getSnapshotInfo(name string) (SnapshotInfo, error) {
 	// Clean the display name
 	displayName := strings.TrimSuffix(name, ".rules")
 	info := SnapshotInfo{Name: displayName}
-	
+
 	// Get file info
 	snapshotPath := filepath.Join(m.workDir, SnapshotsDir, name)
 	stat, err := os.Stat(snapshotPath)
@@ -88,7 +88,7 @@ func (m *Manager) getSnapshotInfo(name string) (SnapshotInfo, error) {
 			info.TotalSize = 0
 		} else {
 			info.FileCount = len(files)
-			
+
 			// Calculate total tokens and size
 			for _, file := range files {
 				filePath := filepath.Join(m.workDir, file)
@@ -176,7 +176,7 @@ func PrintSnapshots(snapshots []SnapshotInfo) {
 
 	fmt.Println("Available snapshots:")
 	fmt.Println()
-	fmt.Printf("%-20s %-12s %-6s %-8s %-9s %s\n", 
+	fmt.Printf("%-20s %-12s %-6s %-8s %-9s %s\n",
 		"NAME", "DATE", "FILES", "TOKENS", "SIZE", "DESCRIPTION")
 	fmt.Println(strings.Repeat("-", 80))
 

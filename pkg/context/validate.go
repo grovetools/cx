@@ -23,14 +23,14 @@ func (m *Manager) ValidateContext(files []string) (*ValidationResult, error) {
 		TotalFiles: len(files),
 		Duplicates: make(map[string]int),
 	}
-	
+
 	if len(files) == 0 {
 		return result, nil
 	}
-	
+
 	// Track file occurrences
 	fileCount := make(map[string]int)
-	
+
 	for _, file := range files {
 		// Normalize path
 		absPath, err := filepath.Abs(file)
@@ -38,10 +38,10 @@ func (m *Manager) ValidateContext(files []string) (*ValidationResult, error) {
 			result.MissingFiles = append(result.MissingFiles, file)
 			continue
 		}
-		
+
 		// Count occurrences
 		fileCount[absPath]++
-		
+
 		// Check if file exists
 		info, err := os.Stat(absPath)
 		if err != nil {
@@ -55,13 +55,13 @@ func (m *Manager) ValidateContext(files []string) (*ValidationResult, error) {
 			}
 			continue
 		}
-		
+
 		// Check if it's a regular file
 		if info.IsDir() {
 			result.MissingFiles = append(result.MissingFiles, file+" (is a directory)")
 			continue
 		}
-		
+
 		// Check read permission
 		testFile, err := os.Open(absPath)
 		if err != nil {
@@ -73,10 +73,10 @@ func (m *Manager) ValidateContext(files []string) (*ValidationResult, error) {
 			continue
 		}
 		testFile.Close()
-		
+
 		result.AccessibleFiles++
 	}
-	
+
 	// Find duplicates
 	for path, count := range fileCount {
 		if count > 1 {
@@ -88,7 +88,7 @@ func (m *Manager) ValidateContext(files []string) (*ValidationResult, error) {
 			result.Duplicates[relPath] = count
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -96,7 +96,7 @@ func (m *Manager) ValidateContext(files []string) (*ValidationResult, error) {
 func (r *ValidationResult) Print() {
 	fmt.Println("Validating context files...")
 	fmt.Println()
-	
+
 	// Missing files
 	if len(r.MissingFiles) > 0 {
 		fmt.Printf("✗ Missing files (%d):\n", len(r.MissingFiles))
@@ -111,7 +111,7 @@ func (r *ValidationResult) Print() {
 		}
 		fmt.Println()
 	}
-	
+
 	// Permission issues
 	if len(r.PermissionIssues) > 0 {
 		fmt.Printf("✗ Permission denied (%d):\n", len(r.PermissionIssues))
@@ -120,7 +120,7 @@ func (r *ValidationResult) Print() {
 		}
 		fmt.Println()
 	}
-	
+
 	// Duplicates
 	if len(r.Duplicates) > 0 {
 		fmt.Printf("⚠ Duplicates found (%d):\n", len(r.Duplicates))
@@ -129,10 +129,10 @@ func (r *ValidationResult) Print() {
 		}
 		fmt.Println()
 	}
-	
+
 	// Summary
 	fmt.Printf("✓ Accessible files: %d/%d\n", r.AccessibleFiles, r.TotalFiles)
-	
+
 	// Total issues
 	totalIssues := len(r.MissingFiles) + len(r.Duplicates) + len(r.PermissionIssues)
 	if totalIssues > 0 {

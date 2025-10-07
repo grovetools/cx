@@ -14,10 +14,10 @@ import (
 
 // LanguageStats contains statistics for a programming language
 type LanguageStats struct {
-	Name       string  `json:"name"`
-	FileCount  int     `json:"file_count"`
-	TotalTokens int    `json:"total_tokens"`
-	Percentage float64 `json:"percentage"`
+	Name        string  `json:"name"`
+	FileCount   int     `json:"file_count"`
+	TotalTokens int     `json:"total_tokens"`
+	Percentage  float64 `json:"percentage"`
 }
 
 // FileStats contains statistics for a single file
@@ -59,140 +59,140 @@ func (m *Manager) GetStats(contextType string, files []string, topN int) (*Conte
 		TotalFiles:  len(files),
 		Languages:   make(map[string]*LanguageStats),
 	}
-	
+
 	var allFiles []FileStats
 	var tokenCounts []int
-	
+
 	// Collect file information
 	for _, file := range files {
 		info, err := os.Stat(file)
 		if err != nil {
 			continue
 		}
-		
+
 		// Calculate tokens (rough estimate)
 		tokens := int(info.Size() / 4)
 		tokenCounts = append(tokenCounts, tokens)
-		
+
 		fileInfo := FileStats{
 			Path:   file,
 			Tokens: tokens,
 			Size:   info.Size(),
 		}
-		
+
 		allFiles = append(allFiles, fileInfo)
 		stats.TotalTokens += tokens
 		stats.TotalSize += info.Size()
-		
+
 		// Determine language by extension
 		ext := strings.ToLower(filepath.Ext(file))
 		lang := getLanguageFromExt(ext)
-		
+
 		if _, exists := stats.Languages[lang]; !exists {
 			stats.Languages[lang] = &LanguageStats{Name: lang}
 		}
 		stats.Languages[lang].FileCount++
 		stats.Languages[lang].TotalTokens += tokens
 	}
-	
+
 	// Calculate percentages
 	for _, lang := range stats.Languages {
 		if stats.TotalTokens > 0 {
 			lang.Percentage = float64(lang.TotalTokens) * 100 / float64(stats.TotalTokens)
 		}
 	}
-	
+
 	// Sort files by token count and get top N
 	sort.Slice(allFiles, func(i, j int) bool {
 		return allFiles[i].Tokens > allFiles[j].Tokens
 	})
-	
+
 	limit := topN
 	if limit > len(allFiles) {
 		limit = len(allFiles)
 	}
 	stats.LargestFiles = allFiles[:limit]
-	
+
 	// Calculate percentages for largest files
 	for i := range stats.LargestFiles {
 		if stats.TotalTokens > 0 {
 			stats.LargestFiles[i].Percentage = float64(stats.LargestFiles[i].Tokens) * 100 / float64(stats.TotalTokens)
 		}
 	}
-	
+
 	// Calculate distribution
 	stats.Distribution = calculateDistribution(tokenCounts)
-	
+
 	// Calculate average and median
 	if len(tokenCounts) > 0 {
 		stats.AvgTokens = stats.TotalTokens / len(tokenCounts)
 		stats.MedianTokens = calculateMedian(tokenCounts)
 	}
-	
+
 	return stats, nil
 }
 
 // getLanguageFromExt returns the language name for a file extension
 func getLanguageFromExt(ext string) string {
 	langMap := map[string]string{
-		".go":   "Go",
-		".js":   "JavaScript",
-		".jsx":  "JavaScript",
-		".ts":   "TypeScript",
-		".tsx":  "TypeScript",
-		".py":   "Python",
-		".java": "Java",
-		".c":    "C",
-		".cpp":  "C++",
-		".cc":   "C++",
-		".h":    "C/C++",
-		".hpp":  "C++",
-		".rs":   "Rust",
-		".rb":   "Ruby",
-		".php":  "PHP",
-		".cs":   "C#",
-		".swift": "Swift",
-		".kt":   "Kotlin",
-		".scala": "Scala",
-		".r":    "R",
-		".m":    "Objective-C",
-		".mm":   "Objective-C++",
-		".sh":   "Shell",
-		".bash": "Shell",
-		".zsh":  "Shell",
-		".fish": "Shell",
-		".ps1":  "PowerShell",
-		".md":   "Markdown",
+		".go":       "Go",
+		".js":       "JavaScript",
+		".jsx":      "JavaScript",
+		".ts":       "TypeScript",
+		".tsx":      "TypeScript",
+		".py":       "Python",
+		".java":     "Java",
+		".c":        "C",
+		".cpp":      "C++",
+		".cc":       "C++",
+		".h":        "C/C++",
+		".hpp":      "C++",
+		".rs":       "Rust",
+		".rb":       "Ruby",
+		".php":      "PHP",
+		".cs":       "C#",
+		".swift":    "Swift",
+		".kt":       "Kotlin",
+		".scala":    "Scala",
+		".r":        "R",
+		".m":        "Objective-C",
+		".mm":       "Objective-C++",
+		".sh":       "Shell",
+		".bash":     "Shell",
+		".zsh":      "Shell",
+		".fish":     "Shell",
+		".ps1":      "PowerShell",
+		".md":       "Markdown",
 		".markdown": "Markdown",
-		".rst":  "reStructuredText",
-		".tex":  "LaTeX",
-		".yml":  "YAML",
-		".yaml": "YAML",
-		".json": "JSON",
-		".xml":  "XML",
-		".html": "HTML",
-		".htm":  "HTML",
-		".css":  "CSS",
-		".scss": "SCSS",
-		".sass": "Sass",
-		".less": "Less",
-		".sql":  "SQL",
-		".toml": "TOML",
-		".ini":  "INI",
-		".conf": "Config",
-		".cfg":  "Config",
-		".txt":  "Text",
-		"":      "Other",
+		".rst":      "reStructuredText",
+		".tex":      "LaTeX",
+		".yml":      "YAML",
+		".yaml":     "YAML",
+		".json":     "JSON",
+		".xml":      "XML",
+		".html":     "HTML",
+		".htm":      "HTML",
+		".css":      "CSS",
+		".scss":     "SCSS",
+		".sass":     "Sass",
+		".less":     "Less",
+		".sql":      "SQL",
+		".toml":     "TOML",
+		".ini":      "INI",
+		".conf":     "Config",
+		".cfg":      "Config",
+		".txt":      "Text",
+		"":          "Other",
 	}
-	
+
 	if lang, exists := langMap[ext]; exists {
 		return lang
 	}
-	
+
 	if ext == "" {
 		return "Other"
 	}
-	
+
 	return "Other (" + strings.TrimPrefix(ext, ".") + ")"
 }
 
@@ -208,9 +208,9 @@ func calculateDistribution(tokenCounts []int) []TokenDistribution {
 		{5000, 10000, "5k-10k tokens"},
 		{10000, math.MaxInt, "> 10k tokens"},
 	}
-	
+
 	distribution := make([]TokenDistribution, len(ranges))
-	
+
 	for i, r := range ranges {
 		distribution[i].RangeLabel = r.label
 		for _, count := range tokenCounts {
@@ -222,7 +222,7 @@ func calculateDistribution(tokenCounts []int) []TokenDistribution {
 			distribution[i].Percentage = float64(distribution[i].FileCount) * 100 / float64(len(tokenCounts))
 		}
 	}
-	
+
 	return distribution
 }
 
@@ -231,11 +231,11 @@ func calculateMedian(counts []int) int {
 	if len(counts) == 0 {
 		return 0
 	}
-	
+
 	sorted := make([]int, len(counts))
 	copy(sorted, counts)
 	sort.Ints(sorted)
-	
+
 	mid := len(sorted) / 2
 	if len(sorted)%2 == 0 {
 		return (sorted[mid-1] + sorted[mid]) / 2

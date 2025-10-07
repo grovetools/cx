@@ -150,10 +150,10 @@ func (r *AliasResolver) matchDouble(first, second string) (string, error) {
 	// NOT inside any worktree directory. Use WorktreeName == "" to verify this.
 	for _, p := range r.projects {
 		if p.ParentEcosystemPath != "" &&
-		   filepath.Base(p.ParentEcosystemPath) == first &&
-		   p.Name == second &&
-		   !p.IsWorktree &&
-		   p.WorktreeName == "" { // Ensures it's not inside a worktree directory
+			filepath.Base(p.ParentEcosystemPath) == first &&
+			p.Name == second &&
+			!p.IsWorktree &&
+			p.WorktreeName == "" { // Ensures it's not inside a worktree directory
 			return p.Path, nil
 		}
 	}

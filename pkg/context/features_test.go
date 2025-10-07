@@ -65,7 +65,7 @@ func TestManager_ValidateContext(t *testing.T) {
 
 	// Create test files
 	os.WriteFile("existing.go", []byte("package main"), 0644)
-	
+
 	// Create context with existing, missing, and duplicate files
 	os.WriteFile(FilesListFile, []byte("existing.go\nmissing.go\nexisting.go\n"), 0644)
 

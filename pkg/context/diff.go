@@ -36,7 +36,7 @@ func (m *Manager) DiffContext(snapshotName string) (*DiffResult, error) {
 	}
 
 	var compareFiles []string
-	
+
 	if snapshotName == "" || snapshotName == "empty" {
 		// Compare with empty context
 		compareFiles = []string{}
@@ -46,7 +46,7 @@ func (m *Manager) DiffContext(snapshotName string) (*DiffResult, error) {
 	} else {
 		// Compare with snapshot
 		snapshotsDir := filepath.Join(m.workDir, SnapshotsDir)
-		
+
 		// Try with .rules extension first
 		snapshotPath := filepath.Join(snapshotsDir, snapshotName+".rules")
 		if _, err := os.Stat(snapshotPath); err == nil {
@@ -79,7 +79,7 @@ func calculateDiff(currentFiles, compareFiles []string) *DiffResult {
 		CurrentFiles: make(map[string]FileInfo),
 		CompareFiles: make(map[string]FileInfo),
 	}
-	
+
 	// Build map of compare files
 	for _, file := range compareFiles {
 		info := getFileInfo(file)
@@ -87,47 +87,47 @@ func calculateDiff(currentFiles, compareFiles []string) *DiffResult {
 		result.CompareTotalTokens += info.Tokens
 		result.CompareTotalSize += info.Size
 	}
-	
+
 	// Build map of current files and find additions
 	for _, file := range currentFiles {
 		info := getFileInfo(file)
 		result.CurrentFiles[file] = info
 		result.CurrentTotalTokens += info.Tokens
 		result.CurrentTotalSize += info.Size
-		
+
 		if _, exists := result.CompareFiles[file]; !exists {
 			result.Added = append(result.Added, info)
 		}
 	}
-	
+
 	// Find removals
 	for file, info := range result.CompareFiles {
 		if _, exists := result.CurrentFiles[file]; !exists {
 			result.Removed = append(result.Removed, info)
 		}
 	}
-	
+
 	return result
 }
 
 // getFileInfo returns information about a file
 func getFileInfo(path string) FileInfo {
 	info := FileInfo{Path: path}
-	
+
 	// Get file size and estimate tokens
 	if stat, err := os.Stat(path); err == nil {
 		info.Size = stat.Size()
 		// Rough estimate: 4 characters per token
 		info.Tokens = int(info.Size / 4)
 	}
-	
+
 	return info
 }
 
 // PrintDiff displays the diff result in a formatted way
 func (d *DiffResult) Print(compareName string) {
 	fmt.Printf("Comparing current context with '%s':\n\n", compareName)
-	
+
 	// Show added files
 	if len(d.Added) > 0 {
 		fmt.Printf("Added files (%d):\n", len(d.Added))
@@ -139,7 +139,7 @@ func (d *DiffResult) Print(compareName string) {
 		}
 		fmt.Println()
 	}
-	
+
 	// Show removed files
 	if len(d.Removed) > 0 {
 		fmt.Printf("Removed files (%d):\n", len(d.Removed))
@@ -151,7 +151,7 @@ func (d *DiffResult) Print(compareName string) {
 		}
 		fmt.Println()
 	}
-	
+
 	// Show summary
 	fmt.Println("Summary:")
 	fileDiff := len(d.CurrentFiles) - len(d.CompareFiles)
@@ -159,9 +159,9 @@ func (d *DiffResult) Print(compareName string) {
 	if fileDiff > 0 {
 		fileSign = "+"
 	}
-	fmt.Printf("  Files: %d → %d (%s%d)\n", 
+	fmt.Printf("  Files: %d → %d (%s%d)\n",
 		len(d.CompareFiles), len(d.CurrentFiles), fileSign, fileDiff)
-	
+
 	tokenDiff := d.CurrentTotalTokens - d.CompareTotalTokens
 	tokenSign := ""
 	if tokenDiff > 0 {
@@ -172,7 +172,7 @@ func (d *DiffResult) Print(compareName string) {
 		FormatTokenCount(d.CurrentTotalTokens),
 		tokenSign,
 		FormatTokenCount(abs(tokenDiff)))
-	
+
 	sizeDiff := d.CurrentTotalSize - d.CompareTotalSize
 	sizeSign := ""
 	if sizeDiff > 0 {
@@ -190,19 +190,19 @@ func TruncatePath(path string, maxLen int) string {
 	if len(path) <= maxLen {
 		return path
 	}
-	
+
 	// Try to keep the most important parts
 	parts := strings.Split(path, string(filepath.Separator))
 	if len(parts) <= 2 {
 		return path[:maxLen-3] + "..."
 	}
-	
+
 	// Keep first and last parts
 	result := parts[0] + "/.../" + parts[len(parts)-1]
 	if len(result) > maxLen {
 		return "..." + path[len(path)-(maxLen-3):]
 	}
-	
+
 	return result
 }
 

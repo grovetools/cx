@@ -12,19 +12,19 @@ import (
 func TestManager_ExclusionPatterns(t *testing.T) {
 	// Create test directory structure
 	testDir := t.TempDir()
-	
+
 	// Create files in various locations including test directories
 	testFiles := map[string]string{
-		"main.go":                          "package main",
-		"cmd/app.go":                       "package cmd",
-		"cmd/app_test.go":                  "package cmd",
-		"tests/unit_test.go":               "package tests",
-		"tests/integration/api_test.go":    "package tests",
-		"pkg/util/helper.go":               "package util",
-		"pkg/tests/helper_test.go":         "package tests",
-		"internal/tests/fixtures/data.go":  "package fixtures",
+		"main.go":                         "package main",
+		"cmd/app.go":                      "package cmd",
+		"cmd/app_test.go":                 "package cmd",
+		"tests/unit_test.go":              "package tests",
+		"tests/integration/api_test.go":   "package tests",
+		"pkg/util/helper.go":              "package util",
+		"pkg/tests/helper_test.go":        "package tests",
+		"internal/tests/fixtures/data.go": "package fixtures",
 	}
-	
+
 	for relPath, content := range testFiles {
 		fullPath := filepath.Join(testDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -34,13 +34,13 @@ func TestManager_ExclusionPatterns(t *testing.T) {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
-	
+
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
 	if err := os.MkdirAll(groveDir, 0755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
-	
+
 	tests := []struct {
 		name     string
 		rules    string
@@ -91,7 +91,7 @@ func TestManager_ExclusionPatterns(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write rules file
@@ -99,25 +99,25 @@ func TestManager_ExclusionPatterns(t *testing.T) {
 			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
-			
+
 			// Create manager and resolve files
 			mgr := NewManager(testDir)
 			files, err := mgr.ResolveFilesFromRules()
 			if err != nil {
 				t.Fatalf("Failed to resolve files: %v", err)
 			}
-			
+
 			// Sort for consistent comparison
 			sort.Strings(files)
 			sort.Strings(tt.expected)
-			
+
 			// Compare results
 			if len(files) != len(tt.expected) {
 				t.Errorf("Expected %d files, got %d\nExpected: %v\nGot: %v",
 					len(tt.expected), len(files), tt.expected, files)
 				return
 			}
-			
+
 			for i, expected := range tt.expected {
 				if files[i] != expected {
 					t.Errorf("File mismatch at index %d: expected %s, got %s",
@@ -131,30 +131,30 @@ func TestManager_ExclusionPatterns(t *testing.T) {
 func TestManager_CrossDirectoryExclusions(t *testing.T) {
 	// This tests the specific case where we have patterns like ../other-project/**/*.go
 	// with exclusions that should apply to those external paths
-	
+
 	// Create two sibling directories
 	tempParent := t.TempDir()
 	projectDir := filepath.Join(tempParent, "main-project")
 	siblingDir := filepath.Join(tempParent, "sibling-project")
-	
+
 	// Create directories
 	for _, dir := range []string{projectDir, siblingDir} {
 		if err := os.MkdirAll(filepath.Join(dir, ".grove"), 0755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
 	}
-	
+
 	// Create files in sibling project
 	siblingFiles := map[string]string{
-		"main.go":                          "package main",
-		"cmd/app.go":                       "package cmd",
-		"tests/unit_test.go":               "package tests",
-		"tests/e2e/api_test.go":            "package e2e",
-		"pkg/core/logic.go":                "package core",
-		"pkg/core/logic_test.go":           "package core",
-		"internal/tests/fixtures/data.go":  "package fixtures",
+		"main.go":                         "package main",
+		"cmd/app.go":                      "package cmd",
+		"tests/unit_test.go":              "package tests",
+		"tests/e2e/api_test.go":           "package e2e",
+		"pkg/core/logic.go":               "package core",
+		"pkg/core/logic_test.go":          "package core",
+		"internal/tests/fixtures/data.go": "package fixtures",
 	}
-	
+
 	for relPath, content := range siblingFiles {
 		fullPath := filepath.Join(siblingDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -164,7 +164,7 @@ func TestManager_CrossDirectoryExclusions(t *testing.T) {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
-	
+
 	// Test cases
 	tests := []struct {
 		name     string
@@ -205,7 +205,7 @@ func TestManager_CrossDirectoryExclusions(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write rules file
@@ -213,18 +213,18 @@ func TestManager_CrossDirectoryExclusions(t *testing.T) {
 			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
-			
+
 			// Create manager and resolve files
 			mgr := NewManager(projectDir)
 			files, err := mgr.ResolveFilesFromRules()
 			if err != nil {
 				t.Fatalf("Failed to resolve files: %v", err)
 			}
-			
+
 			// Sort for consistent comparison
 			sort.Strings(files)
 			sort.Strings(tt.expected)
-			
+
 			// Compare results - need to handle both relative and absolute paths
 			if len(files) != len(tt.expected) {
 				t.Errorf("Expected %d files, got %d", len(tt.expected), len(files))
@@ -232,15 +232,15 @@ func TestManager_CrossDirectoryExclusions(t *testing.T) {
 				t.Errorf("Got: %v", files)
 				return
 			}
-			
+
 			// Check that all expected files are present (handling path differences)
 			found := make(map[string]bool)
 			for _, expected := range tt.expected {
 				for _, got := range files {
 					// Check various ways the paths might match
-					if got == expected || 
-					   strings.HasSuffix(got, expected) ||
-					   strings.HasSuffix(got, strings.TrimPrefix(expected, "../")) {
+					if got == expected ||
+						strings.HasSuffix(got, expected) ||
+						strings.HasSuffix(got, strings.TrimPrefix(expected, "../")) {
 						found[expected] = true
 						break
 					}
@@ -264,32 +264,32 @@ func TestMatchDoubleStarPattern(t *testing.T) {
 		{"**/*.go", "cmd/app.go", true},
 		{"**/*.go", "deep/nested/path/file.go", true},
 		{"**/*.go", "file.txt", false},
-		
+
 		// Patterns with prefix
 		{"src/**/*.go", "src/main.go", true},
 		{"src/**/*.go", "src/cmd/app.go", true},
 		{"src/**/*.go", "main.go", false},
 		{"src/**/*.go", "other/main.go", false},
-		
+
 		// Patterns with complex suffix
 		{"**/tests/*.go", "tests/unit.go", true},
 		{"**/tests/*.go", "src/tests/unit.go", true},
 		{"**/tests/*.go", "src/tests/e2e/api.go", false}, // Too deep
-		
+
 		// Special case: **/dir/** patterns
 		{"**/tests/**", "tests/unit.go", true},
 		{"**/tests/**", "src/tests/unit.go", true},
 		{"**/tests/**", "src/tests/e2e/api.go", true},
 		{"**/tests/**", "src/testing/api.go", false},
 		{"**/tests/**", "../project/tests/unit.go", true},
-		
+
 		// Edge cases
 		{"**", "anything", true},
 		{"**", "deep/nested/path", true},
 		{"**/", "dir/", true},
 		{"**.go", "file.go", false}, // Invalid pattern, falls back to literal match
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.pattern+"_"+tt.path, func(t *testing.T) {
 			got := matchDoubleStarPattern(tt.pattern, tt.path)
@@ -305,7 +305,7 @@ func TestMatchDoubleStarPattern(t *testing.T) {
 func TestManager_GitignoreCompatibility(t *testing.T) {
 	// Test that our patterns behave like gitignore
 	testDir := t.TempDir()
-	
+
 	// Create test structure
 	files := []string{
 		"main.go",
@@ -315,7 +315,7 @@ func TestManager_GitignoreCompatibility(t *testing.T) {
 		"testdata/sample.go",
 		"contest/solution.go",
 	}
-	
+
 	for _, relPath := range files {
 		fullPath := filepath.Join(testDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -325,13 +325,13 @@ func TestManager_GitignoreCompatibility(t *testing.T) {
 			t.Fatalf("Failed to write file: %v", err)
 		}
 	}
-	
+
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
 	if err := os.MkdirAll(groveDir, 0755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
-	
+
 	tests := []struct {
 		name     string
 		rules    string
@@ -379,7 +379,7 @@ func TestManager_GitignoreCompatibility(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write rules file
@@ -387,21 +387,21 @@ func TestManager_GitignoreCompatibility(t *testing.T) {
 			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
-			
+
 			// Create manager and resolve files
 			mgr := NewManager(testDir)
 			files, err := mgr.ResolveFilesFromRules()
 			if err != nil {
 				t.Fatalf("Failed to resolve files: %v", err)
 			}
-			
+
 			// Sort for comparison
 			sort.Strings(files)
 			sort.Strings(tt.expected)
-			
+
 			// Compare
 			if !slicesEqual(files, tt.expected) {
-				t.Errorf("Pattern %q: expected %v, got %v", 
+				t.Errorf("Pattern %q: expected %v, got %v",
 					strings.Split(tt.rules, "\n")[1], tt.expected, files)
 			}
 		})
@@ -433,7 +433,7 @@ func fsWriteString(t *testing.T, path, content string) {
 func TestManager_DefaultDirectiveResolution(t *testing.T) {
 	// Setup a multi-project test fixture
 	rootDir := t.TempDir()
-	
+
 	// Project A (main project)
 	projectA := filepath.Join(rootDir, "project-a")
 	os.MkdirAll(filepath.Join(projectA, ".grove"), 0755)
@@ -471,26 +471,26 @@ context:
 @default: ../../project-c`)
 
 	mgr := NewManager(projectA)
-	
+
 	// Debug: print project paths
 	t.Logf("Project A: %s", projectA)
 	t.Logf("Project B: %s", projectB)
 	t.Logf("Project C: %s", projectC)
-	
+
 	// Test Hot context resolution
 	hotFiles, err := mgr.ResolveFilesFromRules()
 	if err != nil {
 		t.Fatalf("ResolveFilesFromRules failed: %v", err)
 	}
 	sort.Strings(hotFiles)
-	
+
 	expectedHot := []string{
 		"a.go",
 		"../project-b/b.go",
 		"../project-b/b.txt", // from project-b, imported into hot context
 	}
 	sort.Strings(expectedHot)
-	
+
 	if !slicesEqual(hotFiles, expectedHot) {
 		t.Errorf("Hot context mismatch.\nExpected: %v\nGot:      %v", expectedHot, hotFiles)
 	}
@@ -522,74 +522,74 @@ func TestManager_ParseDirectives(t *testing.T) {
 	if err := os.MkdirAll(groveDir, 0755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
-	
+
 	tests := []struct {
-		name              string
-		rules             string
-		expectFreeze      bool
-		expectNoExpire    bool
+		name               string
+		rules              string
+		expectFreeze       bool
+		expectNoExpire     bool
 		expectDisableCache bool
-		expectExpireTime  time.Duration
-		expectError       bool
+		expectExpireTime   time.Duration
+		expectError        bool
 	}{
 		{
 			name: "no directives",
 			rules: `*.go
 pkg/**/*.go`,
-			expectFreeze:      false,
-			expectNoExpire:    false,
+			expectFreeze:       false,
+			expectNoExpire:     false,
 			expectDisableCache: false,
-			expectExpireTime:  0,
+			expectExpireTime:   0,
 		},
 		{
 			name: "only @freeze-cache",
 			rules: `@freeze-cache
 *.go
 pkg/**/*.go`,
-			expectFreeze:      true,
-			expectNoExpire:    false,
+			expectFreeze:       true,
+			expectNoExpire:     false,
 			expectDisableCache: false,
-			expectExpireTime:  0,
+			expectExpireTime:   0,
 		},
 		{
 			name: "only @no-expire",
 			rules: `@no-expire
 *.go
 pkg/**/*.go`,
-			expectFreeze:      false,
-			expectNoExpire:    true,
+			expectFreeze:       false,
+			expectNoExpire:     true,
 			expectDisableCache: false,
-			expectExpireTime:  0,
+			expectExpireTime:   0,
 		},
 		{
 			name: "only @expire-time with valid duration",
 			rules: `@expire-time 24h
 *.go
 pkg/**/*.go`,
-			expectFreeze:      false,
-			expectNoExpire:    false,
+			expectFreeze:       false,
+			expectNoExpire:     false,
 			expectDisableCache: false,
-			expectExpireTime:  24 * time.Hour,
+			expectExpireTime:   24 * time.Hour,
 		},
 		{
 			name: "multiple time formats",
 			rules: `@expire-time 1h30m
 *.go
 pkg/**/*.go`,
-			expectFreeze:      false,
-			expectNoExpire:    false,
+			expectFreeze:       false,
+			expectNoExpire:     false,
 			expectDisableCache: false,
-			expectExpireTime:  90 * time.Minute,
+			expectExpireTime:   90 * time.Minute,
 		},
 		{
 			name: "@expire-time with seconds",
 			rules: `@expire-time 300s
 *.go
 pkg/**/*.go`,
-			expectFreeze:      false,
-			expectNoExpire:    false,
+			expectFreeze:       false,
+			expectNoExpire:     false,
 			expectDisableCache: false,
-			expectExpireTime:  300 * time.Second,
+			expectExpireTime:   300 * time.Second,
 		},
 		{
 			name: "all directives combined",
@@ -598,10 +598,10 @@ pkg/**/*.go`,
 @expire-time 48h
 *.go
 pkg/**/*.go`,
-			expectFreeze:      true,
-			expectNoExpire:    true,
+			expectFreeze:       true,
+			expectNoExpire:     true,
 			expectDisableCache: false,
-			expectExpireTime:  48 * time.Hour,
+			expectExpireTime:   48 * time.Hour,
 		},
 		{
 			name: "directives with cold section",
@@ -611,10 +611,10 @@ pkg/**/*.go`,
 *.go
 ---
 pkg/**/*.go`,
-			expectFreeze:      true,
-			expectNoExpire:    true,
+			expectFreeze:       true,
+			expectNoExpire:     true,
 			expectDisableCache: false,
-			expectExpireTime:  12 * time.Hour,
+			expectExpireTime:   12 * time.Hour,
 		},
 		{
 			name: "@expire-time with invalid duration",
@@ -628,20 +628,20 @@ pkg/**/*.go`,
 			rules: `@expire-time
 *.go
 pkg/**/*.go`,
-			expectFreeze:      false,
-			expectNoExpire:    false,
+			expectFreeze:       false,
+			expectNoExpire:     false,
 			expectDisableCache: false,
-			expectExpireTime:  0,
+			expectExpireTime:   0,
 		},
 		{
 			name: "only @disable-cache",
 			rules: `@disable-cache
 *.go
 pkg/**/*.go`,
-			expectFreeze:      false,
-			expectNoExpire:    false,
+			expectFreeze:       false,
+			expectNoExpire:     false,
 			expectDisableCache: true,
-			expectExpireTime:  0,
+			expectExpireTime:   0,
 		},
 		{
 			name: "@disable-cache with other directives",
@@ -651,13 +651,13 @@ pkg/**/*.go`,
 @expire-time 6h
 *.go
 pkg/**/*.go`,
-			expectFreeze:      true,
-			expectNoExpire:    true,
+			expectFreeze:       true,
+			expectNoExpire:     true,
 			expectDisableCache: true,
-			expectExpireTime:  6 * time.Hour,
+			expectExpireTime:   6 * time.Hour,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write rules file
@@ -665,10 +665,10 @@ pkg/**/*.go`,
 			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
-			
+
 			// Create manager and check directives
 			mgr := NewManager(testDir)
-			
+
 			// Check if we expect an error
 			if tt.expectError {
 				_, err := mgr.GetExpireTime()
@@ -677,7 +677,7 @@ pkg/**/*.go`,
 				}
 				return
 			}
-			
+
 			freezeCache, err := mgr.ShouldFreezeCache()
 			if err != nil {
 				t.Fatalf("Failed to check freeze cache directive: %v", err)
@@ -685,7 +685,7 @@ pkg/**/*.go`,
 			if freezeCache != tt.expectFreeze {
 				t.Errorf("Expected ShouldFreezeCache to return %v, got %v", tt.expectFreeze, freezeCache)
 			}
-			
+
 			disableExpiration, err := mgr.ShouldDisableExpiration()
 			if err != nil {
 				t.Fatalf("Failed to check no-expire directive: %v", err)
@@ -693,7 +693,7 @@ pkg/**/*.go`,
 			if disableExpiration != tt.expectNoExpire {
 				t.Errorf("Expected ShouldDisableExpiration to return %v, got %v", tt.expectNoExpire, disableExpiration)
 			}
-			
+
 			disableCache, err := mgr.ShouldDisableCache()
 			if err != nil {
 				t.Fatalf("Failed to check disable-cache directive: %v", err)
@@ -701,7 +701,7 @@ pkg/**/*.go`,
 			if disableCache != tt.expectDisableCache {
 				t.Errorf("Expected ShouldDisableCache to return %v, got %v", tt.expectDisableCache, disableCache)
 			}
-			
+
 			expireTime, err := mgr.GetExpireTime()
 			if err != nil {
 				t.Fatalf("Failed to get expire time: %v", err)
@@ -716,7 +716,7 @@ pkg/**/*.go`,
 func TestManager_GenerateContextFromRulesFile(t *testing.T) {
 	// Create test directory structure
 	testDir := t.TempDir()
-	
+
 	// Create test files
 	testFiles := map[string]string{
 		"main.go":           "package main\n\nfunc main() {}",
@@ -724,7 +724,7 @@ func TestManager_GenerateContextFromRulesFile(t *testing.T) {
 		"lib/util.go":       "package lib\n\nfunc Util() {}",
 		"test/main_test.go": "package test\n\nfunc TestMain() {}",
 	}
-	
+
 	for relPath, content := range testFiles {
 		fullPath := filepath.Join(testDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -734,13 +734,13 @@ func TestManager_GenerateContextFromRulesFile(t *testing.T) {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
-	
+
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
 	if err := os.MkdirAll(groveDir, 0755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
-	
+
 	// Create external rules file
 	externalRulesPath := filepath.Join(testDir, "external-rules.txt")
 	externalRulesContent := `main.go
@@ -750,26 +750,26 @@ test/*.go`
 	if err := os.WriteFile(externalRulesPath, []byte(externalRulesContent), 0644); err != nil {
 		t.Fatalf("Failed to write external rules file: %v", err)
 	}
-	
+
 	// Create manager and generate context from external rules file
 	m := NewManager(testDir)
 	err := m.GenerateContextFromRulesFile(externalRulesPath, false)
 	if err != nil {
 		t.Fatalf("GenerateContextFromRulesFile failed: %v", err)
 	}
-	
+
 	// Verify hot context was generated
 	contextPath := filepath.Join(testDir, ContextFile)
 	if _, err := os.Stat(contextPath); os.IsNotExist(err) {
 		t.Fatal("Context file was not created")
 	}
-	
+
 	// Read and verify hot context content
 	contextContent, err := os.ReadFile(contextPath)
 	if err != nil {
 		t.Fatalf("Failed to read context file: %v", err)
 	}
-	
+
 	// Should contain main.go and lib files, but not test files
 	contextStr := string(contextContent)
 	if !strings.Contains(contextStr, "main.go") {
@@ -781,19 +781,19 @@ test/*.go`
 	if strings.Contains(contextStr, "test/main_test.go") {
 		t.Error("Hot context should not contain test/main_test.go (it's in cold context)")
 	}
-	
+
 	// Verify cold context was generated
 	cachedContextPath := filepath.Join(testDir, CachedContextFile)
 	if _, err := os.Stat(cachedContextPath); os.IsNotExist(err) {
 		t.Fatal("Cached context file was not created")
 	}
-	
+
 	// Read and verify cold context content
 	cachedContent, err := os.ReadFile(cachedContextPath)
 	if err != nil {
 		t.Fatalf("Failed to read cached context file: %v", err)
 	}
-	
+
 	// Should contain test files
 	cachedStr := string(cachedContent)
 	if !strings.Contains(cachedStr, "test/main_test.go") {
@@ -804,13 +804,13 @@ test/*.go`
 func TestManager_SetActiveRules(t *testing.T) {
 	// Create test directory
 	testDir := t.TempDir()
-	
+
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
 	if err := os.MkdirAll(groveDir, 0755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
-	
+
 	// Create source rules file
 	sourceRulesPath := filepath.Join(testDir, "source-rules.txt")
 	sourceRulesContent := `# Test rules
@@ -820,31 +820,31 @@ func TestManager_SetActiveRules(t *testing.T) {
 	if err := os.WriteFile(sourceRulesPath, []byte(sourceRulesContent), 0644); err != nil {
 		t.Fatalf("Failed to write source rules file: %v", err)
 	}
-	
+
 	// Create manager and set active rules
 	m := NewManager(testDir)
 	err := m.SetActiveRules(sourceRulesPath)
 	if err != nil {
 		t.Fatalf("SetActiveRules failed: %v", err)
 	}
-	
+
 	// Verify active rules file was created
 	activeRulesPath := filepath.Join(testDir, ActiveRulesFile)
 	if _, err := os.Stat(activeRulesPath); os.IsNotExist(err) {
 		t.Fatal("Active rules file was not created")
 	}
-	
+
 	// Verify content matches source
 	activeRulesContent, err := os.ReadFile(activeRulesPath)
 	if err != nil {
 		t.Fatalf("Failed to read active rules file: %v", err)
 	}
-	
+
 	if string(activeRulesContent) != sourceRulesContent {
-		t.Errorf("Active rules content doesn't match source.\nExpected:\n%s\nGot:\n%s", 
+		t.Errorf("Active rules content doesn't match source.\nExpected:\n%s\nGot:\n%s",
 			sourceRulesContent, string(activeRulesContent))
 	}
-	
+
 	// Test setting rules from non-existent file
 	err = m.SetActiveRules(filepath.Join(testDir, "non-existent.txt"))
 	if err == nil {

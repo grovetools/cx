@@ -67,7 +67,7 @@ func (m *Manager) UpdateFromGit(opts GitOptions) error {
 			// The .grove-worktrees is within our working directory, exclude it
 			continue
 		}
-		
+
 		// Check if file still exists (might have been deleted)
 		if _, err := os.Stat(file); err == nil {
 			fileList = append(fileList, file)
