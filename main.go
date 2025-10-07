@@ -1,15 +1,30 @@
 package main
 
 import (
+	"io"
 	"os"
 
 	"github.com/mattsolo1/grove-core/cli"
+	"github.com/mattsolo1/grove-core/logging"
 	// "github.com/mattsolo1/grove-core/tui"
 	"github.com/mattsolo1/grove-context/cmd"
 	"github.com/mattsolo1/grove-context/cmd/view"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
+	// Check if --json flag is present to suppress logging early
+	for _, arg := range os.Args {
+		if arg == "--json" {
+			// Suppress all logging output when JSON format is requested
+			logrus.StandardLogger().SetOutput(io.Discard)
+			// Also suppress the logging package's output
+			log := logging.NewLogger("cx")
+			log.Logger.SetOutput(io.Discard)
+			break
+		}
+	}
+
 	rootCmd := cli.NewStandardCommand(
 		"cx",
 		"LLM context management (formerly grove cx)",
@@ -35,6 +50,7 @@ func main() {
 	rootCmd.AddCommand(view.NewViewCmd())
 	rootCmd.AddCommand(cmd.NewVersionCmd())
 	rootCmd.AddCommand(cmd.NewRepoCmd())
+	rootCmd.AddCommand(cmd.NewWorkspaceCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

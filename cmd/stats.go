@@ -3,13 +3,16 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"sort"
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/cli"
 )
 
 var (
-	topN int
+	topN    int
+	perLine bool
 )
 
 func NewStatsCmd() *cobra.Command {
@@ -26,6 +29,11 @@ Examples:
   cx stats plans/my-plan/rules/job.rules  # Use custom rules file`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Handle --per-line flag
+			if perLine {
+				return outputPerLineStats(args)
+			}
+
 			opts := cli.GetOptions(cmd)
 			mgr := context.NewManager("")
 
@@ -111,6 +119,76 @@ Examples:
 	}
 	
 	cmd.Flags().IntVar(&topN, "top", 5, "Number of largest files to show")
-	
+	cmd.Flags().BoolVar(&perLine, "per-line", false, "Provide stats for each line in the rules file")
+
 	return cmd
+}
+
+// outputPerLineStats handles the --per-line flag logic
+func outputPerLineStats(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("a rules file path must be provided when using --per-line")
+	}
+	rulesFilePath := args[0]
+
+	rulesContent, err := os.ReadFile(rulesFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read rules file: %w", err)
+	}
+
+	mgr := context.NewManager(".")
+	attribution, rules, err := mgr.ResolveFilesWithAttribution(string(rulesContent))
+	if err != nil {
+		return fmt.Errorf("failed to analyze rules: %w", err)
+	}
+
+	type PerLineStat struct {
+		LineNumber    int      `json:"lineNumber"`
+		Rule          string   `json:"rule"`
+		FileCount     int      `json:"fileCount"`
+		TotalTokens   int      `json:"totalTokens"`
+		TotalSize     int64    `json:"totalSize"`
+		ResolvedPaths []string `json:"resolvedPaths"`
+	}
+
+	var results []PerLineStat
+	ruleMap := make(map[int]string)
+	for _, r := range rules {
+		ruleMap[r.LineNum] = r.Pattern
+		if r.IsExclude {
+			ruleMap[r.LineNum] = "!" + r.Pattern
+		}
+	}
+
+	for lineNum, files := range attribution {
+		var totalTokens int
+		var totalSize int64
+		for _, file := range files {
+			if info, err := os.Stat(file); err == nil {
+				totalSize += info.Size()
+				totalTokens += int(info.Size() / 4) // Rough estimate: 4 bytes per token
+			}
+		}
+
+		results = append(results, PerLineStat{
+			LineNumber:    lineNum,
+			Rule:          ruleMap[lineNum],
+			FileCount:     len(files),
+			TotalTokens:   totalTokens,
+			TotalSize:     totalSize,
+			ResolvedPaths: files,
+		})
+	}
+
+	// Sort results by line number for consistent output
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].LineNumber < results[j].LineNumber
+	})
+
+	jsonData, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal results to JSON: %w", err)
+	}
+	fmt.Println(string(jsonData))
+	return nil
 }
