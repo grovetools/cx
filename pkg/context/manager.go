@@ -43,8 +43,9 @@ const (
 
 // Manager handles context operations
 type Manager struct {
-	workDir string
+	workDir         string
 	gitIgnoredCache map[string]map[string]bool // Cache for gitignored files by repository root
+	aliasResolver   *AliasResolver              // Lazily initialized alias resolver
 }
 
 // NewManager creates a new context manager
@@ -53,14 +54,23 @@ func NewManager(workDir string) *Manager {
 		workDir, _ = os.Getwd()
 	}
 	return &Manager{
-		workDir: workDir,
+		workDir:         workDir,
 		gitIgnoredCache: make(map[string]map[string]bool),
+		aliasResolver:   nil, // Lazily initialized
 	}
 }
 
 // GetWorkDir returns the current working directory
 func (m *Manager) GetWorkDir() string {
 	return m.workDir
+}
+
+// getAliasResolver lazily initializes and returns the AliasResolver.
+func (m *Manager) getAliasResolver() *AliasResolver {
+	if m.aliasResolver == nil {
+		m.aliasResolver = NewAliasResolverWithWorkDir(m.workDir)
+	}
+	return m.aliasResolver
 }
 
 // LoadDefaultRulesContent loads only the default rules from grove.yml, ignoring any local rules files.
@@ -692,6 +702,9 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 		fmt.Fprintf(os.Stderr, "Warning: could not create repository manager: %v\n", repoErr)
 	}
 
+	// Initialize alias resolver for @alias: directives
+	resolver := m.getAliasResolver()
+
 	inColdSection := false
 	scanner := bufio.NewScanner(bytes.NewReader(rulesContent))
 	for scanner.Scan() {
@@ -720,9 +733,26 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			}
 			continue
 		}
-		if strings.HasPrefix(line, "@view:") {
-			path := strings.TrimSpace(strings.TrimPrefix(line, "@view:"))
+		// Support both @view: and @v: (short form)
+		if strings.HasPrefix(line, "@view:") || strings.HasPrefix(line, "@v:") {
+			// Normalize to @view: for processing
+			normalizedLine := line
+			if strings.HasPrefix(line, "@v:") {
+				normalizedLine = "@view:" + strings.TrimPrefix(line, "@v:")
+			}
+
+			path := strings.TrimSpace(strings.TrimPrefix(normalizedLine, "@view:"))
 			if path != "" {
+				// Resolve alias if present in @view: directive (supports @alias: and @a:)
+				if resolver != nil && (strings.Contains(path, "@alias:") || strings.Contains(path, "@a:")) {
+					resolvedLine, resolveErr := resolver.ResolveLine(normalizedLine)
+					if resolveErr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in @view line '%s': %v\n", line, resolveErr)
+						continue // Skip this line if alias resolution fails
+					}
+					// Extract the path from the resolved line (removing @view: prefix)
+					path = strings.TrimSpace(strings.TrimPrefix(resolvedLine, "@view:"))
+				}
 				viewPaths = append(viewPaths, path)
 			}
 			continue
@@ -743,13 +773,23 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			continue
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
-			// Process Git URLs
+			// Resolve alias if present (supports both @alias: and @a:), before further processing
 			processedLine := line
+			if resolver != nil && (strings.Contains(line, "@alias:") || strings.Contains(line, "@a:")) {
+				resolvedLine, resolveErr := resolver.ResolveLine(line)
+				if resolveErr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in line '%s': %v\n", line, resolveErr)
+					continue // Skip this line if alias resolution fails
+				}
+				processedLine = resolvedLine
+			}
+
+			// Process Git URLs
 			if repoManager != nil {
-				isExclude := strings.HasPrefix(line, "!")
-				cleanLine := line
+				isExclude := strings.HasPrefix(processedLine, "!")
+				cleanLine := processedLine
 				if isExclude {
-					cleanLine = strings.TrimPrefix(line, "!")
+					cleanLine = strings.TrimPrefix(processedLine, "!")
 				}
 				
 				if isGitURL, repoURL, version := m.parseGitRule(cleanLine); isGitURL {

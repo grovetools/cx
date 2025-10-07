@@ -19,6 +19,11 @@ func main() {
 		BasicContextGenerationScenario(),
 		MissingRulesScenario(),
 
+		// Alias Scenarios
+		AliasWorkflowScenario(),
+		AliasNamespacingScenario(),
+		AliasSiblingResolutionScenario(),
+
 		// Hybrid Context Scenarios
 		DualContextWorkflowScenario(),
 		NoSeparatorBackwardCompatibilityScenario(),
