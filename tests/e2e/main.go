@@ -26,7 +26,10 @@ func main() {
 		CachedContextOnlyColdFilesScenario(),
 
 		// TUI Scenarios
-		TUIViewScenario(),
+		TUIViewTreeScenario(), // Replaces the old generic TUIViewScenario
+		TUIViewStatsScenario(),
+		TUIViewRulesScenario(),
+		TUIViewListScenario(),
 
 		// Advanced Scenarios
 		StatsAndValidateScenario(),
@@ -43,7 +46,7 @@ func main() {
 
 		// Git Repository Scenarios
 		// GitRepositoryCloneScenario(),
-		
+
 		// Default Directive Scenarios
 		DefaultDirectiveBasicScenario(),
 		// DefaultDirectiveColdContextScenario(), // TODO: Fix cold context testing
@@ -67,4 +70,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-

@@ -102,7 +102,8 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stateRefreshedMsg:
 		*m.state = msg.state
-		return m, nil
+		// Refresh the active page's content with the new state
+		return m, m.pages[m.activePage].Focus()
 
 	case refreshStateMsg:
 		m.state.loading = true
