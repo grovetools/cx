@@ -104,8 +104,31 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
 		}
+		// The patterns from external project need to be prefixed with the project path
+		// so they resolve files from that project, not the current one
+		for i, pattern := range nestedHot {
+			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
+				nestedHot[i] = filepath.Join(projectPath, pattern)
+			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
+				nestedHot[i] = "!" + filepath.Join(projectPath, pattern[1:])
+			}
+		}
+		for i, pattern := range nestedCold {
+			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
+				nestedCold[i] = filepath.Join(projectPath, pattern)
+			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
+				nestedCold[i] = "!" + filepath.Join(projectPath, pattern[1:])
+			}
+		}
 		hotPatterns = append(hotPatterns, nestedHot...)
 		coldPatterns = append(coldPatterns, nestedCold...)
+
+		// Add view paths from nested rules, adjusting relative paths
+		for i, path := range nestedView {
+			if !filepath.IsAbs(path) {
+				nestedView[i] = filepath.Join(projectPath, path)
+			}
+		}
 		viewPaths = append(viewPaths, nestedView...)
 	}
 
@@ -131,9 +154,31 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
 		}
+		// The patterns from external project need to be prefixed with the project path
+		for i, pattern := range nestedHot {
+			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
+				nestedHot[i] = filepath.Join(projectPath, pattern)
+			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
+				nestedHot[i] = "!" + filepath.Join(projectPath, pattern[1:])
+			}
+		}
+		for i, pattern := range nestedCold {
+			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
+				nestedCold[i] = filepath.Join(projectPath, pattern)
+			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
+				nestedCold[i] = "!" + filepath.Join(projectPath, pattern[1:])
+			}
+		}
 		// For cold imports, add everything to cold patterns
 		coldPatterns = append(coldPatterns, nestedHot...)
 		coldPatterns = append(coldPatterns, nestedCold...)
+
+		// Add view paths from nested rules, adjusting relative paths
+		for i, path := range nestedView {
+			if !filepath.IsAbs(path) {
+				nestedView[i] = filepath.Join(projectPath, path)
+			}
+		}
 		viewPaths = append(viewPaths, nestedView...)
 	}
 

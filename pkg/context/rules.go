@@ -292,7 +292,7 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			if durationStr != "" {
 				parsedDuration, parseErr := time.ParseDuration(durationStr)
 				if parseErr != nil {
-					return nil, nil, nil, nil, nil, false, false, false, 0, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
+					return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
 				}
 				expireTime = parsedDuration
 			}

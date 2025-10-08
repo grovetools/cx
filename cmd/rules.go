@@ -7,11 +7,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/state"
 	"github.com/mattsolo1/grove-core/tui/components/help"
+	"github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
@@ -27,38 +26,26 @@ const (
 // --- TUI Model ---
 
 type ruleItem struct {
-	name string
-	path string
+	name   string
+	path   string
+	active bool
 }
 
-func (i ruleItem) Title() string       { return i.name }
-func (i ruleItem) Description() string { return i.path }
-func (i ruleItem) FilterValue() string { return i.name }
-
 type rulesPickerModel struct {
-	list          list.Model
+	items         []ruleItem
+	selectedIndex int
 	keys          pickerKeyMap
 	help          help.Model
-	activeSource  string
 	width, height int
 	err           error
 	quitting      bool
 }
 
 func newRulesPickerModel() *rulesPickerModel {
-	m := &rulesPickerModel{
+	return &rulesPickerModel{
 		keys: defaultPickerKeyMap,
 		help: help.New(defaultPickerKeyMap),
 	}
-
-	delegate := list.NewDefaultDelegate()
-	m.list = list.New([]list.Item{}, delegate, 0, 0)
-	m.list.Title = "Select an Active Rule Set"
-	m.list.SetShowStatusBar(false)
-	m.list.SetFilteringEnabled(false)
-	m.list.Styles.Title = core_theme.DefaultTheme.Header
-
-	return m
 }
 
 func (m *rulesPickerModel) Init() tea.Cmd {
@@ -69,7 +56,6 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.list.SetSize(msg.Width, msg.Height-4)
 		return m, nil
 
 	case rulesLoadedMsg:
@@ -77,19 +63,14 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, tea.Quit
 		}
-		m.activeSource = msg.activeSource
-
-		listItems := make([]list.Item, len(msg.items))
-		selectedIndex := 0
-		for i, item := range msg.items {
-			listItems[i] = item
-			if item.path == msg.activeSource {
-				selectedIndex = i
+		m.items = msg.items
+		// Set initial selection to the active rule
+		for i, item := range m.items {
+			if item.active {
+				m.selectedIndex = i
+				break
 			}
 		}
-
-		m.list.SetItems(listItems)
-		m.list.Select(selectedIndex)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -102,9 +83,17 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Select):
-			if i, ok := m.list.SelectedItem().(ruleItem); ok {
+			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
 				m.quitting = true
-				return m, setRuleCmd(i)
+				return m, setRuleCmd(m.items[m.selectedIndex])
+			}
+		case key.Matches(msg, m.keys.Up):
+			if m.selectedIndex > 0 {
+				m.selectedIndex--
+			}
+		case key.Matches(msg, m.keys.Down):
+			if m.selectedIndex < len(m.items)-1 {
+				m.selectedIndex++
 			}
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
@@ -112,9 +101,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
 func (m *rulesPickerModel) View() string {
@@ -125,46 +112,41 @@ func (m *rulesPickerModel) View() string {
 		return fmt.Sprintf("Error loading rule sets: %v\n", m.err)
 	}
 
-	mainContent := m.renderList()
-	helpContent := m.help.View()
-
-	return lipgloss.JoinVertical(lipgloss.Left, mainContent, helpContent)
-}
-
-func (m *rulesPickerModel) renderList() string {
-	listView := m.list.View()
-
-	if m.activeSource != "" {
-		lines := strings.Split(listView, "\n")
-		for i, line := range lines {
-			if i == 0 || strings.TrimSpace(line) == "" {
-				continue
-			}
-
-			for _, item := range m.list.Items() {
-				if rItem, ok := item.(ruleItem); ok {
-					if strings.Contains(line, rItem.name) && rItem.path == m.activeSource {
-						lines[i] = core_theme.DefaultTheme.Success.Render("✓ ") + line
-						break
-					} else if strings.Contains(line, rItem.name) {
-						lines[i] = "  " + line
-						break
-					}
-				}
-			}
+	// Build table data
+	var rows [][]string
+	for _, item := range m.items {
+		status := " "
+		if item.active {
+			status = "✓"
 		}
-		listView = strings.Join(lines, "\n")
+		rows = append(rows, []string{
+			status,
+			item.name,
+			item.path,
+		})
 	}
 
-	return listView
+	// Render header
+	header := core_theme.DefaultTheme.Header.Render("Select an Active Rule Set")
+
+	// Render table with selection
+	tableView := table.SelectableTable(
+		[]string{"", "Name", "Path"},
+		rows,
+		m.selectedIndex,
+	)
+
+	// Render help
+	helpContent := m.help.View()
+
+	return fmt.Sprintf("%s\n\n%s\n\n%s", header, tableView, helpContent)
 }
 
 // --- TUI Commands ---
 
 type rulesLoadedMsg struct {
-	items        []ruleItem
-	activeSource string
-	err          error
+	items []ruleItem
+	err   error
 }
 
 func loadRulesCmd() tea.Msg {
@@ -177,18 +159,20 @@ func loadRulesCmd() tea.Msg {
 		return rulesLoadedMsg{err: fmt.Errorf("reading %s directory: %w", rulesDir, err)}
 	}
 
+	activeSource, _ := state.GetString(stateSourceKey)
+
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), rulesExt) {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == rulesExt {
+			path := filepath.Join(rulesDir, entry.Name())
 			items = append(items, ruleItem{
-				name: strings.TrimSuffix(entry.Name(), rulesExt),
-				path: filepath.Join(rulesDir, entry.Name()),
+				name:   entry.Name()[:len(entry.Name())-len(rulesExt)],
+				path:   path,
+				active: path == activeSource,
 			})
 		}
 	}
 
-	activeSource, _ := state.GetString(stateSourceKey)
-
-	return rulesLoadedMsg{items: items, activeSource: activeSource, err: nil}
+	return rulesLoadedMsg{items: items, err: nil}
 }
 
 func setRuleCmd(item ruleItem) tea.Cmd {
