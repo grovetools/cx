@@ -547,8 +547,13 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			cleanPattern = strings.TrimPrefix(pattern, "!")
 		}
 
-		// Decode directive if present
-		basePattern, directive, query, _ := decodeDirective(cleanPattern)
+		// Try to parse plain text directive first (e.g., "pattern @find: \"query\"")
+		basePattern, directive, query, hasDirective := parseSearchDirective(cleanPattern)
+
+		// If no plain text directive, try encoded format (e.g., "pattern|||find|||query")
+		if !hasDirective {
+			basePattern, directive, query, _ = decodeDirective(cleanPattern)
+		}
 
 		patternInfos = append(patternInfos, patternInfo{
 			pattern:   basePattern,
@@ -754,10 +759,9 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			}
 			relPath = filepath.ToSlash(relPath)
 
-			// Check all patterns that match this file and collect their directives
-			// A file should be included if it passes ANY pattern's filter (OR logic)
-			passedAnyFilter := false
-			hasAnyDirective := false
+			// Collect matching patterns into two lists: with and without directives
+			var matchesWithDirective []patternInfo
+			var matchesWithoutDirective []patternInfo
 
 			for i, info := range patternInfos {
 				if info.isExclude {
@@ -772,28 +776,37 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 				// Check if this pattern matches the file
 				if m.matchPattern(patternToMatch, relPath) {
-					// If this pattern has a directive, check if the file passes it
 					if info.directive != "" {
-						hasAnyDirective = true
-						filtered, err := m.applyDirectiveFilter([]string{file}, info.directive, info.query)
-						if err != nil {
-							return nil, fmt.Errorf("error applying directive filter: %w", err)
-						}
-						if len(filtered) > 0 {
-							// File passed this directive filter
-							passedAnyFilter = true
-							break // No need to check more patterns, we found a match
-						}
+						matchesWithDirective = append(matchesWithDirective, info)
 					} else {
-						// Pattern has no directive, so file passes by default
-						passedAnyFilter = true
-						break
+						matchesWithoutDirective = append(matchesWithoutDirective, info)
 					}
 				}
 			}
 
-			// Include the file if it passed any filter (OR logic)
-			if passedAnyFilter || !hasAnyDirective {
+			// Apply filtering logic:
+			// - If any patterns with directives match, the file MUST pass at least one directive filter
+			// - If only patterns without directives match, include the file
+			shouldInclude := false
+
+			if len(matchesWithDirective) > 0 {
+				// File must pass at least one directive filter to be included
+				for _, info := range matchesWithDirective {
+					filtered, err := m.applyDirectiveFilter([]string{file}, info.directive, info.query)
+					if err != nil {
+						return nil, fmt.Errorf("error applying directive filter: %w", err)
+					}
+					if len(filtered) > 0 {
+						shouldInclude = true
+						break
+					}
+				}
+			} else if len(matchesWithoutDirective) > 0 {
+				// No directive patterns match, but non-directive patterns do
+				shouldInclude = true
+			}
+
+			if shouldInclude {
 				filteredFiles[file] = true
 			}
 		}

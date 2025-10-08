@@ -15,7 +15,7 @@ func NewGenerateCmd() *cobra.Command {
 		Short: "Generate .grove/context from .grove/context-files",
 		Long:  `Reads the .grove/context-files list and generates a concatenated .grove/context file with all specified files.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(".")
 			
 			prettyLog.InfoPretty("Generating context file...")
 			

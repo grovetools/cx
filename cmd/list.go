@@ -12,7 +12,7 @@ func NewListCmd() *cobra.Command {
 		Short: "List files in context",
 		Long:  `Lists the absolute paths of all files in the context.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(".")
 			files, err := mgr.ListFiles()
 			if err != nil {
 				return err
