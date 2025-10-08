@@ -16,9 +16,12 @@ type RuleInfo struct {
 // AttributionResult maps a line number to the list of files it includes.
 type AttributionResult map[int][]string
 
+// ExclusionResult maps a line number to the list of files it excluded.
+type ExclusionResult map[int][]string
+
 // ResolveFilesWithAttribution walks the filesystem once and attributes each included file
-// to the rule that was responsible for its inclusion.
-func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionResult, []RuleInfo, error) {
+// to the rule that was responsible for its inclusion. It also tracks exclusions.
+func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionResult, []RuleInfo, ExclusionResult, error) {
 	// Initialize alias resolver for @alias: directives
 	resolver := NewAliasResolver()
 
@@ -58,8 +61,21 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		lineNum++
 	}
 
-	// 2. Get all candidate files by resolving all patterns together.
-	// This leverages the existing resolveFilesFromPatterns which already handles .gitignore properly
+	// 2. Get all candidate files by first resolving only inclusion patterns
+	// to find all potentially included files
+	inclusionPatterns := []string{}
+	for _, rule := range rules {
+		if !rule.IsExclude {
+			inclusionPatterns = append(inclusionPatterns, rule.Pattern)
+		}
+	}
+
+	potentialFiles, err := m.resolveFilesFromPatterns(inclusionPatterns)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Also get the final file list with exclusions applied
 	allPatterns := []string{}
 	for _, rule := range rules {
 		if rule.IsExclude {
@@ -71,12 +87,13 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 	allFiles, err := m.resolveFilesFromPatterns(allPatterns)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	result := make(AttributionResult)
+	exclusions := make(ExclusionResult)
 
-	// 3. For each file, find the last matching rule.
+	// 3. For each included file, find the last matching rule (for attribution).
 	for _, file := range allFiles {
 		lastMatch := -1
 		isIncluded := false
@@ -103,7 +120,35 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		}
 	}
 
-	return result, rules, nil
+	// 5. For each potential file, determine if it was excluded and by which rule
+	for _, file := range potentialFiles {
+		// Get path relative to workDir for matching
+		relPath, err := filepath.Rel(m.workDir, file)
+		if err != nil {
+			relPath = file
+		}
+		relPath = filepath.ToSlash(relPath)
+
+		lastMatch := -1
+		wasExcluded := false
+
+		// Check if this file matches any rule
+		for _, rule := range rules {
+			match := m.matchPattern(rule.Pattern, relPath)
+
+			if match {
+				lastMatch = rule.LineNum
+				wasExcluded = rule.IsExclude
+			}
+		}
+
+		// If the last matching rule was an exclusion, track it
+		if wasExcluded && lastMatch != -1 {
+			exclusions[lastMatch] = append(exclusions[lastMatch], file)
+		}
+	}
+
+	return result, rules, exclusions, nil
 }
 
 // matchPattern matches a file path against a pattern using gitignore-style matching

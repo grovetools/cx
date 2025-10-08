@@ -183,15 +183,16 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 
 			path := strings.TrimSpace(strings.TrimPrefix(normalizedLine, "@view:"))
 			if path != "" {
-				// Resolve alias if present in @view: directive (supports @alias: and @a:)
-				if resolver != nil && (strings.Contains(path, "@alias:") || strings.Contains(path, "@a:")) {
-					resolvedLine, resolveErr := resolver.ResolveLine(normalizedLine)
+				// Check if the value itself is an alias directive (with or without spacing)
+				if resolver != nil && (strings.HasPrefix(path, "@alias:") || strings.HasPrefix(path, "@a:")) {
+					// The value of @view is an alias. Resolve it by calling ResolveLine on just the alias part
+					resolvedPath, resolveErr := resolver.ResolveLine(path)
 					if resolveErr != nil {
-						fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in @view line '%s': %v\n", line, resolveErr)
+						fmt.Fprintf(os.Stderr, "Warning: could not resolve chained alias in line '%s': %v\n", line, resolveErr)
 						continue // Skip this line if alias resolution fails
 					}
-					// Extract the path from the resolved line (removing @view: prefix)
-					path = strings.TrimSpace(strings.TrimPrefix(resolvedLine, "@view:"))
+					// Use the resolved path
+					path = strings.TrimSpace(resolvedPath)
 				}
 				viewPaths = append(viewPaths, path)
 			}

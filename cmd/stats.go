@@ -137,18 +137,20 @@ func outputPerLineStats(args []string) error {
 	}
 
 	mgr := context.NewManager(".")
-	attribution, rules, err := mgr.ResolveFilesWithAttribution(string(rulesContent))
+	attribution, rules, exclusions, err := mgr.ResolveFilesWithAttribution(string(rulesContent))
 	if err != nil {
 		return fmt.Errorf("failed to analyze rules: %w", err)
 	}
 
 	type PerLineStat struct {
-		LineNumber    int      `json:"lineNumber"`
-		Rule          string   `json:"rule"`
-		FileCount     int      `json:"fileCount"`
-		TotalTokens   int      `json:"totalTokens"`
-		TotalSize     int64    `json:"totalSize"`
-		ResolvedPaths []string `json:"resolvedPaths"`
+		LineNumber        int      `json:"lineNumber"`
+		Rule              string   `json:"rule"`
+		FileCount         int      `json:"fileCount"`
+		ExcludedFileCount int      `json:"excludedFileCount,omitempty"`
+		ExcludedTokens    int      `json:"excludedTokens,omitempty"`
+		TotalTokens       int      `json:"totalTokens"`
+		TotalSize         int64    `json:"totalSize"`
+		ResolvedPaths     []string `json:"resolvedPaths"`
 	}
 
 	var results []PerLineStat
@@ -170,14 +172,59 @@ func outputPerLineStats(args []string) error {
 			}
 		}
 
+		// Calculate excluded tokens for this line if any
+		var excludedTokens int
+		if excludedFiles, ok := exclusions[lineNum]; ok {
+			for _, file := range excludedFiles {
+				if info, err := os.Stat(file); err == nil {
+					excludedTokens += int(info.Size() / 4)
+				}
+			}
+		}
+
 		results = append(results, PerLineStat{
-			LineNumber:    lineNum,
-			Rule:          ruleMap[lineNum],
-			FileCount:     len(files),
-			TotalTokens:   totalTokens,
-			TotalSize:     totalSize,
-			ResolvedPaths: files,
+			LineNumber:        lineNum,
+			Rule:              ruleMap[lineNum],
+			FileCount:         len(files),
+			ExcludedFileCount: len(exclusions[lineNum]),
+			ExcludedTokens:    excludedTokens,
+			TotalTokens:       totalTokens,
+			TotalSize:         totalSize,
+			ResolvedPaths:     files,
 		})
+	}
+
+	// Add entries for exclusion rules that have exclusions but no inclusions
+	for lineNum, excludedFiles := range exclusions {
+		// Check if this line already has an entry in results
+		found := false
+		for i := range results {
+			if results[i].LineNumber == lineNum {
+				found = true
+				break
+			}
+		}
+
+		// If not found, add an entry for this exclusion rule
+		if !found && len(excludedFiles) > 0 {
+			var excludedTokens int
+			for _, file := range excludedFiles {
+				if info, err := os.Stat(file); err == nil {
+					excludedTokens += int(info.Size() / 4)
+				}
+			}
+
+			results = append(results, PerLineStat{
+				LineNumber:        lineNum,
+				Rule:              ruleMap[lineNum],
+				FileCount:         0,
+				ExcludedFileCount: len(excludedFiles),
+				ExcludedTokens:    excludedTokens,
+				TotalTokens:       0,
+				TotalSize:         0,
+				ResolvedPaths:     []string{},
+			})
+		}
 	}
 
 	// Sort results by line number for consistent output
