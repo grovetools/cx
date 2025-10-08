@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -364,6 +365,27 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			continue
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
+			// Check for command expressions first
+			if strings.HasPrefix(line, "@cmd:") {
+				cmdExpr := strings.TrimPrefix(line, "@cmd:")
+				cmdExpr = strings.TrimSpace(cmdExpr)
+
+				// Execute the command and get file paths
+				if cmdFiles, cmdErr := m.executeCommandExpression(cmdExpr); cmdErr == nil {
+					// Add each file from command output as a pattern
+					for _, file := range cmdFiles {
+						if inColdSection {
+							coldPatterns = append(coldPatterns, file)
+						} else {
+							mainPatterns = append(mainPatterns, file)
+						}
+					}
+				} else {
+					fmt.Fprintf(os.Stderr, "Warning: command expression failed: %s: %v\n", cmdExpr, cmdErr)
+				}
+				continue
+			}
+
 			// Handle Git aliases before workspace aliases.
 			// e.g., @a:git:owner/repo[@version]
 			isGitAlias := false
@@ -1013,4 +1035,47 @@ func cleanupRulesLines(lines []string) []string {
 	}
 
 	return lines
+}
+
+// executeCommandExpression executes a shell command and returns the file paths from its output
+func (m *Manager) executeCommandExpression(cmdExpr string) ([]string, error) {
+	// Execute the command using shell
+	cmd := exec.Command("sh", "-c", cmdExpr)
+	cmd.Dir = m.workDir
+
+	// Capture output
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("command failed: %w", err)
+	}
+
+	// Parse output into file paths
+	var files []string
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			// Make absolute path if relative
+			absPath := line
+			if !filepath.IsAbs(line) {
+				absPath = filepath.Join(m.workDir, line)
+			}
+			absPath = filepath.Clean(absPath)
+
+			// Check if file exists
+			if info, err := os.Stat(absPath); err == nil && !info.IsDir() {
+				// Get relative path from workDir if possible
+				relPath, err := filepath.Rel(m.workDir, absPath)
+				if err == nil && !strings.HasPrefix(relPath, "..") {
+					// File is within workDir, use relative path
+					files = append(files, relPath)
+				} else {
+					// File is outside workDir, use absolute path
+					files = append(files, absPath)
+				}
+			}
+		}
+	}
+
+	return files, nil
 }

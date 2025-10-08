@@ -47,6 +47,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewFixCmd())
 	rootCmd.AddCommand(cmd.NewStatsCmd())
 	rootCmd.AddCommand(cmd.NewFromGitCmd())
+	rootCmd.AddCommand(cmd.NewFromCmdCmd())
 	rootCmd.AddCommand(view.NewViewCmd())
 	rootCmd.AddCommand(cmd.NewVersionCmd())
 	rootCmd.AddCommand(cmd.NewRepoCmd())

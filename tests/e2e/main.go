@@ -59,6 +59,12 @@ func main() {
 		GitAliasWithGlobPatternsScenario(),
 		GitAliasStatsPerLineScenario(),
 
+		// Command-based Context Scenarios
+		FromCmdScenario(),
+		FromCmdPipelineScenario(),
+		CommandExpressionInRulesScenario(),
+		CommandExpressionAbsolutePathsScenario(),
+
 		// Default Directive Scenarios
 		DefaultDirectiveBasicScenario(),
 		// DefaultDirectiveColdContextScenario(), // TODO: Fix cold context testing

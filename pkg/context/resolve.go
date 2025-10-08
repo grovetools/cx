@@ -570,6 +570,33 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			continue
 		}
 
+		// Check if this is an exact file path (no globs) that exists
+		// This handles files returned by @cmd: directives
+		if !strings.ContainsAny(cleanPattern, "*?[]") {
+			// It's an exact path, check if it exists
+			filePath := cleanPattern
+			if !filepath.IsAbs(filePath) {
+				filePath = filepath.Join(m.workDir, filePath)
+			}
+			filePath = filepath.Clean(filePath)
+
+			if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+				// It's an existing file, add it directly
+				if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
+					uniqueFiles[filePath] = true
+				} else {
+					// Use relative path from workDir
+					relPath, err := filepath.Rel(m.workDir, filePath)
+					if err == nil {
+						uniqueFiles[relPath] = true
+					} else {
+						uniqueFiles[filePath] = true
+					}
+				}
+				continue
+			}
+		}
+
 		// Check if this is an absolute path or a relative path that goes outside current directory
 		if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
 			// For absolute paths and relative paths going up, we'll walk them separately
