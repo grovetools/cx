@@ -51,6 +51,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewVersionCmd())
 	rootCmd.AddCommand(cmd.NewRepoCmd())
 	rootCmd.AddCommand(cmd.NewWorkspaceCmd())
+	rootCmd.AddCommand(cmd.NewResolveCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

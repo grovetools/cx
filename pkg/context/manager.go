@@ -54,6 +54,23 @@ func (m *Manager) getAliasResolver() *AliasResolver {
 	return m.aliasResolver
 }
 
+// ResolveLineForRulePreview resolves a single rule line, handling aliases.
+// It is intended for use by tools like the Neovim plugin's rule previewer.
+func (m *Manager) ResolveLineForRulePreview(line string) (string, error) {
+	resolver := m.getAliasResolver()
+	if resolver != nil && (strings.Contains(line, "@alias:") || strings.Contains(line, "@a:")) {
+		return resolver.ResolveLine(line)
+	}
+	// If not an alias line, return the original line.
+	return line, nil
+}
+
+// ResolveFilesFromPatterns exposes the internal file resolution logic for external use.
+// It resolves files from a given set of patterns.
+func (m *Manager) ResolveFilesFromPatterns(patterns []string) ([]string, error) {
+	return m.resolveFilesFromPatterns(patterns)
+}
+
 // ReadFilesList reads the list of files from a file
 func (m *Manager) ReadFilesList(filename string) ([]string, error) {
 	// Ensure we use the full path relative to workDir
