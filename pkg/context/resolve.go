@@ -774,8 +774,22 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 					continue
 				}
 
+				// Convert pattern to same format (relative/absolute) as file path for matching
+				// If the pattern is absolute but we're matching against a relative path, convert it
+				patternForMatching := patternToMatch
+				if filepath.IsAbs(patternToMatch) && !filepath.IsAbs(file) {
+					// Pattern is absolute, file is relative - convert pattern to relative
+					if rp, err := filepath.Rel(m.workDir, patternToMatch); err == nil {
+						patternForMatching = filepath.ToSlash(rp)
+					}
+				} else if filepath.IsAbs(patternToMatch) && filepath.IsAbs(file) {
+					// Both absolute - use absolute file path for matching
+					patternForMatching = filepath.ToSlash(patternToMatch)
+					relPath = filepath.ToSlash(file)
+				}
+
 				// Check if this pattern matches the file
-				if m.matchPattern(patternToMatch, relPath) {
+				if m.matchPattern(patternForMatching, relPath) {
 					if info.directive != "" {
 						matchesWithDirective = append(matchesWithDirective, info)
 					} else {
@@ -787,10 +801,11 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			// Apply filtering logic:
 			// - If any patterns with directives match, the file MUST pass at least one directive filter
 			// - If only patterns without directives match, include the file
+			// - If both match, directive patterns take precedence (file must pass a directive)
 			shouldInclude := false
 
 			if len(matchesWithDirective) > 0 {
-				// File must pass at least one directive filter to be included
+				// File matched patterns with directives - it MUST pass at least one directive filter
 				for _, info := range matchesWithDirective {
 					filtered, err := m.applyDirectiveFilter([]string{file}, info.directive, info.query)
 					if err != nil {
@@ -801,8 +816,10 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 						break
 					}
 				}
+				// Note: if the file fails ALL directive filters, shouldInclude stays false
+				// even if matchesWithoutDirective is not empty
 			} else if len(matchesWithoutDirective) > 0 {
-				// No directive patterns match, but non-directive patterns do
+				// No directive patterns match, but non-directive patterns do - include the file
 				shouldInclude = true
 			}
 

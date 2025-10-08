@@ -23,6 +23,7 @@ func main() {
 		AliasWorkflowScenario(),
 		AliasNamespacingScenario(),
 		AliasSiblingResolutionScenario(),
+		AliasWithStatsPerLineScenario(),
 
 		// Hybrid Context Scenarios
 		DualContextWorkflowScenario(),
@@ -65,6 +66,7 @@ func main() {
 		// Search Directive Scenarios
 		FindDirectiveScenario(),
 		GrepDirectiveScenario(),
+		AliasWithDirectiveScenario(),
 		CombinedDirectivesScenario(),
 	}
 

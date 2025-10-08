@@ -179,6 +179,107 @@ func GrepDirectiveScenario() *harness.Scenario {
 	}
 }
 
+// AliasWithDirectiveScenario tests combining aliases with search directives
+func AliasWithDirectiveScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-alias-with-directive",
+		Description: "Tests combining @alias with @grep directive to filter aliased files",
+		Tags:        []string{"cx", "search-directives", "alias"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup ecosystem with library project", func(ctx *harness.Context) error {
+				// Create groves directory inside test root for isolation
+				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
+				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
+				groveConfigDir := filepath.Join(testConfigHome, "grove")
+				ctx.Set("testConfigHome", testConfigHome)
+
+				// Create global grove.yml
+				groveConfig := fmt.Sprintf(`groves:
+  test:
+    path: %s
+    enabled: true
+`, grovesDir)
+				if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig); err != nil {
+					return err
+				}
+
+				// Create library project with multiple files
+				libAlphaDir := filepath.Join(grovesDir, "lib-alpha")
+
+				// File containing "UserManager"
+				if err := fs.WriteString(filepath.Join(libAlphaDir, "user_manager.go"), "package alpha\n\ntype UserManager struct {\n\tID int\n}"); err != nil {
+					return err
+				}
+
+				// File NOT containing "UserManager"
+				if err := fs.WriteString(filepath.Join(libAlphaDir, "other_file.go"), "package alpha\n\ntype OtherStruct struct {\n\tName string\n}"); err != nil {
+					return err
+				}
+
+				// Another file containing "UserManager"
+				if err := fs.WriteString(filepath.Join(libAlphaDir, "user_api.go"), "package alpha\n\nimport \"lib/managers\"\n\nfunc GetUser() *managers.UserManager {\n\treturn nil\n}"); err != nil {
+					return err
+				}
+
+				if err := fs.WriteString(filepath.Join(libAlphaDir, "grove.yml"), `name: lib-alpha`); err != nil {
+					return err
+				}
+
+				// Initialize as git repo
+				if result := command.New("git", "init").Dir(libAlphaDir).Run(); result.Error != nil {
+					return fmt.Errorf("failed to init git in lib-alpha: %w", result.Error)
+				}
+
+				// Create main project
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), `name: test-main`); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with alias and grep directive", func(ctx *harness.Context) error {
+				// Combine alias with grep directive - need to include a glob pattern with the alias
+				rulesContent := `@alias:lib-alpha/**/*.go @grep: "UserManager"`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify only files containing UserManager are included", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				testConfigHome := ctx.Get("testConfigHome").(string)
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// Verify files with UserManager in content are included
+				if !strings.Contains(output, "user_manager.go") {
+					return fmt.Errorf("output should contain user_manager.go")
+				}
+				if !strings.Contains(output, "user_api.go") {
+					return fmt.Errorf("output should contain user_api.go")
+				}
+
+				// Verify file without UserManager is NOT included
+				if strings.Contains(output, "other_file.go") {
+					return fmt.Errorf("output should not contain other_file.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
 // CombinedDirectivesScenario tests combining both directives with regular patterns
 func CombinedDirectivesScenario() *harness.Scenario {
 	return &harness.Scenario{

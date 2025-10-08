@@ -34,7 +34,7 @@ type FilteredResult map[int][]FilteredFileInfo
 // to the rule that was responsible for its inclusion. It also tracks exclusions and filtered matches.
 func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionResult, []RuleInfo, ExclusionResult, FilteredResult, error) {
 	// Initialize alias resolver for @alias: directives
-	resolver := NewAliasResolver()
+	resolver := m.getAliasResolver()
 
 	// 1. Parse rules content into a structured list with line numbers.
 	// Resolve @alias: directives as we parse
@@ -63,6 +63,14 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 						// Has directive, insert /** before it
 						directivePart := strings.TrimPrefix(line, baseForCheck)
 						line = baseForCheck + "/**" + directivePart
+					}
+				}
+				// Convert absolute path to relative path for pattern matching
+				// The resolved alias gives us an absolute path, but we need it relative to workDir
+				if filepath.IsAbs(line) {
+					relLine, err := filepath.Rel(m.workDir, line)
+					if err == nil {
+						line = filepath.ToSlash(relLine)
 					}
 				}
 			}

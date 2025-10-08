@@ -399,6 +399,91 @@ workspaces:
 	}
 }
 
+// AliasWithStatsPerLineScenario tests that `cx stats --per-line` works with aliases.
+func AliasWithStatsPerLineScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-alias-stats-per-line",
+		Description: "Tests that `cx stats --per-line` correctly handles alias rules.",
+		Tags:        []string{"cx", "alias", "stats", "regression"},
+		Steps: []harness.Step{
+			// This step is identical to the setup in AliasWorkflowScenario
+			harness.NewStep("Setup multi-project environment", func(ctx *harness.Context) error {
+				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
+				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
+				groveConfigDir := filepath.Join(testConfigHome, "grove")
+				ctx.Set("testConfigHome", testConfigHome)
+
+				groveConfig := fmt.Sprintf(`groves:
+  test:
+    path: %s
+    enabled: true
+`, grovesDir)
+				if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig); err != nil {
+					return err
+				}
+
+				libAlphaDir := filepath.Join(grovesDir, "lib-alpha")
+				if err := fs.WriteString(filepath.Join(libAlphaDir, "alpha.go"), "package alpha"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(libAlphaDir, "feature.go"), "package alpha"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(libAlphaDir, "grove.yml"), `name: lib-alpha`); err != nil {
+					return err
+				}
+				if result := command.New("git", "init").Dir(libAlphaDir).Run(); result.Error != nil {
+					return fmt.Errorf("failed to init git in lib-alpha: %w", result.Error)
+				}
+
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), `name: test-main`); err != nil {
+					return err
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules file using an alias", func(ctx *harness.Context) error {
+				rules := `@a:lib-alpha/**/*.go`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx stats --per-line' and verify output", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				testConfigHome := ctx.Get("testConfigHome").(string)
+				cmd := command.New(cx, "stats", "--per-line", ".grove/rules").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+				// This is the core of the test. The bug causes this to be "null".
+				if strings.TrimSpace(output) == "null" {
+					return fmt.Errorf("expected a JSON array, but got null. This indicates the alias rule was not processed.")
+				}
+
+				if !strings.Contains(output, `"lineNumber": 1`) {
+					return fmt.Errorf("expected stats for lineNumber 1")
+				}
+				if !strings.Contains(output, `"rule": "@a:lib-alpha/**/*.go"`) {
+					return fmt.Errorf("expected rule to be the original alias string")
+				}
+				if !strings.Contains(output, `"fileCount": 2`) {
+					return fmt.Errorf("expected fileCount to be 2 for the two .go files in lib-alpha")
+				}
+				if !strings.Contains(output, `"totalTokens"`) {
+					return fmt.Errorf("expected totalTokens field in output")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
 // AliasWorkflowScenario tests the full lifecycle of using aliases in rules files.
 func AliasWorkflowScenario() *harness.Scenario {
 	return &harness.Scenario{

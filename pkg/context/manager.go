@@ -34,6 +34,11 @@ func NewManager(workDir string) *Manager {
 	if workDir == "" {
 		workDir, _ = os.Getwd()
 	}
+	// Always ensure workDir is an absolute path
+	absWorkDir, err := filepath.Abs(workDir)
+	if err == nil {
+		workDir = absWorkDir
+	}
 	return &Manager{
 		workDir:         workDir,
 		gitIgnoredCache: make(map[string]map[string]bool),
