@@ -143,9 +143,9 @@ func (r *AliasResolver) matchSingle(name string) (string, error) {
 	return "", fmt.Errorf("alias not found: '%s'", name)
 }
 
-// matchDouble finds a project by ecosystem:repo or repo:worktree.
+// matchDouble finds a project by ecosystem:repo, ecosystem-worktree:repo, or repo:worktree.
 func (r *AliasResolver) matchDouble(first, second string) (string, error) {
-	// Try ecosystem:repo match
+	// Try ecosystem:repo match (top-level repos in ecosystem)
 	// For a valid ecosystem:repo match, the project must be a direct child of the ecosystem,
 	// NOT inside any worktree directory. Use WorktreeName == "" to verify this.
 	for _, p := range r.projects {
@@ -158,7 +158,18 @@ func (r *AliasResolver) matchDouble(first, second string) (string, error) {
 		}
 	}
 
-	// Try repo:worktree match
+	// Try ecosystem-worktree:repo match (repos in ecosystem worktree)
+	// Match projects where WorktreeName matches first part and Name matches second part
+	for _, p := range r.projects {
+		if p.WorktreeName == first &&
+			p.Name == second &&
+			!p.IsWorktree &&
+			!p.IsEcosystem {
+			return p.Path, nil
+		}
+	}
+
+	// Try repo:worktree match (worktrees of a repo)
 	for _, p := range r.projects {
 		if p.IsWorktree && p.ParentPath != "" && filepath.Base(p.ParentPath) == first && p.Name == second {
 			return p.Path, nil
