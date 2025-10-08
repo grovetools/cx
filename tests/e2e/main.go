@@ -24,6 +24,7 @@ func main() {
 		AliasNamespacingScenario(),
 		AliasSiblingResolutionScenario(),
 		AliasWithStatsPerLineScenario(),
+		AliasRulesetImportScenario(),
 
 		// Hybrid Context Scenarios
 		DualContextWorkflowScenario(),

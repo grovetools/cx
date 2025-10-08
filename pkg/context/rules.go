@@ -252,9 +252,9 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 }
 
 // parseRulesFile parses the rules file content and extracts patterns, directives, and default paths
-func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
+func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, mainImportedRuleSets, coldImportedRuleSets, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
 	if len(rulesContent) == 0 {
-		return nil, nil, nil, nil, nil, false, false, false, 0, nil
+		return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, nil
 	}
 
 	// Create repo manager for processing Git URLs
@@ -365,7 +365,41 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			continue
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
-			// Check for command expressions first
+			// Check for ruleset imports first (using :: delimiter)
+			// Format: @alias:project-name::ruleset-name or @a:project-name::ruleset-name
+			isRuleSetAlias := false
+			if strings.HasPrefix(line, "@alias:") || strings.HasPrefix(line, "@a:") {
+				// Extract the alias part
+				aliasPart := line
+				if strings.HasPrefix(aliasPart, "@alias:") {
+					aliasPart = strings.TrimPrefix(aliasPart, "@alias:")
+				} else {
+					aliasPart = strings.TrimPrefix(aliasPart, "@a:")
+				}
+
+				// Check for '::' to identify a ruleset import
+				if strings.Contains(aliasPart, "::") {
+					isRuleSetAlias = true
+					// Split by '::' and then rejoin with a single ':' for the resolver,
+					// which expects the "project:ruleset" format.
+					parts := strings.SplitN(aliasPart, "::", 2)
+					if len(parts) == 2 {
+						importIdentifier := strings.Join(parts, ":")
+
+						if inColdSection {
+							coldImportedRuleSets = append(coldImportedRuleSets, importIdentifier)
+						} else {
+							mainImportedRuleSets = append(mainImportedRuleSets, importIdentifier)
+						}
+					}
+				}
+			}
+
+			if isRuleSetAlias {
+				continue // Skip further processing for this line
+			}
+
+			// Check for command expressions
 			if strings.HasPrefix(line, "@cmd:") {
 				cmdExpr := strings.TrimPrefix(line, "@cmd:")
 				cmdExpr = strings.TrimSpace(cmdExpr)
@@ -518,9 +552,9 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, nil, nil, nil, nil, false, false, false, 0, err
+		return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, err
 	}
-	return mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, viewPaths, freezeCache, disableExpiration, disableCache, expireTime, nil
+	return mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, mainImportedRuleSets, coldImportedRuleSets, viewPaths, freezeCache, disableExpiration, disableCache, expireTime, nil
 }
 
 // findActiveRulesFile returns the path to the active rules file if it exists
@@ -549,7 +583,7 @@ func (m *Manager) ShouldFreezeCache() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, _, freezeCache, _, _, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, _, freezeCache, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -566,7 +600,7 @@ func (m *Manager) ShouldDisableExpiration() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, _, _, disableExpiration, _, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, _, _, disableExpiration, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
@@ -584,7 +618,7 @@ func (m *Manager) GetExpireTime() (time.Duration, error) {
 	if rulesContent == nil {
 		return 0, nil
 	}
-	_, _, _, _, _, _, _, _, expireTime, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, _, _, _, _, expireTime, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return 0, fmt.Errorf("error parsing rules file for expire time: %w", err)
 	}
@@ -601,7 +635,7 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, _, _, _, disableCache, _, err := m.parseRulesFile(rulesContent)
+	_, _, _, _, _, _, _, _, _, disableCache, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}

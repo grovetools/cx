@@ -15,7 +15,7 @@ import (
 func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, error) {
 	// Parse the rules content directly without recursion for this case
 	// This is used by commands that provide rules content directly (not from a file)
-	mainPatterns, coldPatterns, _, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	mainPatterns, coldPatterns, _, _, _, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules content: %w", err)
 	}
@@ -71,7 +71,7 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 		return nil, nil, nil, fmt.Errorf("reading rules file %s: %w", absRulesPath, err)
 	}
 
-	localHot, localCold, mainDefaults, coldDefaults, localView, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	localHot, localCold, mainDefaults, coldDefaults, mainImports, coldImports, localView, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
 	}
@@ -81,6 +81,61 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 	viewPaths = append(viewPaths, localView...)
 
 	rulesDir := filepath.Dir(absRulesPath)
+
+	// Process hot rule set imports
+	for _, importIdentifier := range mainImports {
+		parts := strings.SplitN(importIdentifier, ":", 2)
+		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importIdentifier)
+			continue
+		}
+		projectAlias, rulesetName := parts[0], parts[1]
+
+		projectPath, resolveErr := m.getAliasResolver().Resolve(projectAlias)
+		if resolveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve project alias '%s' for rule import: %v\n", projectAlias, resolveErr)
+			continue
+		}
+
+		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
+
+		nestedHot, nestedCold, nestedView, err := m.resolveAllPatterns(rulesFilePath, visited)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
+			continue
+		}
+		hotPatterns = append(hotPatterns, nestedHot...)
+		coldPatterns = append(coldPatterns, nestedCold...)
+		viewPaths = append(viewPaths, nestedView...)
+	}
+
+	// Process cold rule set imports
+	for _, importIdentifier := range coldImports {
+		parts := strings.SplitN(importIdentifier, ":", 2)
+		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importIdentifier)
+			continue
+		}
+		projectAlias, rulesetName := parts[0], parts[1]
+
+		projectPath, resolveErr := m.getAliasResolver().Resolve(projectAlias)
+		if resolveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve project alias '%s' for rule import: %v\n", projectAlias, resolveErr)
+			continue
+		}
+
+		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
+
+		nestedHot, nestedCold, nestedView, err := m.resolveAllPatterns(rulesFilePath, visited)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
+			continue
+		}
+		// For cold imports, add everything to cold patterns
+		coldPatterns = append(coldPatterns, nestedHot...)
+		coldPatterns = append(coldPatterns, nestedCold...)
+		viewPaths = append(viewPaths, nestedView...)
+	}
 
 	// Process hot defaults
 	for _, defaultPath := range mainDefaults {
@@ -346,7 +401,7 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 		defaultContent, _ := m.LoadDefaultRulesContent()
 		if defaultContent != nil {
 			// Parse the default content to get cold patterns
-			_, coldPatterns, _, _, _, _, _, _, _, err := m.parseRulesFile(defaultContent)
+			_, coldPatterns, _, _, _, _, _, _, _, _, _, err := m.parseRulesFile(defaultContent)
 			if err != nil {
 				return nil, err
 			}
