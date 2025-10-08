@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/state"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	"github.com/mattsolo1/grove-core/tui/components/table"
@@ -270,45 +272,109 @@ func runSelectTUI() error {
 	return nil
 }
 
+// listRulesForProject lists rule sets for a specific project alias.
+func listRulesForProject(projectAlias string, jsonOutput bool) error {
+	// Import the context package to use AliasResolver
+	resolver := context.NewAliasResolver()
+	projectPath, err := resolver.Resolve(projectAlias)
+	if err != nil {
+		return fmt.Errorf("failed to resolve project alias '%s': %w", projectAlias, err)
+	}
+
+	// Scan the .cx/ directory in the resolved project path
+	cxDir := filepath.Join(projectPath, rulesDir)
+	entries, err := os.ReadDir(cxDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if jsonOutput {
+				fmt.Println("[]")
+				return nil
+			}
+			return fmt.Errorf("no %s directory found in project '%s' at %s", rulesDir, projectAlias, projectPath)
+		}
+		return fmt.Errorf("error reading %s directory: %w", cxDir, err)
+	}
+
+	// Collect rule set names
+	var ruleNames []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), rulesExt) {
+			name := strings.TrimSuffix(entry.Name(), rulesExt)
+			ruleNames = append(ruleNames, name)
+		}
+	}
+
+	return outputJSON(ruleNames)
+}
+
+// outputJSON outputs a slice of strings as JSON.
+func outputJSON(data []string) error {
+	// Use encoding/json to marshal the data
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	fmt.Println(string(jsonBytes))
+	return nil
+}
+
 func newRulesListCmd() *cobra.Command {
+	var forProject string
+	var jsonOutput bool
+
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List available rule sets",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// If --for-project is set, list rules for that project
+			if forProject != "" {
+				return listRulesForProject(forProject, jsonOutput)
+			}
+
+			// Original behavior: list rules for current project
 			activeSource, _ := state.GetString(stateSourceKey)
 			if activeSource == "" {
 				activeSource = "(default)"
 			}
 
-			prettyLog.InfoPretty("Available Rule Sets:")
-
 			entries, err := os.ReadDir(rulesDir)
 			if err != nil {
 				if os.IsNotExist(err) {
+					if jsonOutput {
+						fmt.Println("[]")
+						return nil
+					}
 					prettyLog.InfoPretty(fmt.Sprintf("  No rule sets found in %s/ directory.", rulesDir))
 					return nil
 				}
 				return fmt.Errorf("error reading %s directory: %w", rulesDir, err)
 			}
 
-			found := false
+			var ruleNames []string
 			for _, entry := range entries {
 				if !entry.IsDir() && strings.HasSuffix(entry.Name(), rulesExt) {
-					found = true
 					name := strings.TrimSuffix(entry.Name(), rulesExt)
-					path := filepath.Join(rulesDir, entry.Name())
+					ruleNames = append(ruleNames, name)
+				}
+			}
 
+			if jsonOutput {
+				return outputJSON(ruleNames)
+			}
+
+			// Human-readable output
+			prettyLog.InfoPretty("Available Rule Sets:")
+			if len(ruleNames) == 0 {
+				prettyLog.InfoPretty(fmt.Sprintf("  No rule sets found in %s/ directory.", rulesDir))
+			} else {
+				for _, name := range ruleNames {
+					path := filepath.Join(rulesDir, name+rulesExt)
 					indicator := "  "
 					if path == activeSource {
 						indicator = "✓ "
 					}
-
 					prettyLog.InfoPretty(fmt.Sprintf("%s%s", indicator, name))
 				}
-			}
-
-			if !found {
-				prettyLog.InfoPretty(fmt.Sprintf("  No rule sets found in %s/ directory.", rulesDir))
 			}
 
 			prettyLog.Blank()
@@ -316,6 +382,10 @@ func newRulesListCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&forProject, "for-project", "", "List rule sets for a specific project alias")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
+
 	return cmd
 }
 
