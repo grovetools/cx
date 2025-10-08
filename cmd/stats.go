@@ -11,6 +11,7 @@ import (
 
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/cli"
+	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/spf13/cobra"
 )
 
@@ -146,6 +147,13 @@ func outputPerLineStats(args []string) error {
 		return fmt.Errorf("failed to analyze rules: %w", err)
 	}
 
+	type GitInfo struct {
+		URL     string `json:"url"`
+		Version string `json:"version,omitempty"`
+		Commit  string `json:"commit,omitempty"`
+		Status  string `json:"status,omitempty"`
+	}
+
 	type FilteredByLine struct {
 		LineNumber int      `json:"lineNumber"`
 		Count      int      `json:"count"`
@@ -161,6 +169,7 @@ func outputPerLineStats(args []string) error {
 		FilteredByLine    []FilteredByLine `json:"filteredByLine,omitempty"`
 		TotalTokens       int              `json:"totalTokens"`
 		TotalSize         int64            `json:"totalSize"`
+		GitInfo           *GitInfo         `json:"gitInfo,omitempty"`
 		ResolvedPaths     []string         `json:"resolvedPaths"`
 	}
 
@@ -183,6 +192,13 @@ func outputPerLineStats(args []string) error {
 			ruleMap[lineNum] = line
 		}
 		lineNum++
+	}
+
+	// Load repo manifest for git alias info
+	repoManager, err := repo.NewManager()
+	var manifest *repo.Manifest
+	if err == nil {
+		manifest, _ = repoManager.LoadManifest()
 	}
 
 	for lineNum, files := range attribution {
@@ -225,6 +241,49 @@ func outputPerLineStats(args []string) error {
 			})
 		}
 
+		// Check for Git info
+		var gitInfo *GitInfo
+		ruleText := ruleMap[lineNum]
+		if ruleText != "" && manifest != nil {
+			var repoURL string
+			var version string
+
+			isGitAlias := strings.HasPrefix(ruleText, "@a:git:") || strings.HasPrefix(ruleText, "@alias:git:")
+			if isGitAlias {
+				prefix := "@a:git:"
+				if strings.HasPrefix(ruleText, "@alias:git:") {
+					prefix = "@alias:git:"
+				}
+				repoPart := strings.TrimPrefix(ruleText, prefix)
+				fullURL := "https://github.com/" + repoPart
+				_, repoURL, version = mgr.ParseGitRule(fullURL)
+			} else {
+				_, repoURL, version = mgr.ParseGitRule(ruleText)
+			}
+
+			if repoURL != "" {
+				if repoData, ok := manifest.Repositories[repoURL]; ok {
+					commit := repoData.ResolvedCommit
+					if len(commit) > 7 {
+						commit = commit[:7]
+					}
+					if version == "" { // If rule didn't specify version, use pinned one
+						version = repoData.PinnedVersion
+					}
+					if version == "default" {
+						version = ""
+					}
+
+					gitInfo = &GitInfo{
+						URL:     repoURL,
+						Version: version,
+						Commit:  commit,
+						Status:  repoData.Audit.Status,
+					}
+				}
+			}
+		}
+
 		results = append(results, PerLineStat{
 			LineNumber:        lineNum,
 			Rule:              ruleMap[lineNum],
@@ -234,6 +293,7 @@ func outputPerLineStats(args []string) error {
 			FilteredByLine:    filteredByLine,
 			TotalTokens:       totalTokens,
 			TotalSize:         totalSize,
+			GitInfo:           gitInfo,
 			ResolvedPaths:     files,
 		})
 	}
@@ -258,6 +318,48 @@ func outputPerLineStats(args []string) error {
 				}
 			}
 
+			// Check for Git info for exclusion-only rules
+			var gitInfo *GitInfo
+			ruleText := ruleMap[lineNum]
+			if ruleText != "" && manifest != nil {
+				var repoURL string
+				var version string
+
+				isGitAlias := strings.HasPrefix(ruleText, "@a:git:") || strings.HasPrefix(ruleText, "@alias:git:")
+				if isGitAlias {
+					prefix := "@a:git:"
+					if strings.HasPrefix(ruleText, "@alias:git:") {
+						prefix = "@alias:git:"
+					}
+					repoPart := strings.TrimPrefix(ruleText, prefix)
+					fullURL := "https://github.com/" + repoPart
+					_, repoURL, version = mgr.ParseGitRule(fullURL)
+				} else {
+					_, repoURL, version = mgr.ParseGitRule(ruleText)
+				}
+
+				if repoURL != "" {
+					if repoData, ok := manifest.Repositories[repoURL]; ok {
+						commit := repoData.ResolvedCommit
+						if len(commit) > 7 {
+							commit = commit[:7]
+						}
+						if version == "" {
+							version = repoData.PinnedVersion
+						}
+						if version == "default" {
+							version = ""
+						}
+						gitInfo = &GitInfo{
+							URL:     repoURL,
+							Version: version,
+							Commit:  commit,
+							Status:  repoData.Audit.Status,
+						}
+					}
+				}
+			}
+
 			results = append(results, PerLineStat{
 				LineNumber:        lineNum,
 				Rule:              ruleMap[lineNum],
@@ -266,8 +368,79 @@ func outputPerLineStats(args []string) error {
 				ExcludedTokens:    excludedTokens,
 				TotalTokens:       0,
 				TotalSize:         0,
+				GitInfo:           gitInfo,
 				ResolvedPaths:     []string{},
 			})
+		}
+	}
+
+	// Add synthetic entries for Git alias/URL lines that don't have attribution yet
+	// This happens because Git URLs get transformed to local paths, breaking attribution tracking
+	for lineNum, ruleText := range ruleMap {
+		// Check if this line already has an entry
+		found := false
+		for i := range results {
+			if results[i].LineNumber == lineNum {
+				found = true
+				break
+			}
+		}
+
+		// If not found, check if it's a Git alias or URL
+		if !found && ruleText != "" && manifest != nil {
+			var repoURL string
+			var version string
+
+			isGitAlias := strings.HasPrefix(ruleText, "@a:git:") || strings.HasPrefix(ruleText, "@alias:git:")
+			isGitURL := false
+			if isGitAlias {
+				prefix := "@a:git:"
+				if strings.HasPrefix(ruleText, "@alias:git:") {
+					prefix = "@alias:git:"
+				}
+				repoPart := strings.TrimPrefix(ruleText, prefix)
+				fullURL := "https://github.com/" + repoPart
+				isGitURL, repoURL, version = mgr.ParseGitRule(fullURL)
+			} else {
+				isGitURL, repoURL, version = mgr.ParseGitRule(ruleText)
+			}
+
+			// If this is a Git URL/alias, add a synthetic entry with gitInfo
+			if isGitURL && repoURL != "" {
+				if repoData, ok := manifest.Repositories[repoURL]; ok {
+					commit := repoData.ResolvedCommit
+					if len(commit) > 7 {
+						commit = commit[:7]
+					}
+					if version == "" {
+						version = repoData.PinnedVersion
+					}
+					if version == "default" {
+						version = ""
+					}
+
+					gitInfo := &GitInfo{
+						URL:     repoURL,
+						Version: version,
+						Commit:  commit,
+						Status:  repoData.Audit.Status,
+					}
+
+					// Add entry with gitInfo but empty file list
+					// (files are included but not properly attributed due to path transformation)
+					results = append(results, PerLineStat{
+						LineNumber:        lineNum,
+						Rule:              ruleText,
+						FileCount:         0,
+						ExcludedFileCount: 0,
+						ExcludedTokens:    0,
+						TotalTokens:       0,
+						TotalSize:         0,
+						GitInfo:           gitInfo,
+						ResolvedPaths:     []string{},
+					})
+				}
+			}
 		}
 	}
 

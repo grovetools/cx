@@ -235,8 +235,8 @@ func (m *Manager) UpdateFromRules() error {
 	return m.WriteFilesList(filesPath, filesToInclude)
 }
 
-// parseGitRule checks if a rule is a Git URL and extracts the URL and optional version
-func (m *Manager) parseGitRule(rule string) (isGitURL bool, repoURL, version string) {
+// ParseGitRule checks if a rule is a Git URL and extracts the URL and optional version
+func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version string) {
 	// Remove exclusion prefix if present
 	if strings.HasPrefix(rule, "!") {
 		rule = strings.TrimPrefix(rule, "!")
@@ -248,28 +248,69 @@ func (m *Manager) parseGitRule(rule string) (isGitURL bool, repoURL, version str
 		return false, "", ""
 	}
 
-	// Parse version if present (format: url@version)
-	parts := strings.SplitN(rule, "@", 2)
-	repoURL = parts[0]
-
-	// Ensure proper URL format
-	if !strings.HasPrefix(repoURL, "http://") && !strings.HasPrefix(repoURL, "https://") {
-		if strings.HasPrefix(repoURL, "github.com/") {
-			repoURL = "https://" + repoURL
-		} else if strings.HasPrefix(repoURL, "gitlab.com/") {
-			repoURL = "https://" + repoURL
-		} else if strings.HasPrefix(repoURL, "bitbucket.org/") {
-			repoURL = "https://" + repoURL
-		} else if strings.HasPrefix(repoURL, "git@") {
+	// Ensure proper URL format first
+	if !strings.HasPrefix(rule, "http://") && !strings.HasPrefix(rule, "https://") {
+		if strings.HasPrefix(rule, "github.com/") {
+			rule = "https://" + rule
+		} else if strings.HasPrefix(rule, "gitlab.com/") {
+			rule = "https://" + rule
+		} else if strings.HasPrefix(rule, "bitbucket.org/") {
+			rule = "https://" + rule
+		} else if strings.HasPrefix(rule, "git@") {
 			// Convert SSH URL to HTTPS
-			repoURL = strings.Replace(repoURL, "git@github.com:", "https://github.com/", 1)
-			repoURL = strings.Replace(repoURL, "git@gitlab.com:", "https://gitlab.com/", 1)
-			repoURL = strings.Replace(repoURL, "git@bitbucket.org:", "https://bitbucket.org/", 1)
+			rule = strings.Replace(rule, "git@github.com:", "https://github.com/", 1)
+			rule = strings.Replace(rule, "git@gitlab.com:", "https://gitlab.com/", 1)
+			rule = strings.Replace(rule, "git@bitbucket.org:", "https://bitbucket.org/", 1)
 		}
 	}
 
-	if len(parts) > 1 {
-		version = parts[1]
+	// Now parse the URL to extract repo and version
+	// Format: https://github.com/owner/repo[@version][/path/pattern]
+	// We need to find where the repo ends and the version/path begins
+
+	// The pattern is: protocol://domain/owner/repo[@version]
+	// Anything after the repo (with optional version) is a path pattern that should be ignored for repo resolution
+
+	// First, extract protocol://domain/ part
+	protoEnd := strings.Index(rule, "://")
+	if protoEnd == -1 {
+		return false, "", ""
+	}
+	protoEnd += 3 // Move past ://
+
+	// Find the next / after domain
+	domainEnd := strings.Index(rule[protoEnd:], "/")
+	if domainEnd == -1 {
+		// No path at all, just domain
+		return true, rule, ""
+	}
+	domainEnd += protoEnd
+
+	// Now we're at: protocol://domain/owner/repo[@version][/path]
+	// Split the remaining path by /
+	pathPart := rule[domainEnd+1:] // Skip the / after domain
+	pathSegments := strings.Split(pathPart, "/")
+
+	if len(pathSegments) < 2 {
+		// Need at least owner/repo
+		return true, rule, ""
+	}
+
+	// owner is pathSegments[0]
+	// repo[@version] is pathSegments[1]
+	owner := pathSegments[0]
+	repoWithVersion := pathSegments[1]
+
+	// Check if repo part contains @ for version
+	if atIndex := strings.Index(repoWithVersion, "@"); atIndex != -1 {
+		// Has version
+		repoName := repoWithVersion[:atIndex]
+		version = repoWithVersion[atIndex+1:]
+		repoURL = rule[:domainEnd+1] + owner + "/" + repoName
+	} else {
+		// No version
+		repoURL = rule[:domainEnd+1] + owner + "/" + repoWithVersion
+		version = ""
 	}
 
 	return true, repoURL, version

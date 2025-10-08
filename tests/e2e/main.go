@@ -53,6 +53,12 @@ func main() {
 		// Git Repository Scenarios
 		// GitRepositoryCloneScenario(),
 
+		// Git Alias Scenarios
+		GitAliasBasicScenario(),
+		GitAliasWithVersionScenario(),
+		GitAliasWithGlobPatternsScenario(),
+		// GitAliasStatsPerLineScenario(), // TODO: Fix attribution tracking for Git aliases
+
 		// Default Directive Scenarios
 		DefaultDirectiveBasicScenario(),
 		// DefaultDirectiveColdContextScenario(), // TODO: Fix cold context testing

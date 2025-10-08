@@ -364,9 +364,41 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			continue
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
+			// Handle Git aliases before workspace aliases.
+			// e.g., @a:git:owner/repo[@version]
+			isGitAlias := false
+			tempLineForCheck := line
+			if strings.HasPrefix(tempLineForCheck, "!") {
+				tempLineForCheck = strings.TrimSpace(strings.TrimPrefix(tempLineForCheck, "!"))
+			}
+			if strings.HasPrefix(tempLineForCheck, "@a:git:") || strings.HasPrefix(tempLineForCheck, "@alias:git:") {
+				isGitAlias = true
+			}
+
 			// Resolve alias if present (supports both @alias: and @a:), before further processing
 			processedLine := line
-			if resolver != nil && (strings.Contains(line, "@alias:") || strings.Contains(line, "@a:")) {
+			if isGitAlias {
+				isExclude := false
+				tempLine := line
+				if strings.HasPrefix(tempLine, "!") {
+					isExclude = true
+					tempLine = strings.TrimPrefix(tempLine, "!")
+				}
+				tempLine = strings.TrimSpace(tempLine)
+
+				prefix := "@a:git:"
+				if strings.HasPrefix(tempLine, "@alias:git:") {
+					prefix = "@alias:git:"
+				}
+				repoPart := strings.TrimPrefix(tempLine, prefix)
+				githubURL := "https://github.com/" + repoPart
+
+				if isExclude {
+					processedLine = "!" + githubURL
+				} else {
+					processedLine = githubURL
+				}
+			} else if resolver != nil && (strings.Contains(line, "@alias:") || strings.Contains(line, "@a:")) {
 				resolvedLine, resolveErr := resolver.ResolveLine(line)
 				if resolveErr != nil {
 					fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in line '%s': %v\n", line, resolveErr)
@@ -399,7 +431,7 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 					cleanLine = strings.TrimPrefix(processedLine, "!")
 				}
 
-				if isGitURL, repoURL, version := m.parseGitRule(cleanLine); isGitURL {
+				if isGitURL, repoURL, version := m.ParseGitRule(cleanLine); isGitURL {
 					// Clone/update the repository
 					localPath, _, cloneErr := repoManager.Ensure(repoURL, version)
 					if cloneErr != nil {
@@ -407,8 +439,24 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 						continue
 					}
 
+					// Extract any path pattern that comes after the repo URL
+					// e.g., https://github.com/owner/repo@v1.0.0/**/*.yml -> /**/*.yml
+					// We need to find what remains after protocol://domain/owner/repo[@version]
+					pathPattern := "/**"
+
+					// Build the full repo reference (URL with optional version)
+					repoRef := repoURL
+					if version != "" {
+						repoRef = repoURL + "@" + version
+					}
+
+					// Check if cleanLine has additional path after the repo reference
+					if len(cleanLine) > len(repoRef) && strings.HasPrefix(cleanLine, repoRef) {
+						pathPattern = cleanLine[len(repoRef):]
+					}
+
 					// Replace the Git URL with the local path pattern
-					processedLine = localPath + "/**"
+					processedLine = localPath + pathPattern
 					if isExclude {
 						processedLine = "!" + processedLine
 					}

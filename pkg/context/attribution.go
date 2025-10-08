@@ -44,38 +44,72 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		// Try to resolve @alias: directives
-		isAliasLine := strings.HasPrefix(line, "@alias:") || strings.HasPrefix(line, "@a:")
-		if resolver != nil && isAliasLine {
-			resolvedLine, err := resolver.ResolveLine(line)
-			if err == nil && resolvedLine != "" {
-				line = resolvedLine
-				// If the resolved line is just a directory path (no glob pattern),
-				// append /** to match all files in that directory
-				// Check the base pattern part before any directives
-				baseForCheck, _, _, _ := parseSearchDirective(line)
-				if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
-					// Replace the base pattern with base + /**
-					if baseForCheck == line {
-						// No directive, just append /**
-						line = line + "/**"
-					} else {
-						// Has directive, insert /** before it
-						directivePart := strings.TrimPrefix(line, baseForCheck)
-						line = baseForCheck + "/**" + directivePart
-					}
-				}
-				// Convert absolute path to relative path for pattern matching
-				// The resolved alias gives us an absolute path, but we need it relative to workDir
-				if filepath.IsAbs(line) {
-					relLine, err := filepath.Rel(m.workDir, line)
-					if err == nil {
-						line = filepath.ToSlash(relLine)
-					}
-				}
+		// Handle Git aliases first (e.g., @a:git:owner/repo[@version])
+		isGitAlias := false
+		tempLineForCheck := line
+		if strings.HasPrefix(tempLineForCheck, "!") {
+			tempLineForCheck = strings.TrimSpace(strings.TrimPrefix(tempLineForCheck, "!"))
+		}
+		if strings.HasPrefix(tempLineForCheck, "@a:git:") || strings.HasPrefix(tempLineForCheck, "@alias:git:") {
+			isGitAlias = true
+		}
+
+		if isGitAlias {
+			// Transform Git alias to GitHub URL (same logic as in parseRulesFile)
+			isExclude := false
+			tempLine := line
+			if strings.HasPrefix(tempLine, "!") {
+				isExclude = true
+				tempLine = strings.TrimPrefix(tempLine, "!")
 			}
-			// Note: if resolution fails, line remains as the @alias: directive
-			// and will be skipped below
+			tempLine = strings.TrimSpace(tempLine)
+
+			prefix := "@a:git:"
+			if strings.HasPrefix(tempLine, "@alias:git:") {
+				prefix = "@alias:git:"
+			}
+			repoPart := strings.TrimPrefix(tempLine, prefix)
+			githubURL := "https://github.com/" + repoPart
+
+			if isExclude {
+				line = "!" + githubURL
+			} else {
+				line = githubURL
+			}
+		} else {
+			// Try to resolve workspace @alias: directives
+			isAliasLine := strings.HasPrefix(line, "@alias:") || strings.HasPrefix(line, "@a:")
+			if resolver != nil && isAliasLine {
+				resolvedLine, err := resolver.ResolveLine(line)
+				if err == nil && resolvedLine != "" {
+					line = resolvedLine
+					// If the resolved line is just a directory path (no glob pattern),
+					// append /** to match all files in that directory
+					// Check the base pattern part before any directives
+					baseForCheck, _, _, _ := parseSearchDirective(line)
+					if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
+						// Replace the base pattern with base + /**
+						if baseForCheck == line {
+							// No directive, just append /**
+							line = line + "/**"
+						} else {
+							// Has directive, insert /** before it
+							directivePart := strings.TrimPrefix(line, baseForCheck)
+							line = baseForCheck + "/**" + directivePart
+						}
+					}
+					// Convert absolute path to relative path for pattern matching
+					// The resolved alias gives us an absolute path, but we need it relative to workDir
+					if filepath.IsAbs(line) {
+						relLine, err := filepath.Rel(m.workDir, line)
+						if err == nil {
+							line = filepath.ToSlash(relLine)
+						}
+					}
+				}
+				// Note: if resolution fails, line remains as the @alias: directive
+				// and will be skipped below
+			}
 		}
 
 		// Process the line if it's not a comment, directive (except resolved aliases), or separator
