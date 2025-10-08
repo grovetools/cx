@@ -131,11 +131,14 @@ func (m *rulesPickerModel) View() string {
 	// Render header
 	header := core_theme.DefaultTheme.Header.Render("Select an Active Rule Set")
 
-	// Render table with selection
-	tableView := table.SelectableTable(
+	// Render table with selection and highlight the Name column (index 1)
+	tableView := table.SelectableTableWithOptions(
 		[]string{"", "Name", "Path"},
 		rows,
 		m.selectedIndex,
+		table.SelectableTableOptions{
+			HighlightColumn: 1, // Highlight the Name column
+		},
 	)
 
 	// Render help
