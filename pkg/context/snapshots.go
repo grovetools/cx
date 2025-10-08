@@ -80,17 +80,18 @@ func (m *Manager) getSnapshotInfo(name string) (SnapshotInfo, error) {
 	// For .rules files, dynamically resolve the file list
 	if strings.HasSuffix(name, ".rules") {
 		// Resolve files from the snapshot rules
-		files, err := m.resolveFileListFromRules(snapshotPath)
+		hotFiles, coldFiles, err := m.ResolveFilesFromCustomRulesFile(snapshotPath)
 		if err != nil {
 			// If we can't resolve, just return minimal info
 			info.FileCount = 0
 			info.TotalTokens = 0
 			info.TotalSize = 0
 		} else {
-			info.FileCount = len(files)
+			allFiles := append(hotFiles, coldFiles...)
+			info.FileCount = len(allFiles)
 
 			// Calculate total tokens and size
-			for _, file := range files {
+			for _, file := range allFiles {
 				filePath := filepath.Join(m.workDir, file)
 				if fileStat, err := os.Stat(filePath); err == nil {
 					info.TotalSize += fileStat.Size()

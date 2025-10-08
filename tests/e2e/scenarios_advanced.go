@@ -104,10 +104,13 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
-				if !strings.Contains(result.Stdout, "Added files (1)") || !strings.Contains(result.Stdout, "fileC.txt") {
+				// Use Stderr since diff command uses prettyLog which outputs to stderr
+				output := result.Stderr
+
+				if !strings.Contains(output, "Added files (1)") || !strings.Contains(output, "fileC.txt") {
 					return fmt.Errorf("diff did not show added fileC.txt")
 				}
-				if !strings.Contains(result.Stdout, "Removed files (1)") || !strings.Contains(result.Stdout, "fileA.txt") {
+				if !strings.Contains(output, "Removed files (1)") || !strings.Contains(output, "fileA.txt") {
 					return fmt.Errorf("diff did not show removed fileA.txt")
 				}
 				return nil

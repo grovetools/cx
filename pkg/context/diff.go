@@ -51,10 +51,11 @@ func (m *Manager) DiffContext(snapshotName string) (*DiffResult, error) {
 		snapshotPath := filepath.Join(snapshotsDir, snapshotName+".rules")
 		if _, err := os.Stat(snapshotPath); err == nil {
 			// Resolve files from the snapshot rules
-			compareFiles, err = m.resolveFileListFromRules(snapshotPath)
+			hotFiles, _, err := m.ResolveFilesFromCustomRulesFile(snapshotPath)
 			if err != nil {
 				return nil, fmt.Errorf("error resolving snapshot '%s': %w", snapshotName, err)
 			}
+			compareFiles = hotFiles
 		} else {
 			// Try without extension for backward compatibility
 			snapshotPath = filepath.Join(snapshotsDir, snapshotName)

@@ -340,24 +340,37 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
 func (m *Manager) ResolveColdContextFiles() ([]string, error) {
-	// Use the centralized engine
-	fileStatuses, err := m.ResolveAndClassifyAllFiles(false)
-	if err != nil {
-		return nil, err
+	activeRulesFile := m.findActiveRulesFile()
+	if activeRulesFile == "" {
+		// If no rules file, check for defaults configured in grove.yml
+		defaultContent, _ := m.LoadDefaultRulesContent()
+		if defaultContent != nil {
+			// Parse the default content to get cold patterns
+			_, coldPatterns, _, _, _, _, _, _, _, err := m.parseRulesFile(defaultContent)
+			if err != nil {
+				return nil, err
+			}
+			coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+			if err != nil {
+				return nil, err
+			}
+			sort.Strings(coldFiles)
+			return coldFiles, nil
+		}
+		// No active or default rules found
+		return []string{}, nil
 	}
 
-	// Filter for cold context files only
-	var coldFiles []string
-	for path, status := range fileStatuses {
-		if status == StatusIncludedCold {
-			// Convert absolute paths back to relative if within workDir
-			relPath, err := filepath.Rel(m.workDir, path)
-			if err == nil && !strings.HasPrefix(relPath, "..") {
-				coldFiles = append(coldFiles, relPath)
-			} else {
-				coldFiles = append(coldFiles, path)
-			}
-		}
+	// Resolve all patterns recursively from the active rules file
+	_, coldPatterns, _, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve patterns for cold context: %w", err)
+	}
+
+	// Resolve files from only the cold patterns
+	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	if err != nil {
+		return nil, fmt.Errorf("error resolving cold context files: %w", err)
 	}
 
 	// Sort for consistent output
@@ -365,53 +378,6 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 	return coldFiles, nil
 }
 
-// resolveFileListFromRules dynamically resolves the list of files from a rules file
-func (m *Manager) resolveFileListFromRules(rulesPath string) ([]string, error) {
-	// Read the rules file
-	rulesContent, err := os.ReadFile(rulesPath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading rules file: %w", err)
-	}
-
-	// Parse the rules content to get main and cold patterns
-	mainPatterns, coldPatterns, _, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing rules file: %w", err)
-	}
-
-	// If no main patterns, return empty list
-	if len(mainPatterns) == 0 && len(coldPatterns) == 0 {
-		return nil, fmt.Errorf("rules file is empty")
-	}
-
-	// Resolve files from main patterns
-	mainFiles, err := m.resolveFilesFromPatterns(mainPatterns)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving main context files: %w", err)
-	}
-
-	// Resolve files from cold patterns
-	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving cold context files: %w", err)
-	}
-
-	// Create a map of cold files for efficient exclusion
-	coldFilesMap := make(map[string]bool)
-	for _, file := range coldFiles {
-		coldFilesMap[file] = true
-	}
-
-	// Filter main files to exclude any that are in cold files
-	var finalMainFiles []string
-	for _, file := range mainFiles {
-		if !coldFilesMap[file] {
-			finalMainFiles = append(finalMainFiles, file)
-		}
-	}
-
-	return finalMainFiles, nil
-}
 
 // preProcessPatterns transforms plain directory patterns into recursive globs.
 func (m *Manager) preProcessPatterns(patterns []string) []string {

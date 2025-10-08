@@ -111,36 +111,39 @@ src/utils.go
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
-				// Verify Hot Context Statistics
-				if !strings.Contains(result.Stdout, "Hot Context Statistics:") {
-					return fmt.Errorf("output missing 'Hot Context Statistics:' header\nExpected stats to show both hot and cold sections\nActual output:\n%s", result.Stdout)
+				// Use Stdout since stats command outputs formatted stats to stdout
+				output := result.Stdout
+
+				// Verify Hot Context Statistics (no colon in actual output)
+				if !strings.Contains(output, "Hot Context Statistics") {
+					return fmt.Errorf("output missing 'Hot Context Statistics' header\nExpected stats to show both hot and cold sections\nActual output:\n%s", output)
 				}
-				if !strings.Contains(result.Stdout, "Total Files:    2") {
-					return fmt.Errorf("hot context should report 2 files (src/main.go, README.md)\nExpected: Total Files:    2\nActual output:\n%s", result.Stdout)
+				if !strings.Contains(output, "Total Files:    2") {
+					return fmt.Errorf("hot context should report 2 files (src/main.go, README.md)\nExpected: Total Files:    2\nActual output:\n%s", output)
 				}
-				
-				// Verify Cold Context Statistics
-				if !strings.Contains(result.Stdout, "Cold (Cached) Context Statistics:") {
-					return fmt.Errorf("output missing 'Cold (Cached) Context Statistics:' header\nExpected stats to show cold context section after hot\nActual output:\n%s", result.Stdout)
+
+				// Verify Cold Context Statistics (no colon in actual output)
+				if !strings.Contains(output, "Cold (Cached) Context Statistics") {
+					return fmt.Errorf("output missing 'Cold (Cached) Context Statistics' header\nExpected stats to show cold context section after hot\nActual output:\n%s", output)
 				}
 				
 				// Verify the separator line between contexts
-				if !strings.Contains(result.Stdout, "──────────────────────────────────────────────────") {
+				if !strings.Contains(output, "──────────────────────────────────────────────────") {
 					return fmt.Errorf("output missing separator between hot and cold contexts")
 				}
-				
+
 				// Verify hot context contains main.go and README.md
-				if !strings.Contains(result.Stdout, "src/main.go") || !strings.Contains(result.Stdout, "README.md") {
-					return fmt.Errorf("hot context should list src/main.go and README.md in largest files\nThese are the hot context files from rules\nActual output:\n%s", result.Stdout)
+				if !strings.Contains(output, "src/main.go") || !strings.Contains(output, "README.md") {
+					return fmt.Errorf("hot context should list src/main.go and README.md in largest files\nThese are the hot context files from rules\nActual output:\n%s", output)
 				}
-				
+
 				// Verify cold context contains utils.go
-				if !strings.Contains(result.Stdout, "src/utils.go") {
-					return fmt.Errorf("cold context should list src/utils.go\nThis is the only cold context file from rules\nActual output:\n%s", result.Stdout)
+				if !strings.Contains(output, "src/utils.go") {
+					return fmt.Errorf("cold context should list src/utils.go\nThis is the only cold context file from rules\nActual output:\n%s", output)
 				}
-				
+
 				// Verify language distribution shows both Go and Markdown for hot context
-				if !strings.Contains(result.Stdout, "Go") || !strings.Contains(result.Stdout, "Markdown") {
+				if !strings.Contains(output, "Go") || !strings.Contains(output, "Markdown") {
 					return fmt.Errorf("hot context should show both Go and Markdown in language distribution")
 				}
 				
