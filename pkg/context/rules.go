@@ -130,6 +130,126 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 	return nil, "", nil
 }
 
+// expandBraces recursively expands shell-style brace patterns.
+// Example: "path/{a,b}/{c,d}" -> ["path/a/c", "path/a/d", "path/b/c", "path/b/d"]
+func expandBraces(pattern string) []string {
+	// Find the first opening brace
+	leftBrace := strings.Index(pattern, "{")
+	if leftBrace == -1 {
+		// No braces found, return the pattern as-is
+		return []string{pattern}
+	}
+
+	// Find the matching closing brace, keeping track of nesting
+	rightBrace := -1
+	braceDepth := 0
+	for i := leftBrace + 1; i < len(pattern); i++ {
+		if pattern[i] == '{' {
+			braceDepth++
+		} else if pattern[i] == '}' {
+			if braceDepth == 0 {
+				rightBrace = i
+				break
+			}
+			braceDepth--
+		}
+	}
+
+	if rightBrace == -1 {
+		// Unmatched brace, return pattern as-is
+		return []string{pattern}
+	}
+
+	// Extract the parts
+	prefix := pattern[:leftBrace]
+	suffix := pattern[rightBrace+1:]
+	middle := pattern[leftBrace+1 : rightBrace]
+
+	// Split the middle part by commas (but not commas inside nested braces)
+	options := splitByComma(middle)
+
+	var results []string
+	for _, option := range options {
+		// Recursively expand the rest of the pattern for each option
+		expandedSuffixes := expandBraces(prefix + option + suffix)
+		results = append(results, expandedSuffixes...)
+	}
+
+	return results
+}
+
+// splitByComma splits a string by commas, but not commas inside nested braces
+func splitByComma(s string) []string {
+	var results []string
+	var current strings.Builder
+	braceDepth := 0
+
+	for _, ch := range s {
+		if ch == '{' {
+			braceDepth++
+			current.WriteRune(ch)
+		} else if ch == '}' {
+			braceDepth--
+			current.WriteRune(ch)
+		} else if ch == ',' && braceDepth == 0 {
+			// Found a comma at the top level
+			results = append(results, current.String())
+			current.Reset()
+		} else {
+			current.WriteRune(ch)
+		}
+	}
+
+	// Add the last part
+	if current.Len() > 0 {
+		results = append(results, current.String())
+	}
+
+	return results
+}
+
+// parseSearchDirective parses a line for search directives (@find: or @grep:)
+// Returns: basePattern, directive, query, hasDirective
+// Example: "pkg/**/*.go @find: \"manager\"" -> "pkg/**/*.go", "find", "manager", true
+func parseSearchDirective(line string) (basePattern, directive, query string, hasDirective bool) {
+	// Look for @find: or @grep: followed by a quoted string
+	findIdx := strings.Index(line, " @find: ")
+	grepIdx := strings.Index(line, " @grep: ")
+
+	var directiveIdx int
+	var directiveName string
+
+	if findIdx != -1 && (grepIdx == -1 || findIdx < grepIdx) {
+		directiveIdx = findIdx
+		directiveName = "find"
+	} else if grepIdx != -1 {
+		directiveIdx = grepIdx
+		directiveName = "grep"
+	} else {
+		// No directive found
+		return line, "", "", false
+	}
+
+	// Extract the base pattern (everything before the directive)
+	basePattern = strings.TrimSpace(line[:directiveIdx])
+
+	// Extract the query (everything after the directive keyword and colon)
+	queryPart := strings.TrimSpace(line[directiveIdx+len(" @"+directiveName+": "):])
+
+	// The query should be in quotes
+	if len(queryPart) >= 2 && queryPart[0] == '"' {
+		// Find the closing quote
+		endQuote := strings.Index(queryPart[1:], "\"")
+		if endQuote != -1 {
+			query = queryPart[1 : endQuote+1]
+			return basePattern, directiveName, query, true
+		}
+	}
+
+	// If we couldn't parse the query properly, treat it as no directive
+	return line, "", "", false
+}
+
 // parseRulesFile parses the rules file content and extracts patterns, directives, and default paths
 func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
 	if len(rulesContent) == 0 {
@@ -146,6 +266,10 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 	resolver := m.getAliasResolver()
 
 	inColdSection := false
+	// Track global search directives
+	var globalDirective string
+	var globalQuery string
+
 	scanner := bufio.NewScanner(bytes.NewReader(rulesContent))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -209,6 +333,32 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			}
 			continue
 		}
+		// Handle global @find: directive
+		if strings.HasPrefix(line, "@find:") {
+			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@find:"))
+			// Parse the quoted query
+			if len(queryPart) >= 2 && queryPart[0] == '"' {
+				endQuote := strings.Index(queryPart[1:], "\"")
+				if endQuote != -1 {
+					globalDirective = "find"
+					globalQuery = queryPart[1 : endQuote+1]
+				}
+			}
+			continue
+		}
+		// Handle global @grep: directive
+		if strings.HasPrefix(line, "@grep:") {
+			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@grep:"))
+			// Parse the quoted query
+			if len(queryPart) >= 2 && queryPart[0] == '"' {
+				endQuote := strings.Index(queryPart[1:], "\"")
+				if endQuote != -1 {
+					globalDirective = "grep"
+					globalQuery = queryPart[1 : endQuote+1]
+				}
+			}
+			continue
+		}
 		if line == "---" {
 			inColdSection = true
 			continue
@@ -223,6 +373,22 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 					continue // Skip this line if alias resolution fails
 				}
 				processedLine = resolvedLine
+
+				// If the resolved line is just a directory path (no glob pattern),
+				// append /** to match all files in that directory
+				// Check the base pattern part before any directives
+				baseForCheck, _, _, _ := parseSearchDirective(processedLine)
+				if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
+					// Replace the base pattern with base + /**
+					if baseForCheck == processedLine {
+						// No directive, just append /**
+						processedLine = processedLine + "/**"
+					} else {
+						// Has directive, insert /** before it
+						directivePart := strings.TrimPrefix(processedLine, baseForCheck)
+						processedLine = baseForCheck + "/**" + directivePart
+					}
+				}
 			}
 
 			// Process Git URLs
@@ -249,10 +415,34 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 				}
 			}
 
-			if inColdSection {
-				coldPatterns = append(coldPatterns, processedLine)
-			} else {
-				mainPatterns = append(mainPatterns, processedLine)
+			// Check for search directives before brace expansion
+			basePattern, directive, query, hasDirective := parseSearchDirective(processedLine)
+
+			// If no inline directive but there's a global directive, use that
+			if !hasDirective && globalDirective != "" {
+				directive = globalDirective
+				query = globalQuery
+				hasDirective = true
+			}
+
+			// Apply brace expansion to the base pattern
+			expandedPatterns := expandBraces(basePattern)
+
+			// Add each expanded pattern to the appropriate list
+			// If there's a directive, encode it in the pattern using a special marker
+			for _, expandedPattern := range expandedPatterns {
+				finalPattern := expandedPattern
+				if hasDirective {
+					// Encode directive info: pattern|||directive|||query
+					// We use ||| as a separator since it's unlikely to appear in file paths
+					finalPattern = expandedPattern + "|||" + directive + "|||" + query
+				}
+
+				if inColdSection {
+					coldPatterns = append(coldPatterns, finalPattern)
+				} else {
+					mainPatterns = append(mainPatterns, finalPattern)
+				}
 			}
 		}
 	}

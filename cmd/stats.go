@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
-	"github.com/spf13/cobra"
+	"strings"
+
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/cli"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -137,29 +141,48 @@ func outputPerLineStats(args []string) error {
 	}
 
 	mgr := context.NewManager(".")
-	attribution, rules, exclusions, err := mgr.ResolveFilesWithAttribution(string(rulesContent))
+	attribution, _, exclusions, filteredMatches, err := mgr.ResolveFilesWithAttribution(string(rulesContent))
 	if err != nil {
 		return fmt.Errorf("failed to analyze rules: %w", err)
 	}
 
+	type FilteredByLine struct {
+		LineNumber int      `json:"lineNumber"`
+		Count      int      `json:"count"`
+		Files      []string `json:"files,omitempty"`
+	}
+
 	type PerLineStat struct {
-		LineNumber        int      `json:"lineNumber"`
-		Rule              string   `json:"rule"`
-		FileCount         int      `json:"fileCount"`
-		ExcludedFileCount int      `json:"excludedFileCount,omitempty"`
-		ExcludedTokens    int      `json:"excludedTokens,omitempty"`
-		TotalTokens       int      `json:"totalTokens"`
-		TotalSize         int64    `json:"totalSize"`
-		ResolvedPaths     []string `json:"resolvedPaths"`
+		LineNumber        int              `json:"lineNumber"`
+		Rule              string           `json:"rule"`
+		FileCount         int              `json:"fileCount"`
+		ExcludedFileCount int              `json:"excludedFileCount,omitempty"`
+		ExcludedTokens    int              `json:"excludedTokens,omitempty"`
+		FilteredByLine    []FilteredByLine `json:"filteredByLine,omitempty"`
+		TotalTokens       int              `json:"totalTokens"`
+		TotalSize         int64            `json:"totalSize"`
+		ResolvedPaths     []string         `json:"resolvedPaths"`
 	}
 
 	var results []PerLineStat
+	// Build a map of line number to original rule text
 	ruleMap := make(map[int]string)
-	for _, r := range rules {
-		ruleMap[r.LineNum] = r.Pattern
-		if r.IsExclude {
-			ruleMap[r.LineNum] = "!" + r.Pattern
+	scanner := bufio.NewScanner(bytes.NewReader(rulesContent))
+	lineNum := 1
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Store non-empty, non-comment lines
+		// Include @alias: and @a: lines as they are rules, but exclude config directives
+		isConfigDirective := strings.HasPrefix(line, "@view:") || strings.HasPrefix(line, "@v:") ||
+			strings.HasPrefix(line, "@default:") || strings.HasPrefix(line, "@freeze-cache") ||
+			strings.HasPrefix(line, "@no-expire") || strings.HasPrefix(line, "@disable-cache") ||
+			strings.HasPrefix(line, "@expire-time") || strings.HasPrefix(line, "@find:") ||
+			strings.HasPrefix(line, "@grep:")
+
+		if line != "" && !strings.HasPrefix(line, "#") && !isConfigDirective && line != "---" {
+			ruleMap[lineNum] = line
 		}
+		lineNum++
 	}
 
 	for lineNum, files := range attribution {
@@ -182,12 +205,33 @@ func outputPerLineStats(args []string) error {
 			}
 		}
 
+		// Group filtered files by their winning line number
+		var filteredByLine []FilteredByLine
+		if filteredInfos, ok := filteredMatches[lineNum]; ok {
+			lineGroupMap := make(map[int][]string)
+			for _, info := range filteredInfos {
+				lineGroupMap[info.WinningLineNum] = append(lineGroupMap[info.WinningLineNum], info.File)
+			}
+			for winningLine, filesForLine := range lineGroupMap {
+				filteredByLine = append(filteredByLine, FilteredByLine{
+					LineNumber: winningLine,
+					Count:      len(filesForLine),
+					Files:      filesForLine,
+				})
+			}
+			// Sort by line number for consistent output
+			sort.Slice(filteredByLine, func(i, j int) bool {
+				return filteredByLine[i].LineNumber < filteredByLine[j].LineNumber
+			})
+		}
+
 		results = append(results, PerLineStat{
 			LineNumber:        lineNum,
 			Rule:              ruleMap[lineNum],
 			FileCount:         len(files),
 			ExcludedFileCount: len(exclusions[lineNum]),
 			ExcludedTokens:    excludedTokens,
+			FilteredByLine:    filteredByLine,
 			TotalTokens:       totalTokens,
 			TotalSize:         totalSize,
 			ResolvedPaths:     files,

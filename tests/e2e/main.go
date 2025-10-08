@@ -56,6 +56,16 @@ func main() {
 		DefaultDirectiveBasicScenario(),
 		// DefaultDirectiveColdContextScenario(), // TODO: Fix cold context testing
 		// DefaultDirectiveCircularScenario(), // TODO: Fix circular dependency test
+
+		// Brace Expansion Scenarios
+		BraceExpansionBasicScenario(),
+		BraceExpansionMultipleScenario(),
+		BraceExpansionWithExclusionScenario(),
+
+		// Search Directive Scenarios
+		FindDirectiveScenario(),
+		GrepDirectiveScenario(),
+		CombinedDirectivesScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.

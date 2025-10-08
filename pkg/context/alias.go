@@ -206,7 +206,24 @@ func (r *AliasResolver) ResolveLine(line string) (string, error) {
 	}
 
 	// Reconstruct the line.
-	finalPath := filepath.Join(resolvedPath, parts.Pattern)
+	var finalPath string
+	if strings.HasPrefix(parts.Pattern, " @") {
+		// Pattern is a directive like " @grep: \"query\""
+		// If the resolved path is a bare directory (no glob), append /** before the directive
+		if !strings.Contains(resolvedPath, "*") && !strings.Contains(resolvedPath, "?") {
+			finalPath = resolvedPath + "/**" + parts.Pattern
+		} else {
+			finalPath = resolvedPath + parts.Pattern
+		}
+	} else if parts.Pattern == "" {
+		// No pattern, just the alias - append /** to match all files
+		finalPath = resolvedPath + "/**"
+	} else {
+		// Pattern is a file path like "/pkg/**"
+		// Use filepath.Join
+		finalPath = filepath.Join(resolvedPath, parts.Pattern)
+	}
+
 	parts.ResolvedLine = strings.TrimSpace(parts.Prefix) + finalPath
 	// Normalize short forms to full forms in output
 	if strings.Contains(parts.Prefix, "@view:") || strings.Contains(parts.Prefix, "@v:") {
@@ -218,10 +235,14 @@ func (r *AliasResolver) ResolveLine(line string) (string, error) {
 
 // parseAliasLine deconstructs a rule line into its prefix, alias, and pattern.
 func (r *AliasResolver) parseAliasLine(line string) (*aliasLineParts, error) {
-	// Regex to find @alias: (or @a:) and capture prefix, alias, and optional pattern.
+	// Regex to find @alias: (or @a:) and capture prefix, alias, and optional pattern/directives.
 	// It handles prefixes like '!', '@view:' (or '@v:'), and combinations.
 	// Supports short forms: @a: for @alias:, @v: for @view:
-	re := regexp.MustCompile(`^(?P<prefix>!?(?:\s*@(?:view|v):\s*)?)?\s*@(?:alias|a):(?P<alias>[^/\s]+)(?P<pattern>/.*)?$`)
+	// Pattern can be:
+	//   - /path/pattern (traditional)
+	//   - @directive: "query" (search directives)
+	//   - (nothing)
+	re := regexp.MustCompile(`^(?P<prefix>!?(?:\s*@(?:view|v):\s*)?)?\s*@(?:alias|a):(?P<alias>[^/\s@]+)(?P<pattern>/.+|\s+@(?:find|grep):.+)?$`)
 	matches := re.FindStringSubmatch(line)
 	if matches == nil {
 		return nil, fmt.Errorf("invalid alias format in line: '%s'", line)

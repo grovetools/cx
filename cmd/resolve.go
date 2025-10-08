@@ -24,7 +24,7 @@ func NewResolveCmd() *cobra.Command {
 				return nil
 			}
 
-			mgr := context.NewManager("")
+			mgr := context.NewManager(".")
 
 			// First, resolve any potential alias in the line.
 			// The alias resolver is lazily initialized within the manager.

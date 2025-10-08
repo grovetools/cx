@@ -450,10 +450,120 @@ func (m *Manager) preProcessPatterns(patterns []string) []string {
 	return processedPatterns
 }
 
+// decodeDirective extracts directive information from an encoded pattern
+// Returns: cleanPattern, directive, query, hasDirective
+func decodeDirective(pattern string) (string, string, string, bool) {
+	parts := strings.Split(pattern, "|||")
+	if len(parts) == 3 {
+		return parts[0], parts[1], parts[2], true
+	}
+	return pattern, "", "", false
+}
+
+// applyDirectiveFilter filters a list of files based on a directive (@find or @grep)
+func (m *Manager) applyDirectiveFilter(files []string, directive, query string) ([]string, error) {
+	var filtered []string
+
+	if directive == "find" {
+		// @find: filter by filename/path
+		for _, file := range files {
+			if strings.Contains(file, query) {
+				filtered = append(filtered, file)
+			}
+		}
+	} else if directive == "grep" {
+		// @grep: filter by file content (parallelized for performance)
+		type result struct {
+			file string
+			err  error
+		}
+
+		resultChan := make(chan result, len(files))
+		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent goroutines
+
+		for _, file := range files {
+			file := file // Capture loop variable
+
+			go func() {
+				semaphore <- struct{}{} // Acquire semaphore
+				defer func() { <-semaphore }() // Release semaphore
+
+				// Construct absolute path for reading
+				filePath := file
+				if !filepath.IsAbs(file) {
+					filePath = filepath.Join(m.workDir, file)
+				}
+
+				// Read file content
+				content, err := os.ReadFile(filePath)
+				if err != nil {
+					// Skip files that can't be read
+					resultChan <- result{file: "", err: nil}
+					return
+				}
+
+				// Check if content contains the query
+				if strings.Contains(string(content), query) {
+					resultChan <- result{file: file, err: nil}
+				} else {
+					resultChan <- result{file: "", err: nil}
+				}
+			}()
+		}
+
+		// Collect results
+		for i := 0; i < len(files); i++ {
+			res := <-resultChan
+			if res.file != "" {
+				filtered = append(filtered, res.file)
+			}
+		}
+		close(resultChan)
+	}
+
+	return filtered, nil
+}
+
 // resolveFilesFromPatterns resolves files from a given set of patterns
 func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) {
 	if len(patterns) == 0 {
 		return []string{}, nil
+	}
+
+	// First, decode any directive information and separate patterns
+	type patternInfo struct {
+		pattern   string
+		directive string
+		query     string
+		isExclude bool
+	}
+
+	var patternInfos []patternInfo
+
+	for _, pattern := range patterns {
+		isExclude := strings.HasPrefix(pattern, "!")
+		cleanPattern := pattern
+		if isExclude {
+			cleanPattern = strings.TrimPrefix(pattern, "!")
+		}
+
+		// Decode directive if present
+		basePattern, directive, query, _ := decodeDirective(cleanPattern)
+
+		patternInfos = append(patternInfos, patternInfo{
+			pattern:   basePattern,
+			directive: directive,
+			query:     query,
+			isExclude: isExclude,
+		})
+
+		// For the traditional flow, we need to reconstruct the pattern
+		// without directive encoding for preProcessPatterns
+		if isExclude {
+			patterns[len(patternInfos)-1] = "!" + basePattern
+		} else {
+			patterns[len(patternInfos)-1] = basePattern
+		}
 	}
 
 	// Use processed patterns for the rest of the logic
@@ -615,6 +725,86 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		filesToInclude = append(filesToInclude, file)
 	}
 	sort.Strings(filesToInclude)
+
+	// Apply directive filters if any patterns had directives
+	// We need to match each file to its pattern and apply the appropriate filter
+	// For simplicity, we'll apply directives pattern-by-pattern
+	hasAnyDirective := false
+	for _, info := range patternInfos {
+		if info.directive != "" && !info.isExclude {
+			hasAnyDirective = true
+			break
+		}
+	}
+
+	if hasAnyDirective {
+		// Build a map of pattern index to its directive info
+		// We need to re-match files to patterns to know which directive to apply
+		filteredFiles := make(map[string]bool)
+
+		for _, file := range filesToInclude {
+			// Get path relative to workDir for matching
+			relPath := file
+			if !filepath.IsAbs(file) {
+				relPath = file
+			} else {
+				if rp, err := filepath.Rel(m.workDir, file); err == nil {
+					relPath = rp
+				}
+			}
+			relPath = filepath.ToSlash(relPath)
+
+			// Check all patterns that match this file and collect their directives
+			// A file should be included if it passes ANY pattern's filter (OR logic)
+			passedAnyFilter := false
+			hasAnyDirective := false
+
+			for i, info := range patternInfos {
+				if info.isExclude {
+					continue
+				}
+
+				// Use the preprocessed pattern for matching
+				patternToMatch := patterns[i]
+				if strings.HasPrefix(patternToMatch, "!") {
+					continue
+				}
+
+				// Check if this pattern matches the file
+				if m.matchPattern(patternToMatch, relPath) {
+					// If this pattern has a directive, check if the file passes it
+					if info.directive != "" {
+						hasAnyDirective = true
+						filtered, err := m.applyDirectiveFilter([]string{file}, info.directive, info.query)
+						if err != nil {
+							return nil, fmt.Errorf("error applying directive filter: %w", err)
+						}
+						if len(filtered) > 0 {
+							// File passed this directive filter
+							passedAnyFilter = true
+							break // No need to check more patterns, we found a match
+						}
+					} else {
+						// Pattern has no directive, so file passes by default
+						passedAnyFilter = true
+						break
+					}
+				}
+			}
+
+			// Include the file if it passed any filter (OR logic)
+			if passedAnyFilter || !hasAnyDirective {
+				filteredFiles[file] = true
+			}
+		}
+
+		// Replace filesToInclude with filtered results
+		filesToInclude = make([]string, 0, len(filteredFiles))
+		for file := range filteredFiles {
+			filesToInclude = append(filesToInclude, file)
+		}
+		sort.Strings(filesToInclude)
+	}
 
 	// Return the resolved file list
 	return filesToInclude, nil
