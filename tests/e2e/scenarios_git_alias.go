@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -331,30 +332,62 @@ func GitAliasStatsPerLineScenario() *harness.Scenario {
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx stats --per-line failed: %s", result.Stderr)
 				}
+				ctx.ShowCommandOutput(fmt.Sprintf("cx stats --per-line %s", rulesPath), result.Stdout, result.Stderr)
 
-				// The git alias line should have files from lipgloss and gitInfo
-				// Check that at least one line in the output has gitInfo
-				hasGitInfo := strings.Contains(result.Stdout, "\"gitInfo\"")
-				if !hasGitInfo {
-					return fmt.Errorf("expected at least one line with gitInfo in stats output, got: %s", result.Stdout)
+				// Parse the JSON output
+				var stats []struct {
+					LineNumber  int `json:"lineNumber"`
+					Rule        string `json:"rule"`
+					FileCount   int `json:"fileCount"`
+					TotalTokens int `json:"totalTokens"`
+					GitInfo     *struct {
+						URL     string `json:"url"`
+						Version string `json:"version"`
+					} `json:"gitInfo"`
+				}
+				if err := json.Unmarshal([]byte(result.Stdout), &stats); err != nil {
+					return fmt.Errorf("failed to parse JSON output: %w\nOutput:\n%s", err, result.Stdout)
 				}
 
-				// Check for the Git URL - it should be the transformed full URL
-				hasRepoURL := strings.Contains(result.Stdout, "github.com/charmbracelet/lipgloss")
-				if !hasRepoURL {
-					return fmt.Errorf("expected repo URL in gitInfo, got: %s", result.Stdout)
+				var gitAliasStat *struct {
+					LineNumber  int `json:"lineNumber"`
+					Rule        string `json:"rule"`
+					FileCount   int `json:"fileCount"`
+					TotalTokens int `json:"totalTokens"`
+					GitInfo     *struct {
+						URL     string `json:"url"`
+						Version string `json:"version"`
+					} `json:"gitInfo"`
+				}
+				for i := range stats {
+					if stats[i].LineNumber == 2 {
+						gitAliasStat = &stats[i]
+						break
+					}
 				}
 
-				// Check for version
-				hasVersion := strings.Contains(result.Stdout, "v0.13.0")
-				if !hasVersion {
-					return fmt.Errorf("expected version v0.13.0 in gitInfo, got: %s", result.Stdout)
+				if gitAliasStat == nil {
+					return fmt.Errorf("could not find stats for line 2 (the git alias rule)")
 				}
 
-				// Check that the entry with gitInfo has lipgloss files
-				hasLipglossFiles := strings.Contains(result.Stdout, "lipgloss") && strings.Contains(result.Stdout, ".go")
-				if !hasLipglossFiles {
-					return fmt.Errorf("expected lipgloss files in the line with gitInfo, got: %s", result.Stdout)
+				if gitAliasStat.FileCount <= 10 {
+					return fmt.Errorf("expected fileCount for git alias to be > 10, got %d", gitAliasStat.FileCount)
+				}
+
+				if gitAliasStat.TotalTokens <= 1000 {
+					return fmt.Errorf("expected totalTokens for git alias to be > 1000, got %d", gitAliasStat.TotalTokens)
+				}
+
+				if gitAliasStat.GitInfo == nil {
+					return fmt.Errorf("expected gitInfo to be present for the git alias rule")
+				}
+
+				if gitAliasStat.GitInfo.URL != "https://github.com/charmbracelet/lipgloss" {
+					return fmt.Errorf("expected gitInfo.url to be 'https://github.com/charmbracelet/lipgloss', got '%s'", gitAliasStat.GitInfo.URL)
+				}
+
+				if gitAliasStat.GitInfo.Version != "v0.13.0" {
+					return fmt.Errorf("expected gitInfo.version to be 'v0.13.0', got '%s'", gitAliasStat.GitInfo.Version)
 				}
 
 				return nil

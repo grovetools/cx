@@ -57,7 +57,7 @@ func main() {
 		GitAliasBasicScenario(),
 		GitAliasWithVersionScenario(),
 		GitAliasWithGlobPatternsScenario(),
-		// GitAliasStatsPerLineScenario(), // TODO: Fix attribution tracking for Git aliases
+		GitAliasStatsPerLineScenario(),
 
 		// Default Directive Scenarios
 		DefaultDirectiveBasicScenario(),

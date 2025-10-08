@@ -2,8 +2,12 @@ package context
 
 import (
 	"bufio"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mattsolo1/grove-core/pkg/repo"
 )
 
 // RuleInfo holds a parsed rule with its line number.
@@ -35,6 +39,12 @@ type FilteredResult map[int][]FilteredFileInfo
 func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionResult, []RuleInfo, ExclusionResult, FilteredResult, error) {
 	// Initialize alias resolver for @alias: directives
 	resolver := m.getAliasResolver()
+
+	// Create repo manager for processing Git URLs
+	repoManager, repoErr := repo.NewManager()
+	if repoErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not create repository manager: %v\n", repoErr)
+	}
 
 	// 1. Parse rules content into a structured list with line numbers.
 	// Resolve @alias: directives as we parse
@@ -109,6 +119,51 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 				}
 				// Note: if resolution fails, line remains as the @alias: directive
 				// and will be skipped below
+			}
+		}
+
+		// After potential alias resolution, check if the line is a Git URL and convert it to a local path
+		if repoManager != nil {
+			isExclude := strings.HasPrefix(line, "!")
+			cleanLine := line
+			if isExclude {
+				cleanLine = strings.TrimPrefix(line, "!")
+			}
+
+			if isGitURL, repoURL, version := m.ParseGitRule(cleanLine); isGitURL {
+				localPath, _, cloneErr := repoManager.Ensure(repoURL, version)
+				if cloneErr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not clone repository %s: %v\n", repoURL, cloneErr)
+					lineNum++
+					continue
+				}
+
+				repoRef := repoURL
+				if version != "" {
+					repoRef += "@" + version
+				}
+
+				pathPattern := "/**" // Default if no subpath
+				if len(cleanLine) > len(repoRef) && strings.HasPrefix(cleanLine, repoRef) {
+					pathPattern = cleanLine[len(repoRef):]
+				}
+
+				processedLine := filepath.Join(localPath, pathPattern)
+				processedLine = filepath.ToSlash(processedLine)
+
+				// Convert absolute path to relative path for pattern matching
+				// The resolved Git repo gives us an absolute path, but we need it relative to workDir
+				if filepath.IsAbs(processedLine) {
+					relLine, err := filepath.Rel(m.workDir, processedLine)
+					if err == nil {
+						processedLine = filepath.ToSlash(relLine)
+					}
+				}
+
+				line = processedLine
+				if isExclude {
+					line = "!" + line
+				}
 			}
 		}
 
@@ -205,7 +260,13 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		filteredFromLines := []int{}
 
 		for _, rule := range rules {
-			baseMatch := m.matchPattern(rule.Pattern, relPath)
+			// For absolute path patterns (e.g., from Git repos), match against absolute path
+			// For relative patterns, match against relative path
+			pathToMatch := relPath
+			if filepath.IsAbs(rule.Pattern) {
+				pathToMatch = filepath.ToSlash(file)
+			}
+			baseMatch := m.matchPattern(rule.Pattern, pathToMatch)
 
 			// Track if base pattern matched but directive filtered it out
 			if baseMatch && rule.Directive != "" && !rule.IsExclude {
@@ -253,7 +314,13 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 		// Check if this file matches any rule
 		for _, rule := range rules {
-			match := m.matchPattern(rule.Pattern, relPath)
+			// For absolute path patterns (e.g., from Git repos), match against absolute path
+			// For relative patterns, match against relative path
+			pathToMatch := relPath
+			if filepath.IsAbs(rule.Pattern) {
+				pathToMatch = filepath.ToSlash(file)
+			}
+			match := m.matchPattern(rule.Pattern, pathToMatch)
 
 			// If the pattern matches, check if directive filter passes (if present)
 			if match && rule.Directive != "" && !rule.IsExclude {
