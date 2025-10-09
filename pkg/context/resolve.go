@@ -128,10 +128,10 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	rulesDir := filepath.Dir(absRulesPath)
 
 	// Process hot rule set imports
-	for _, importIdentifier := range mainImports {
-		parts := strings.SplitN(importIdentifier, ":", 2)
+	for _, importInfo := range mainImports {
+		parts := strings.SplitN(importInfo.ImportIdentifier, ":", 2)
 		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importIdentifier)
+			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importInfo.ImportIdentifier)
 			continue
 		}
 		projectAlias, rulesetName := parts[0], parts[1]
@@ -144,7 +144,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
 
-		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, 0)
+		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
@@ -178,10 +178,10 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	}
 
 	// Process cold rule set imports
-	for _, importIdentifier := range coldImports {
-		parts := strings.SplitN(importIdentifier, ":", 2)
+	for _, importInfo := range coldImports {
+		parts := strings.SplitN(importInfo.ImportIdentifier, ":", 2)
 		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importIdentifier)
+			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importInfo.ImportIdentifier)
 			continue
 		}
 		projectAlias, rulesetName := parts[0], parts[1]
@@ -194,7 +194,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
 
-		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, 0)
+		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue

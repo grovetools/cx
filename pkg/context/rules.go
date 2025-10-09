@@ -252,7 +252,7 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 }
 
 // parseRulesFile parses the rules file content and extracts patterns, directives, and default paths
-func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []RuleInfo, mainDefaultPaths, coldDefaultPaths, mainImportedRuleSets, coldImportedRuleSets, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
+func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []RuleInfo, mainDefaultPaths, coldDefaultPaths []string, mainImportedRuleSets, coldImportedRuleSets []ImportInfo, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
 	if len(rulesContent) == 0 {
 		return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, nil
 	}
@@ -389,9 +389,15 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 						importIdentifier := strings.Join(parts, ":")
 
 						if inColdSection {
-							coldImportedRuleSets = append(coldImportedRuleSets, importIdentifier)
+							coldImportedRuleSets = append(coldImportedRuleSets, ImportInfo{
+								ImportIdentifier: importIdentifier,
+								LineNum:          lineNum,
+							})
 						} else {
-							mainImportedRuleSets = append(mainImportedRuleSets, importIdentifier)
+							mainImportedRuleSets = append(mainImportedRuleSets, ImportInfo{
+								ImportIdentifier: importIdentifier,
+								LineNum:          lineNum,
+							})
 						}
 					}
 				}

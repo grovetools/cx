@@ -20,6 +20,12 @@ type RuleInfo struct {
 	DirectiveQuery   string `json:"directiveQuery,omitempty"` // the search query
 }
 
+// ImportInfo holds information about a ruleset import with its line number.
+type ImportInfo struct {
+	ImportIdentifier string // e.g., "project:ruleset"
+	LineNum          int    // The line number where this import appears
+}
+
 // AttributionResult maps a line number to the list of files it includes.
 type AttributionResult map[int][]string
 
