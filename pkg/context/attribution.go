@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/mattsolo1/grove-core/pkg/repo"
 )
 
 // RuleInfo holds a parsed rule with its line number and origin.
@@ -44,173 +42,76 @@ type FilteredResult map[int][]FilteredFileInfo
 // ResolveFilesWithAttribution walks the filesystem once and attributes each included file
 // to the rule that was responsible for its inclusion. It also tracks exclusions and filtered matches.
 func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionResult, []RuleInfo, ExclusionResult, FilteredResult, error) {
-	// Initialize alias resolver for @alias: directives
-	resolver := m.getAliasResolver()
+	// 1. Write rulesContent to a temporary file so we can use expandAllRules
+	tmpFile, err := os.CreateTemp("", "grove-rules-*.rules")
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to create temp rules file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
 
-	// Create repo manager for processing Git URLs
-	repoManager, repoErr := repo.NewManager()
-	if repoErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not create repository manager: %v\n", repoErr)
+	if _, err := tmpFile.WriteString(rulesContent); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to write temp rules file: %w", err)
+	}
+	tmpFile.Close()
+
+	// 2. Use expandAllRules to get all rules with proper import handling
+	hotRules, coldRules, _, err := m.expandAllRules(tmpFile.Name(), make(map[string]bool), 0)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to expand rules: %w", err)
 	}
 
-	// 1. Parse rules content into a structured list with line numbers.
-	// Resolve @alias: directives as we parse
-	var rules []RuleInfo
+	// 3. Combine hot and cold rules into a single list (for attribution purposes, we treat them the same)
+	allRules := append(hotRules, coldRules...)
+
+	// 4. Parse the original rulesContent separately to build the RuleInfo list for backward compatibility
+	// This preserves the original line numbers from the input content
+	var rawRules []RuleInfo
 	scanner := bufio.NewScanner(strings.NewReader(rulesContent))
 	lineNum := 1
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		// Handle Git aliases first (e.g., @a:git:owner/repo[@version])
-		isGitAlias := false
-		tempLineForCheck := line
-		if strings.HasPrefix(tempLineForCheck, "!") {
-			tempLineForCheck = strings.TrimSpace(strings.TrimPrefix(tempLineForCheck, "!"))
-		}
-		if strings.HasPrefix(tempLineForCheck, "@a:git:") || strings.HasPrefix(tempLineForCheck, "@alias:git:") {
-			isGitAlias = true
+		// Skip comments, directives, and separators
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "@") || line == "---" {
+			lineNum++
+			continue
 		}
 
-		if isGitAlias {
-			// Transform Git alias to GitHub URL (same logic as in parseRulesFile)
-			isExclude := false
-			tempLine := line
-			if strings.HasPrefix(tempLine, "!") {
-				isExclude = true
-				tempLine = strings.TrimPrefix(tempLine, "!")
-			}
-			tempLine = strings.TrimSpace(tempLine)
+		// Check for search directives
+		basePattern, directive, query, hasDirective := parseSearchDirective(line)
 
-			prefix := "@a:git:"
-			if strings.HasPrefix(tempLine, "@alias:git:") {
-				prefix = "@alias:git:"
-			}
-			repoPart := strings.TrimPrefix(tempLine, prefix)
-			githubURL := "https://github.com/" + repoPart
+		// Apply brace expansion to the base pattern
+		expandedPatterns := expandBraces(basePattern)
 
+		// Create a rule for each expanded pattern
+		for _, expandedPattern := range expandedPatterns {
+			isExclude := strings.HasPrefix(expandedPattern, "!")
+			pattern := expandedPattern
 			if isExclude {
-				line = "!" + githubURL
-			} else {
-				line = githubURL
-			}
-		} else {
-			// Try to resolve workspace @alias: directives
-			isAliasLine := strings.HasPrefix(line, "@alias:") || strings.HasPrefix(line, "@a:")
-			if resolver != nil && isAliasLine {
-				resolvedLine, err := resolver.ResolveLine(line)
-				if err == nil && resolvedLine != "" {
-					line = resolvedLine
-					// If the resolved line is just a directory path (no glob pattern),
-					// append /** to match all files in that directory
-					// Check the base pattern part before any directives
-					baseForCheck, _, _, _ := parseSearchDirective(line)
-					if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
-						// Replace the base pattern with base + /**
-						if baseForCheck == line {
-							// No directive, just append /**
-							line = line + "/**"
-						} else {
-							// Has directive, insert /** before it
-							directivePart := strings.TrimPrefix(line, baseForCheck)
-							line = baseForCheck + "/**" + directivePart
-						}
-					}
-					// Convert absolute path to relative path for pattern matching
-					// The resolved alias gives us an absolute path, but we need it relative to workDir
-					if filepath.IsAbs(line) {
-						relLine, err := filepath.Rel(m.workDir, line)
-						if err == nil {
-							line = filepath.ToSlash(relLine)
-						}
-					}
-				}
-				// Note: if resolution fails, line remains as the @alias: directive
-				// and will be skipped below
-			}
-		}
-
-		// After potential alias resolution, check if the line is a Git URL and convert it to a local path
-		if repoManager != nil {
-			isExclude := strings.HasPrefix(line, "!")
-			cleanLine := line
-			if isExclude {
-				cleanLine = strings.TrimPrefix(line, "!")
+				pattern = strings.TrimPrefix(expandedPattern, "!")
 			}
 
-			if isGitURL, repoURL, version := m.ParseGitRule(cleanLine); isGitURL {
-				localPath, _, cloneErr := repoManager.Ensure(repoURL, version)
-				if cloneErr != nil {
-					fmt.Fprintf(os.Stderr, "Warning: could not clone repository %s: %v\n", repoURL, cloneErr)
-					lineNum++
-					continue
-				}
-
-				repoRef := repoURL
-				if version != "" {
-					repoRef += "@" + version
-				}
-
-				pathPattern := "/**" // Default if no subpath
-				if len(cleanLine) > len(repoRef) && strings.HasPrefix(cleanLine, repoRef) {
-					pathPattern = cleanLine[len(repoRef):]
-				}
-
-				processedLine := filepath.Join(localPath, pathPattern)
-				processedLine = filepath.ToSlash(processedLine)
-
-				// Convert absolute path to relative path for pattern matching
-				// The resolved Git repo gives us an absolute path, but we need it relative to workDir
-				if filepath.IsAbs(processedLine) {
-					relLine, err := filepath.Rel(m.workDir, processedLine)
-					if err == nil {
-						processedLine = filepath.ToSlash(relLine)
-					}
-				}
-
-				line = processedLine
-				if isExclude {
-					line = "!" + line
-				}
+			ruleInfo := RuleInfo{
+				Pattern:          pattern,
+				IsExclude:        isExclude,
+				LineNum:          lineNum,
+				EffectiveLineNum: lineNum,
 			}
-		}
 
-		// Process the line if it's not a comment, directive (except resolved aliases), or separator
-		if line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "@") && line != "---" {
-			// Check for search directives
-			basePattern, directive, query, hasDirective := parseSearchDirective(line)
-
-			// Apply brace expansion to the base pattern
-			expandedPatterns := expandBraces(basePattern)
-
-			// Create a rule for each expanded pattern
-			for _, expandedPattern := range expandedPatterns {
-				isExclude := strings.HasPrefix(expandedPattern, "!")
-				pattern := expandedPattern
-				if isExclude {
-					pattern = strings.TrimPrefix(expandedPattern, "!")
-				}
-
-				ruleInfo := RuleInfo{
-					Pattern:   pattern,
-					IsExclude: isExclude,
-					LineNum:   lineNum,
-				}
-
-				if hasDirective {
-					ruleInfo.Directive = directive
-					ruleInfo.DirectiveQuery = query
-				}
-
-				rules = append(rules, ruleInfo)
+			if hasDirective {
+				ruleInfo.Directive = directive
+				ruleInfo.DirectiveQuery = query
 			}
+
+			rawRules = append(rawRules, ruleInfo)
 		}
 		lineNum++
 	}
 
-	// 2. Get all candidate files by first resolving only inclusion patterns
-	// to find all potentially included files
+	// 5. Extract patterns from expanded rules for file resolution
 	inclusionPatterns := []string{}
-	for _, rule := range rules {
+	for _, rule := range allRules {
 		if !rule.IsExclude {
 			pattern := rule.Pattern
 			// Encode directive if present
@@ -228,7 +129,7 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 	// Also get the final file list with exclusions applied
 	allPatterns := []string{}
-	for _, rule := range rules {
+	for _, rule := range allRules {
 		pattern := rule.Pattern
 		// Encode directive if present
 		if rule.Directive != "" {
@@ -251,9 +152,10 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 	exclusions := make(ExclusionResult)
 	filtered := make(FilteredResult)
 
-	// 3. For each included file, find the last matching rule (for attribution).
+	// 6. For each included file, find the last matching rule (for attribution).
+	// Use EffectiveLineNum for attribution to handle imported rulesets correctly.
 	for _, file := range allFiles {
-		lastMatch := -1
+		lastMatchEffectiveLineNum := -1
 		isIncluded := false
 
 		// Get path relative to workDir for matching
@@ -266,7 +168,7 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		// Track which rules had base pattern match but were filtered
 		filteredFromLines := []int{}
 
-		for _, rule := range rules {
+		for _, rule := range allRules {
 			// For absolute path patterns (e.g., from Git repos), match against absolute path
 			// For relative patterns, match against relative path
 			pathToMatch := relPath
@@ -282,32 +184,32 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 				if err != nil || len(directiveFiltered) == 0 {
 					// Base pattern matched but directive filtered it out
 					// We'll record this after we know which line won
-					filteredFromLines = append(filteredFromLines, rule.LineNum)
+					filteredFromLines = append(filteredFromLines, rule.EffectiveLineNum)
 					baseMatch = false
 				}
 			}
 
 			if baseMatch {
-				lastMatch = rule.LineNum
+				lastMatchEffectiveLineNum = rule.EffectiveLineNum
 				isIncluded = !rule.IsExclude
 			}
 		}
 
-		// 4. If the last match was an inclusion rule, attribute the file to that line.
-		if isIncluded && lastMatch != -1 {
-			result[lastMatch] = append(result[lastMatch], file)
+		// 7. If the last match was an inclusion rule, attribute the file to that line.
+		if isIncluded && lastMatchEffectiveLineNum != -1 {
+			result[lastMatchEffectiveLineNum] = append(result[lastMatchEffectiveLineNum], file)
 
 			// Record filtered matches with the winning line number
 			for _, filteredLineNum := range filteredFromLines {
 				filtered[filteredLineNum] = append(filtered[filteredLineNum], FilteredFileInfo{
 					File:           file,
-					WinningLineNum: lastMatch,
+					WinningLineNum: lastMatchEffectiveLineNum,
 				})
 			}
 		}
 	}
 
-	// 5. For each potential file, determine if it was excluded and by which rule
+	// 8. For each potential file, determine if it was excluded and by which rule
 	for _, file := range potentialFiles {
 		// Get path relative to workDir for matching
 		relPath, err := filepath.Rel(m.workDir, file)
@@ -316,11 +218,11 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		}
 		relPath = filepath.ToSlash(relPath)
 
-		lastMatch := -1
+		lastMatchEffectiveLineNum := -1
 		wasExcluded := false
 
 		// Check if this file matches any rule
-		for _, rule := range rules {
+		for _, rule := range allRules {
 			// For absolute path patterns (e.g., from Git repos), match against absolute path
 			// For relative patterns, match against relative path
 			pathToMatch := relPath
@@ -332,25 +234,25 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			// If the pattern matches, check if directive filter passes (if present)
 			if match && rule.Directive != "" && !rule.IsExclude {
 				// Apply directive filter
-				filtered, err := m.applyDirectiveFilter([]string{file}, rule.Directive, rule.DirectiveQuery)
-				if err != nil || len(filtered) == 0 {
+				filteredResult, err := m.applyDirectiveFilter([]string{file}, rule.Directive, rule.DirectiveQuery)
+				if err != nil || len(filteredResult) == 0 {
 					match = false
 				}
 			}
 
 			if match {
-				lastMatch = rule.LineNum
+				lastMatchEffectiveLineNum = rule.EffectiveLineNum
 				wasExcluded = rule.IsExclude
 			}
 		}
 
 		// If the last matching rule was an exclusion, track it
-		if wasExcluded && lastMatch != -1 {
-			exclusions[lastMatch] = append(exclusions[lastMatch], file)
+		if wasExcluded && lastMatchEffectiveLineNum != -1 {
+			exclusions[lastMatchEffectiveLineNum] = append(exclusions[lastMatchEffectiveLineNum], file)
 		}
 	}
 
-	return result, rules, exclusions, filtered, nil
+	return result, rawRules, exclusions, filtered, nil
 }
 
 // matchPattern matches a file path against a pattern using gitignore-style matching
