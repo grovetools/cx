@@ -252,7 +252,7 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 }
 
 // parseRulesFile parses the rules file content and extracts patterns, directives, and default paths
-func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, mainImportedRuleSets, coldImportedRuleSets, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
+func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []RuleInfo, mainDefaultPaths, coldDefaultPaths, mainImportedRuleSets, coldImportedRuleSets, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
 	if len(rulesContent) == 0 {
 		return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, nil
 	}
@@ -270,9 +270,11 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 	// Track global search directives
 	var globalDirective string
 	var globalQuery string
+	lineNum := 0 // Track line numbers
 
 	scanner := bufio.NewScanner(bytes.NewReader(rulesContent))
 	for scanner.Scan() {
+		lineNum++ // Increment line number for each line
 		line := strings.TrimSpace(scanner.Text())
 		if line == "@freeze-cache" {
 			freezeCache = true
@@ -409,9 +411,9 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 					// Add each file from command output as a pattern
 					for _, file := range cmdFiles {
 						if inColdSection {
-							coldPatterns = append(coldPatterns, file)
+							coldRules = append(coldRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
 						} else {
-							mainPatterns = append(mainPatterns, file)
+							mainRules = append(mainRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
 						}
 					}
 				} else {
@@ -533,19 +535,28 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 			expandedPatterns := expandBraces(basePattern)
 
 			// Add each expanded pattern to the appropriate list
-			// If there's a directive, encode it in the pattern using a special marker
 			for _, expandedPattern := range expandedPatterns {
-				finalPattern := expandedPattern
+				// Detect if this is an exclusion pattern
+				isExclude := strings.HasPrefix(expandedPattern, "!")
+				cleanPattern := expandedPattern
+				if isExclude {
+					cleanPattern = strings.TrimPrefix(expandedPattern, "!")
+				}
+
+				ruleInfo := RuleInfo{
+					Pattern:   cleanPattern,
+					IsExclude: isExclude,
+					LineNum:   lineNum,
+				}
 				if hasDirective {
-					// Encode directive info: pattern|||directive|||query
-					// We use ||| as a separator since it's unlikely to appear in file paths
-					finalPattern = expandedPattern + "|||" + directive + "|||" + query
+					ruleInfo.Directive = directive
+					ruleInfo.DirectiveQuery = query
 				}
 
 				if inColdSection {
-					coldPatterns = append(coldPatterns, finalPattern)
+					coldRules = append(coldRules, ruleInfo)
 				} else {
-					mainPatterns = append(mainPatterns, finalPattern)
+					mainRules = append(mainRules, ruleInfo)
 				}
 			}
 		}
@@ -554,7 +565,7 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainPatterns, coldPattern
 	if err := scanner.Err(); err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, err
 	}
-	return mainPatterns, coldPatterns, mainDefaultPaths, coldDefaultPaths, mainImportedRuleSets, coldImportedRuleSets, viewPaths, freezeCache, disableExpiration, disableCache, expireTime, nil
+	return mainRules, coldRules, mainDefaultPaths, coldDefaultPaths, mainImportedRuleSets, coldImportedRuleSets, viewPaths, freezeCache, disableExpiration, disableCache, expireTime, nil
 }
 
 // findActiveRulesFile returns the path to the active rules file if it exists

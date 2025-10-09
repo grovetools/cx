@@ -10,13 +10,14 @@ import (
 	"github.com/mattsolo1/grove-core/pkg/repo"
 )
 
-// RuleInfo holds a parsed rule with its line number.
+// RuleInfo holds a parsed rule with its line number and origin.
 type RuleInfo struct {
-	Pattern        string
-	IsExclude      bool
-	LineNum        int
-	Directive      string `json:"directive,omitempty"`      // e.g., "find" or "grep"
-	DirectiveQuery string `json:"directiveQuery,omitempty"` // the search query
+	Pattern          string
+	IsExclude        bool
+	LineNum          int    // The line number in its original source file
+	EffectiveLineNum int    // The line number in the root file that caused this rule to be included
+	Directive        string `json:"directive,omitempty"`      // e.g., "find" or "grep"
+	DirectiveQuery   string `json:"directiveQuery,omitempty"` // the search query
 }
 
 // AttributionResult maps a line number to the list of files it includes.

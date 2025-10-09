@@ -15,9 +15,38 @@ import (
 func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, error) {
 	// Parse the rules content directly without recursion for this case
 	// This is used by commands that provide rules content directly (not from a file)
-	mainPatterns, coldPatterns, _, _, _, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	mainRules, coldRules, _, _, _, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules content: %w", err)
+	}
+
+	// Extract patterns from RuleInfo
+	mainPatterns := make([]string, len(mainRules))
+	for i, rule := range mainRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			mainPatterns[i] = "!" + pattern
+		} else {
+			mainPatterns[i] = pattern
+		}
+	}
+
+	coldPatterns := make([]string, len(coldRules))
+	for i, rule := range coldRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			coldPatterns[i] = "!" + pattern
+		} else {
+			coldPatterns[i] = pattern
+		}
 	}
 
 	// Resolve files from main patterns
@@ -49,8 +78,8 @@ func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, e
 	return finalMainFiles, nil
 }
 
-// resolveAllPatterns recursively resolves rules, including those from @default directives.
-func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) (hotPatterns, coldPatterns, viewPaths []string, err error) {
+// expandAllRules recursively resolves rules, including those from @default directives.
+func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, importLineNum int) (hotRules, coldRules []RuleInfo, viewPaths []string, err error) {
 	absRulesPath, err := filepath.Abs(rulesPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get absolute path for rules: %w", err)
@@ -76,8 +105,24 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 		return nil, nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
 	}
 
-	hotPatterns = append(hotPatterns, localHot...)
-	coldPatterns = append(coldPatterns, localCold...)
+	// Set EffectiveLineNum for local rules
+	for i := range localHot {
+		if importLineNum > 0 {
+			localHot[i].EffectiveLineNum = importLineNum
+		} else {
+			localHot[i].EffectiveLineNum = localHot[i].LineNum
+		}
+	}
+	for i := range localCold {
+		if importLineNum > 0 {
+			localCold[i].EffectiveLineNum = importLineNum
+		} else {
+			localCold[i].EffectiveLineNum = localCold[i].LineNum
+		}
+	}
+
+	hotRules = append(hotRules, localHot...)
+	coldRules = append(coldRules, localCold...)
 	viewPaths = append(viewPaths, localView...)
 
 	rulesDir := filepath.Dir(absRulesPath)
@@ -99,29 +144,29 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 
 		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
 
-		nestedHot, nestedCold, nestedView, err := m.resolveAllPatterns(rulesFilePath, visited)
+		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, 0)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
 		}
 		// The patterns from external project need to be prefixed with the project path
 		// so they resolve files from that project, not the current one
-		for i, pattern := range nestedHot {
-			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
-				nestedHot[i] = filepath.Join(projectPath, pattern)
-			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
-				nestedHot[i] = "!" + filepath.Join(projectPath, pattern[1:])
+		for i := range nestedHot {
+			if !nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
+				nestedHot[i].Pattern = filepath.Join(projectPath, nestedHot[i].Pattern)
+			} else if nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
+				nestedHot[i].Pattern = filepath.Join(projectPath, nestedHot[i].Pattern)
 			}
 		}
-		for i, pattern := range nestedCold {
-			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
-				nestedCold[i] = filepath.Join(projectPath, pattern)
-			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
-				nestedCold[i] = "!" + filepath.Join(projectPath, pattern[1:])
+		for i := range nestedCold {
+			if !nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
+				nestedCold[i].Pattern = filepath.Join(projectPath, nestedCold[i].Pattern)
+			} else if nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
+				nestedCold[i].Pattern = filepath.Join(projectPath, nestedCold[i].Pattern)
 			}
 		}
-		hotPatterns = append(hotPatterns, nestedHot...)
-		coldPatterns = append(coldPatterns, nestedCold...)
+		hotRules = append(hotRules, nestedHot...)
+		coldRules = append(coldRules, nestedCold...)
 
 		// Add view paths from nested rules, adjusting relative paths
 		for i, path := range nestedView {
@@ -149,29 +194,29 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 
 		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
 
-		nestedHot, nestedCold, nestedView, err := m.resolveAllPatterns(rulesFilePath, visited)
+		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, 0)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
 		}
 		// The patterns from external project need to be prefixed with the project path
-		for i, pattern := range nestedHot {
-			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
-				nestedHot[i] = filepath.Join(projectPath, pattern)
-			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
-				nestedHot[i] = "!" + filepath.Join(projectPath, pattern[1:])
+		for i := range nestedHot {
+			if !nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
+				nestedHot[i].Pattern = filepath.Join(projectPath, nestedHot[i].Pattern)
+			} else if nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
+				nestedHot[i].Pattern = filepath.Join(projectPath, nestedHot[i].Pattern)
 			}
 		}
-		for i, pattern := range nestedCold {
-			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
-				nestedCold[i] = filepath.Join(projectPath, pattern)
-			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
-				nestedCold[i] = "!" + filepath.Join(projectPath, pattern[1:])
+		for i := range nestedCold {
+			if !nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
+				nestedCold[i].Pattern = filepath.Join(projectPath, nestedCold[i].Pattern)
+			} else if nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
+				nestedCold[i].Pattern = filepath.Join(projectPath, nestedCold[i].Pattern)
 			}
 		}
 		// For cold imports, add everything to cold patterns
-		coldPatterns = append(coldPatterns, nestedHot...)
-		coldPatterns = append(coldPatterns, nestedCold...)
+		coldRules = append(coldRules, nestedHot...)
+		coldRules = append(coldRules, nestedCold...)
 
 		// Add view paths from nested rules, adjusting relative paths
 		for i, path := range nestedView {
@@ -224,28 +269,28 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 
 		// Recursively resolve patterns from the default rules file
 		// ALL patterns from the default (hot and cold) are added to the current HOT context.
-		nestedHot, nestedCold, nestedView, err := m.resolveAllPatterns(defaultRulesFile, visited)
+		nestedHot, nestedCold, nestedView, err := m.expandAllRules(defaultRulesFile, visited, 0)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		// The patterns from external project need to be prefixed with the project path
 		// so they resolve files from that project, not the current one
-		for i, pattern := range nestedHot {
-			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
-				nestedHot[i] = filepath.Join(realPath, pattern)
-			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
-				nestedHot[i] = "!" + filepath.Join(realPath, pattern[1:])
+		for i := range nestedHot {
+			if !nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
+				nestedHot[i].Pattern = filepath.Join(realPath, nestedHot[i].Pattern)
+			} else if nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
+				nestedHot[i].Pattern = filepath.Join(realPath, nestedHot[i].Pattern)
 			}
 		}
-		for i, pattern := range nestedCold {
-			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
-				nestedCold[i] = filepath.Join(realPath, pattern)
-			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
-				nestedCold[i] = "!" + filepath.Join(realPath, pattern[1:])
+		for i := range nestedCold {
+			if !nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
+				nestedCold[i].Pattern = filepath.Join(realPath, nestedCold[i].Pattern)
+			} else if nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
+				nestedCold[i].Pattern = filepath.Join(realPath, nestedCold[i].Pattern)
 			}
 		}
-		hotPatterns = append(hotPatterns, nestedHot...)
-		hotPatterns = append(hotPatterns, nestedCold...)
+		hotRules = append(hotRules, nestedHot...)
+		hotRules = append(hotRules, nestedCold...)
 
 		// Add view paths from nested rules, adjusting relative paths
 		for i, path := range nestedView {
@@ -298,27 +343,27 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 
 		// Recursively resolve patterns from the default rules file
 		// ALL patterns from the default are added to the current COLD context.
-		nestedHot, nestedCold, nestedView, err := m.resolveAllPatterns(defaultRulesFile, visited)
+		nestedHot, nestedCold, nestedView, err := m.expandAllRules(defaultRulesFile, visited, 0)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 		// The patterns from external project need to be prefixed with the project path
-		for i, pattern := range nestedHot {
-			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
-				nestedHot[i] = filepath.Join(realPath, pattern)
-			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
-				nestedHot[i] = "!" + filepath.Join(realPath, pattern[1:])
+		for i := range nestedHot {
+			if !nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
+				nestedHot[i].Pattern = filepath.Join(realPath, nestedHot[i].Pattern)
+			} else if nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
+				nestedHot[i].Pattern = filepath.Join(realPath, nestedHot[i].Pattern)
 			}
 		}
-		for i, pattern := range nestedCold {
-			if !strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern) {
-				nestedCold[i] = filepath.Join(realPath, pattern)
-			} else if strings.HasPrefix(pattern, "!") && !filepath.IsAbs(pattern[1:]) {
-				nestedCold[i] = "!" + filepath.Join(realPath, pattern[1:])
+		for i := range nestedCold {
+			if !nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
+				nestedCold[i].Pattern = filepath.Join(realPath, nestedCold[i].Pattern)
+			} else if nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
+				nestedCold[i].Pattern = filepath.Join(realPath, nestedCold[i].Pattern)
 			}
 		}
-		coldPatterns = append(coldPatterns, nestedHot...)
-		coldPatterns = append(coldPatterns, nestedCold...)
+		coldRules = append(coldRules, nestedHot...)
+		coldRules = append(coldRules, nestedCold...)
 
 		// Add view paths from nested rules, adjusting relative paths
 		for i, path := range nestedView {
@@ -329,7 +374,7 @@ func (m *Manager) resolveAllPatterns(rulesPath string, visited map[string]bool) 
 		viewPaths = append(viewPaths, nestedView...)
 	}
 
-	return hotPatterns, coldPatterns, viewPaths, nil
+	return hotRules, coldRules, viewPaths, nil
 }
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
@@ -348,9 +393,38 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	}
 
 	// Resolve all patterns recursively from the active rules file
-	hotPatterns, coldPatterns, _, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
+	hotRules, coldRules, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve patterns: %w", err)
+	}
+
+	// Extract patterns from RuleInfo
+	hotPatterns := make([]string, len(hotRules))
+	for i, rule := range hotRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			hotPatterns[i] = "!" + pattern
+		} else {
+			hotPatterns[i] = pattern
+		}
+	}
+
+	coldPatterns := make([]string, len(coldRules))
+	for i, rule := range coldRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			coldPatterns[i] = "!" + pattern
+		} else {
+			coldPatterns[i] = pattern
+		}
 	}
 
 	// Resolve files from hot patterns
@@ -402,9 +476,38 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 	}
 
 	// Resolve all patterns recursively from the custom rules file
-	hotPatterns, coldPatterns, _, err := m.resolveAllPatterns(absRulesFilePath, make(map[string]bool))
+	hotRules, coldRules, _, err := m.expandAllRules(absRulesFilePath, make(map[string]bool), 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to resolve patterns from rules file: %w", err)
+	}
+
+	// Extract patterns from RuleInfo
+	hotPatterns := make([]string, len(hotRules))
+	for i, rule := range hotRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			hotPatterns[i] = "!" + pattern
+		} else {
+			hotPatterns[i] = pattern
+		}
+	}
+
+	coldPatterns := make([]string, len(coldRules))
+	for i, rule := range coldRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			coldPatterns[i] = "!" + pattern
+		} else {
+			coldPatterns[i] = pattern
+		}
 	}
 
 	// Resolve files from hot patterns
@@ -446,9 +549,23 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 		defaultContent, _ := m.LoadDefaultRulesContent()
 		if defaultContent != nil {
 			// Parse the default content to get cold patterns
-			_, coldPatterns, _, _, _, _, _, _, _, _, _, err := m.parseRulesFile(defaultContent)
+			_, coldRules, _, _, _, _, _, _, _, _, _, err := m.parseRulesFile(defaultContent)
 			if err != nil {
 				return nil, err
+			}
+			// Extract patterns from RuleInfo
+			coldPatterns := make([]string, len(coldRules))
+			for i, rule := range coldRules {
+				pattern := rule.Pattern
+				// Encode directive if present
+				if rule.Directive != "" {
+					pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+				}
+				if rule.IsExclude {
+					coldPatterns[i] = "!" + pattern
+				} else {
+					coldPatterns[i] = pattern
+				}
 			}
 			coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
 			if err != nil {
@@ -462,9 +579,24 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 	}
 
 	// Resolve all patterns recursively from the active rules file
-	_, coldPatterns, _, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
+	_, coldRules, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve patterns for cold context: %w", err)
+	}
+
+	// Extract patterns from RuleInfo
+	coldPatterns := make([]string, len(coldRules))
+	for i, rule := range coldRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			coldPatterns[i] = "!" + pattern
+		} else {
+			coldPatterns[i] = pattern
+		}
 	}
 
 	// Resolve files from only the cold patterns

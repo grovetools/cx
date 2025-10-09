@@ -393,10 +393,40 @@ func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus,
 		}
 	}
 
-	hotPatterns, coldPatterns, viewPaths, err := m.resolveAllPatterns(activeRulesFile, make(map[string]bool))
+	hotRules, coldRules, viewPaths, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
 	if err != nil {
 		return nil, err
 	}
+
+	// Extract patterns from RuleInfo
+	hotPatterns := make([]string, len(hotRules))
+	for i, rule := range hotRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			hotPatterns[i] = "!" + pattern
+		} else {
+			hotPatterns[i] = pattern
+		}
+	}
+
+	coldPatterns := make([]string, len(coldRules))
+	for i, rule := range coldRules {
+		pattern := rule.Pattern
+		// Encode directive if present
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			coldPatterns[i] = "!" + pattern
+		} else {
+			coldPatterns[i] = pattern
+		}
+	}
+
 	mainPatterns := hotPatterns
 
 	// Combine all patterns for classification
