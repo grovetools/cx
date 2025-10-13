@@ -80,6 +80,10 @@ func NewTreePage(state *sharedState) Page {
 
 func (p *treePage) Name() string { return "tree" }
 
+func (p *treePage) Keys() interface{} {
+	return treeKeys
+}
+
 func (p *treePage) Init() tea.Cmd {
 	return p.loadTreeCmd()
 }

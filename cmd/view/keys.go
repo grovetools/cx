@@ -89,6 +89,10 @@ type repoSelectKeyMap struct {
 	keymap.Base
 	FocusEcosystem key.Binding
 	ClearFocus     key.Binding
+	Hot            key.Binding
+	Cold           key.Binding
+	Exclude        key.Binding
+	ViewInTree     key.Binding
 }
 
 func (k repoSelectKeyMap) ShortHelp() []key.Binding {
@@ -133,5 +137,9 @@ var (
 		Base:           keymap.NewBase(),
 		FocusEcosystem: key.NewBinding(key.WithKeys("@"), key.WithHelp("@", "focus ecosystem")),
 		ClearFocus:     key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("ctrl+g", "clear focus")),
+		Hot:            key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "toggle hot")),
+		Cold:           key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "toggle cold")),
+		Exclude:        key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "toggle exclude")),
+		ViewInTree:     key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "view in tree")),
 	}
 )

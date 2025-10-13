@@ -24,6 +24,10 @@ func NewRulesPage(state *sharedState) Page {
 
 func (p *rulesPage) Name() string { return "rules" }
 
+func (p *rulesPage) Keys() interface{} {
+	return pagerKeys
+}
+
 func (p *rulesPage) Init() tea.Cmd { return nil }
 
 func (p *rulesPage) Focus() tea.Cmd {

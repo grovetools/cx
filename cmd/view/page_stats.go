@@ -25,6 +25,10 @@ func NewStatsPage(state *sharedState) Page {
 
 func (p *statsPage) Name() string { return "stats" }
 
+func (p *statsPage) Keys() interface{} {
+	return pagerKeys
+}
+
 func (p *statsPage) Init() tea.Cmd { return nil }
 
 func (p *statsPage) Focus() tea.Cmd {

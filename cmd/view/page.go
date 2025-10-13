@@ -6,6 +6,8 @@ import tea "github.com/charmbracelet/bubbletea"
 type Page interface {
 	// Name returns the identifier for the page (e.g., "tree", "repo").
 	Name() string
+	// Keys returns the keymap for the page, to be used by the help component.
+	Keys() interface{}
 	// Init initializes the page model.
 	Init() tea.Cmd
 	// Update handles messages for the page.

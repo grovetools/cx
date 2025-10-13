@@ -62,6 +62,11 @@ func NewListPage(state *sharedState) Page {
 }
 
 func (p *listPage) Name() string { return "list" }
+
+func (p *listPage) Keys() interface{} {
+	return pagerKeys
+}
+
 func (p *listPage) Init() tea.Cmd { return nil }
 
 func (p *listPage) Focus() tea.Cmd {

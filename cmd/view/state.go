@@ -17,7 +17,7 @@ type sharedState struct {
 	rulesContent string
 	hotStats     *context.ContextStats
 	coldStats    *context.ContextStats
-	projects     []*workspace.ProjectInfo
+	projects     []*workspace.WorkspaceNode
 	// Parsed rules
 	hotRules  []string
 	coldRules []string
@@ -46,8 +46,8 @@ func refreshSharedStateCmd() tea.Cmd {
 		}
 		newState.rulesContent = string(rulesBytes)
 
-		// Parse rules
-		parseRules(&newState, string(rulesBytes))
+		// Parse rules (pass the manager to resolve aliases)
+		parseRules(&newState, string(rulesBytes), mgr)
 
 		// Resolve hot and cold files
 		hotFiles, err := mgr.ResolveFilesFromRules()
@@ -82,12 +82,21 @@ func refreshSharedStateCmd() tea.Cmd {
 			newState.coldStats = coldStats
 		}
 
+		// Load projects
+		projects, err := workspace.GetProjects(nil)
+		if err != nil {
+			newState.err = err
+			// Continue, don't fail the whole TUI
+		} else {
+			newState.projects = projects
+		}
+
 		return stateRefreshedMsg{state: newState}
 	}
 }
 
 // parseRules parses the rules content and populates hotRules, coldRules, and viewPaths.
-func parseRules(state *sharedState, content string) {
+func parseRules(state *sharedState, content string, mgr *context.Manager) {
 	state.hotRules = []string{}
 	state.coldRules = []string{}
 	state.viewPaths = []string{}
@@ -108,10 +117,29 @@ func parseRules(state *sharedState, content string) {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if strings.HasPrefix(trimmed, "@view:") {
-			path := strings.TrimSpace(strings.TrimPrefix(trimmed, "@view:"))
+		if strings.HasPrefix(trimmed, "@view:") || strings.HasPrefix(trimmed, "@v:") {
+			path := ""
+			if strings.HasPrefix(trimmed, "@view:") {
+				path = strings.TrimSpace(strings.TrimPrefix(trimmed, "@view:"))
+			} else {
+				path = strings.TrimSpace(strings.TrimPrefix(trimmed, "@v:"))
+			}
+
 			if path != "" {
-				state.viewPaths = append(state.viewPaths, path)
+				// Use the manager to resolve any potential alias in the line.
+				resolvedLine, err := mgr.ResolveLineForRulePreview(trimmed)
+				if err == nil {
+					resolvedPath := resolvedLine
+					if strings.HasPrefix(resolvedPath, "@view:") {
+						resolvedPath = strings.TrimSpace(strings.TrimPrefix(resolvedPath, "@view:"))
+					} else if strings.HasPrefix(resolvedPath, "@v:") {
+						resolvedPath = strings.TrimSpace(strings.TrimPrefix(resolvedPath, "@v:"))
+					}
+					state.viewPaths = append(state.viewPaths, resolvedPath)
+				} else {
+					// Fallback to unresolved path if alias resolution fails
+					state.viewPaths = append(state.viewPaths, path)
+				}
 			}
 			continue
 		}
