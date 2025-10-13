@@ -689,6 +689,34 @@ func (m *Manager) SetActiveRules(sourcePath string) error {
 	return nil
 }
 
+// WriteRulesTo writes the current active rules to a specified file path
+func (m *Manager) WriteRulesTo(destPath string) error {
+	// Find the active rules file
+	rulesFilePath := m.findActiveRulesFile()
+	if rulesFilePath == "" {
+		return fmt.Errorf("no active rules file found")
+	}
+
+	// Read content from active rules
+	content, err := os.ReadFile(rulesFilePath)
+	if err != nil {
+		return fmt.Errorf("error reading active rules file: %w", err)
+	}
+
+	// Ensure destination directory exists
+	destDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("error creating destination directory: %w", err)
+	}
+
+	// Write to destination file, overwriting if it exists
+	if err := os.WriteFile(destPath, content, 0644); err != nil {
+		return fmt.Errorf("error writing to destination file: %w", err)
+	}
+
+	return nil
+}
+
 // AppendRule adds a rule to the active rules file in the specified context
 // contextType can be "hot", "cold", or "exclude".
 func (m *Manager) AppendRule(rulePath, contextType string) error {

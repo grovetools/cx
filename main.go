@@ -36,6 +36,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewResetCmd())
 	rootCmd.AddCommand(cmd.NewRulesCmd())
 	rootCmd.AddCommand(cmd.NewSetRulesCmd())
+	rootCmd.AddCommand(cmd.NewWriteRulesCmd())
 	rootCmd.AddCommand(cmd.NewGenerateCmd())
 	rootCmd.AddCommand(cmd.NewShowCmd())
 	rootCmd.AddCommand(cmd.NewListCmd())
