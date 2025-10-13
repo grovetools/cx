@@ -9,23 +9,54 @@ import (
 )
 
 // mockProjects provides a consistent set of discovered projects for testing.
-func mockProjects() []*workspace.ProjectInfo {
-	return []*workspace.ProjectInfo{
-		// An ecosystem
-		{Name: "my-ecosystem", Path: "/path/to/my-ecosystem", IsEcosystem: true},
-		// A repo within the ecosystem
-		{Name: "my-repo", Path: "/path/to/my-ecosystem/my-repo", ParentEcosystemPath: "/path/to/my-ecosystem"},
-		// A worktree within that repo
-		{Name: "feature-branch", Path: "/path/to/my-ecosystem/my-repo/.grove-worktrees/feature-branch", ParentPath: "/path/to/my-ecosystem/my-repo", ParentEcosystemPath: "/path/to/my-ecosystem", IsWorktree: true},
-		// A standalone project
-		{Name: "standalone-project", Path: "/path/to/standalone-project"},
-		// A standalone project with a worktree
-		{Name: "standalone-worktree", Path: "/path/to/standalone-project/.grove-worktrees/standalone-worktree", ParentPath: "/path/to/standalone-project", IsWorktree: true},
+func mockProjects() []*workspace.WorkspaceNode {
+	// Paths are defined with forward slashes for consistency, filepath.FromSlash will handle OS conversion in tests.
+	ecoPath := "/path/to/my-ecosystem"
+	repoPath := "/path/to/my-ecosystem/my-repo"
+	repoWtPath := "/path/to/my-ecosystem/my-repo/.grove-worktrees/feature-branch"
+	standalonePath := "/path/to/standalone-project"
+	standaloneWtPath := "/path/to/standalone-project/.grove-worktrees/standalone-worktree"
+
+	return []*workspace.WorkspaceNode{
+		{Name: "my-ecosystem", Path: ecoPath, Kind: workspace.KindEcosystemRoot},
+		{Name: "my-repo", Path: repoPath, Kind: workspace.KindEcosystemSubProject, ParentEcosystemPath: ecoPath},
+		{Name: "feature-branch", Path: repoWtPath, Kind: workspace.KindEcosystemSubProjectWorktree, ParentProjectPath: repoPath, ParentEcosystemPath: ecoPath},
+		{Name: "standalone-project", Path: standalonePath, Kind: workspace.KindStandaloneProject},
+		{Name: "standalone-worktree", Path: standaloneWtPath, Kind: workspace.KindStandaloneProjectWorktree, ParentProjectPath: standalonePath},
 	}
 }
 
 func TestAliasResolver_Resolve(t *testing.T) {
-	resolver := &AliasResolver{projects: mockProjects()}
+	// Create a mock provider by setting up a discovery result with our test data
+	mockResult := &workspace.DiscoveryResult{
+		Ecosystems: []workspace.Ecosystem{
+			{Name: "my-ecosystem", Path: "/path/to/my-ecosystem", Type: "Grove"},
+		},
+		Projects: []workspace.Project{
+			{
+				Name:                "my-repo",
+				Path:                "/path/to/my-ecosystem/my-repo",
+				ParentEcosystemPath: "/path/to/my-ecosystem",
+				Workspaces: []workspace.DiscoveredWorkspace{
+					{Name: "my-repo", Path: "/path/to/my-ecosystem/my-repo", Type: workspace.WorkspaceTypePrimary},
+					{Name: "feature-branch", Path: "/path/to/my-ecosystem/my-repo/.grove-worktrees/feature-branch", Type: workspace.WorkspaceTypeWorktree, ParentProjectPath: "/path/to/my-ecosystem/my-repo"},
+				},
+			},
+			{
+				Name: "standalone-project",
+				Path: "/path/to/standalone-project",
+				Workspaces: []workspace.DiscoveredWorkspace{
+					{Name: "standalone-project", Path: "/path/to/standalone-project", Type: workspace.WorkspaceTypePrimary},
+					{Name: "standalone-worktree", Path: "/path/to/standalone-project/.grove-worktrees/standalone-worktree", Type: workspace.WorkspaceTypeWorktree, ParentProjectPath: "/path/to/standalone-project"},
+				},
+			},
+		},
+	}
+
+	provider := workspace.NewProvider(mockResult)
+	resolver := &AliasResolver{provider: provider}
+	// Mark providerOnce as already done to prevent initProvider from running
+	resolver.providerOnce.Do(func() {})
 
 	tests := []struct {
 		name      string
@@ -61,7 +92,36 @@ func TestAliasResolver_Resolve(t *testing.T) {
 }
 
 func TestAliasResolver_ResolveLine(t *testing.T) {
-	resolver := &AliasResolver{projects: mockProjects()}
+	// Create a mock provider by setting up a discovery result with our test data
+	mockResult := &workspace.DiscoveryResult{
+		Ecosystems: []workspace.Ecosystem{
+			{Name: "my-ecosystem", Path: "/path/to/my-ecosystem", Type: "Grove"},
+		},
+		Projects: []workspace.Project{
+			{
+				Name:                "my-repo",
+				Path:                "/path/to/my-ecosystem/my-repo",
+				ParentEcosystemPath: "/path/to/my-ecosystem",
+				Workspaces: []workspace.DiscoveredWorkspace{
+					{Name: "my-repo", Path: "/path/to/my-ecosystem/my-repo", Type: workspace.WorkspaceTypePrimary},
+					{Name: "feature-branch", Path: "/path/to/my-ecosystem/my-repo/.grove-worktrees/feature-branch", Type: workspace.WorkspaceTypeWorktree, ParentProjectPath: "/path/to/my-ecosystem/my-repo"},
+				},
+			},
+			{
+				Name: "standalone-project",
+				Path: "/path/to/standalone-project",
+				Workspaces: []workspace.DiscoveredWorkspace{
+					{Name: "standalone-project", Path: "/path/to/standalone-project", Type: workspace.WorkspaceTypePrimary},
+					{Name: "standalone-worktree", Path: "/path/to/standalone-project/.grove-worktrees/standalone-worktree", Type: workspace.WorkspaceTypeWorktree, ParentProjectPath: "/path/to/standalone-project"},
+				},
+			},
+		},
+	}
+
+	provider := workspace.NewProvider(mockResult)
+	resolver := &AliasResolver{provider: provider}
+	// Mark providerOnce as already done to prevent initProvider from running
+	resolver.providerOnce.Do(func() {})
 
 	tests := []struct {
 		name      string
@@ -71,9 +131,9 @@ func TestAliasResolver_ResolveLine(t *testing.T) {
 	}{
 		{"alias with pattern", "@alias:my-ecosystem:my-repo/src/**/*.go", "/path/to/my-ecosystem/my-repo/src/**/*.go", false},
 		{"alias with exclusion", "!@alias:standalone-project/vendor/**", "!/path/to/standalone-project/vendor/**", false},
-		{"alias only", "@alias:my-ecosystem", "/path/to/my-ecosystem", false},
-		{"line without alias", "*.go", "*.go", false},
-		{"commented alias", "# @alias:my-ecosystem", "# @alias:my-ecosystem", false},
+		{"alias only", "@alias:my-ecosystem", "/path/to/my-ecosystem/**", false},
+		{"line without alias", "*.go", "", true},
+		{"commented alias", "# @alias:my-ecosystem", "", true},
 		{"not found", "@alias:not-found/main.go", "", true},
 	}
 

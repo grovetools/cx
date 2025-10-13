@@ -382,11 +382,10 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 				// Check for '::' to identify a ruleset import
 				if strings.Contains(aliasPart, "::") {
 					isRuleSetAlias = true
-					// Split by '::' and then rejoin with a single ':' for the resolver,
-					// which expects the "project:ruleset" format.
+					// Preserve '::' delimiter for the resolver to correctly parse multi-part aliases
 					parts := strings.SplitN(aliasPart, "::", 2)
 					if len(parts) == 2 {
-						importIdentifier := strings.Join(parts, ":")
+						importIdentifier := strings.Join(parts, "::")
 
 						if inColdSection {
 							coldImportedRuleSets = append(coldImportedRuleSets, ImportInfo{

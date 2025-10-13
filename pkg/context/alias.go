@@ -27,8 +27,8 @@ type aliasLineParts struct {
 
 // AliasResolver discovers available workspaces and resolves aliases to their absolute paths.
 type AliasResolver struct {
-	projects     []*workspace.ProjectInfo
-	discoverOnce sync.Once
+	provider     *workspace.Provider
+	providerOnce sync.Once
 	discoverErr  error
 	configPath   string // Optional: custom config path for testing
 	workDir      string // Current working directory for context-aware resolution
@@ -50,146 +50,149 @@ func NewAliasResolverWithConfig(configPath string) *AliasResolver {
 	return &AliasResolver{configPath: configPath}
 }
 
-// discoverWorkspaces performs the workspace discovery process once.
-func (r *AliasResolver) discoverWorkspaces() {
-	r.discoverOnce.Do(func() {
-		// We use a temporary logger as this is a background process.
+// initProvider performs the workspace discovery process once and initializes the provider.
+func (r *AliasResolver) initProvider() {
+	r.providerOnce.Do(func() {
 		logger := logrus.New()
 		logger.SetLevel(logrus.WarnLevel)
 
 		discoveryService := workspace.NewDiscoveryService(logger)
-
-		// If a custom config path is set (for testing), use it
 		if r.configPath != "" {
 			discoveryService = discoveryService.WithConfigPath(r.configPath)
 		}
 
-		result, err := discoveryService.DiscoverAll()
+		discoveryResult, err := discoveryService.DiscoverAll()
 		if err != nil {
 			r.discoverErr = fmt.Errorf("failed to discover workspaces: %w", err)
 			return
 		}
 
-		r.projects = workspace.TransformToProjectInfo(result)
+		r.provider = workspace.NewProvider(discoveryResult)
 	})
 }
 
 // Resolve translates a pure alias string (e.g., "ecosystem:repo") into an absolute path.
 func (r *AliasResolver) Resolve(alias string) (string, error) {
-	r.discoverWorkspaces()
+	r.initProvider()
 	if r.discoverErr != nil {
 		return "", r.discoverErr
 	}
+	if r.provider == nil {
+		return "", fmt.Errorf("workspace provider not initialized")
+	}
 
+	allNodes := r.provider.All()
 	components := strings.Split(alias, ":")
-	switch len(components) {
-	case 1:
-		return r.matchSingle(components[0])
-	case 2:
-		return r.matchDouble(components[0], components[1])
-	case 3:
-		return r.matchTriple(components[0], components[1], components[2])
-	default:
-		return "", fmt.Errorf("invalid alias format '%s', must have 1 to 3 components separated by ':'", alias)
-	}
-}
 
-// matchSingle finds a project by its top-level name.
-// Context-aware priority:
-// 1. Sibling in same worktree directory (if current project has WorktreeName)
-// 2. Projects NOT inside worktree directories (top-level)
-// 3. Any other match
-func (r *AliasResolver) matchSingle(name string) (string, error) {
-	var currentProject *workspace.ProjectInfo
-	var topLevelMatch *workspace.ProjectInfo
-	var fallbackMatch *workspace.ProjectInfo
+	// Context-aware resolution for single-component aliases
+	if len(components) == 1 {
+		name := components[0]
+		// Get current workspace context
+		if r.workDir != "" {
+			if currentNode := r.provider.FindByPath(r.workDir); currentNode != nil {
+				// Prioritize siblings based on context
+				for _, node := range allNodes {
+					if node.Name != name {
+						continue
+					}
 
-	// If we have a working directory, try to get current project context
-	if r.workDir != "" {
-		currentProject, _ = workspace.GetProjectByPath(r.workDir)
-	}
+					// If both are worktrees with the same parent project, they're siblings
+					if currentNode.IsWorktree() && node.IsWorktree() &&
+						currentNode.ParentProjectPath != "" && node.ParentProjectPath == currentNode.ParentProjectPath {
+						return node.Path, nil
+					}
 
-	for _, p := range r.projects {
-		if !p.IsWorktree && p.Name == name {
-			// Priority 1: If current project is in a worktree, prefer siblings in same worktree
-			if currentProject != nil && currentProject.WorktreeName != "" {
-				if p.WorktreeName == currentProject.WorktreeName {
-					return p.Path, nil
-				}
-			}
-
-			// Priority 2: Top-level projects (not in any worktree)
-			if p.WorktreeName == "" {
-				if topLevelMatch == nil {
-					topLevelMatch = p
-				}
-			} else {
-				// Priority 3: Any match in a worktree
-				if fallbackMatch == nil {
-					fallbackMatch = p
+					// If both are projects in the same parent ecosystem (including ecosystem worktrees), they're siblings
+					// This handles: EcosystemSubProjects, EcosystemWorktreeSubProjects, and EcosystemWorktreeSubProjectWorktrees
+					if currentNode.ParentEcosystemPath != "" && node.ParentEcosystemPath == currentNode.ParentEcosystemPath &&
+						currentNode.ParentProjectPath == "" && node.ParentProjectPath == "" {
+						return node.Path, nil
+					}
 				}
 			}
 		}
+
+		// Fallback for single-component alias: find a top-level project or best match
+		var topLevelMatch *workspace.WorkspaceNode
+		var shallowerMatch *workspace.WorkspaceNode
+		var anyMatch *workspace.WorkspaceNode
+		for _, node := range allNodes {
+			if node.Name == name {
+				depth := node.GetDepth()
+				if depth == 0 { // Top-level nodes (standalone projects, ecosystems)
+					if topLevelMatch == nil {
+						topLevelMatch = node
+					}
+				}
+				// Prefer shallower nodes (e.g., ecosystem sub-projects over worktree sub-projects)
+				if shallowerMatch == nil || node.GetDepth() < shallowerMatch.GetDepth() {
+					shallowerMatch = node
+				}
+				if anyMatch == nil {
+					anyMatch = node
+				}
+			}
+		}
+		if topLevelMatch != nil {
+			return topLevelMatch.Path, nil
+		}
+		if shallowerMatch != nil {
+			return shallowerMatch.Path, nil
+		}
+		if anyMatch != nil {
+			return anyMatch.Path, nil
+		}
+		return "", fmt.Errorf("alias not found: '%s'", alias)
 	}
 
-	if topLevelMatch != nil {
-		return topLevelMatch.Path, nil
-	}
+	// Resolution for multi-component aliases
+	for _, node := range allNodes {
+		switch len(components) {
+		case 2: // ecosystem:repo OR repo:worktree OR eco-worktree:project
+			comp1 := components[0]
+			comp2 := components[1]
+			// ecosystem:repo
+			if node.Kind == workspace.KindEcosystemSubProject && filepath.Base(node.ParentEcosystemPath) == comp1 && node.Name == comp2 {
+				return node.Path, nil
+			}
+			// repo:worktree
+			if node.IsWorktree() && node.ParentProjectPath != "" && filepath.Base(node.ParentProjectPath) == comp1 && node.Name == comp2 {
+				return node.Path, nil
+			}
+			// eco-worktree:project (e.g., general-refactoring:grove-core)
+			if node.ParentEcosystemPath != "" && filepath.Base(node.ParentEcosystemPath) == comp1 && node.Name == comp2 {
+				return node.Path, nil
+			}
 
-	if fallbackMatch != nil {
-		return fallbackMatch.Path, nil
-	}
-
-	return "", fmt.Errorf("alias not found: '%s'", name)
-}
-
-// matchDouble finds a project by ecosystem:repo, ecosystem-worktree:repo, or repo:worktree.
-func (r *AliasResolver) matchDouble(first, second string) (string, error) {
-	// Try ecosystem:repo match (top-level repos in ecosystem)
-	// For a valid ecosystem:repo match, the project must be a direct child of the ecosystem,
-	// NOT inside any worktree directory. Use WorktreeName == "" to verify this.
-	for _, p := range r.projects {
-		if p.ParentEcosystemPath != "" &&
-			filepath.Base(p.ParentEcosystemPath) == first &&
-			p.Name == second &&
-			!p.IsWorktree &&
-			p.WorktreeName == "" { // Ensures it's not inside a worktree directory
-			return p.Path, nil
+		case 3: // ecosystem:repo:worktree OR root-eco:eco-worktree:project
+			comp1 := components[0]
+			comp2 := components[1]
+			comp3 := components[2]
+			// ecosystem:repo:worktree
+			if node.IsWorktree() && node.ParentProjectPath != "" && node.ParentEcosystemPath != "" &&
+				filepath.Base(node.ParentEcosystemPath) == comp1 &&
+				filepath.Base(node.ParentProjectPath) == comp2 &&
+				node.Name == comp3 {
+				return node.Path, nil
+			}
+			// root-eco:eco-worktree:project (e.g., grove-ecosystem:general-refactoring:grove-core)
+			if node.ParentEcosystemPath != "" && node.Name == comp3 && filepath.Base(node.ParentEcosystemPath) == comp2 {
+				// Check for root ecosystem name by traversing up from the parent ecosystem path
+				// ParentEcosystemPath is like /path/to/root-eco/.grove-worktrees/eco-worktree
+				ecoWorktreeParentDir := filepath.Dir(node.ParentEcosystemPath)
+				if filepath.Base(ecoWorktreeParentDir) == ".grove-worktrees" {
+					rootEcoPath := filepath.Dir(ecoWorktreeParentDir)
+					if filepath.Base(rootEcoPath) == comp1 {
+						return node.Path, nil
+					}
+				}
+			}
+		default:
+			return "", fmt.Errorf("invalid alias format '%s', must have 1 to 3 components separated by ':'", alias)
 		}
 	}
 
-	// Try ecosystem-worktree:repo match (repos in ecosystem worktree)
-	// Match projects where WorktreeName matches first part and Name matches second part
-	for _, p := range r.projects {
-		if p.WorktreeName == first &&
-			p.Name == second &&
-			!p.IsWorktree &&
-			!p.IsEcosystem {
-			return p.Path, nil
-		}
-	}
-
-	// Try repo:worktree match (worktrees of a repo)
-	for _, p := range r.projects {
-		if p.IsWorktree && p.ParentPath != "" && filepath.Base(p.ParentPath) == first && p.Name == second {
-			return p.Path, nil
-		}
-	}
-
-	return "", fmt.Errorf("alias not found: '%s:%s'", first, second)
-}
-
-// matchTriple finds a project by ecosystem:repo:worktree.
-func (r *AliasResolver) matchTriple(eco, repo, worktree string) (string, error) {
-	for _, p := range r.projects {
-		if p.IsWorktree && p.ParentEcosystemPath != "" && p.ParentPath != "" &&
-			filepath.Base(p.ParentEcosystemPath) == eco &&
-			filepath.Base(p.ParentPath) == repo &&
-			p.Name == worktree {
-			return p.Path, nil
-		}
-	}
-	return "", fmt.Errorf("alias not found: '%s:%s:%s'", eco, repo, worktree)
+	return "", fmt.Errorf("alias not found: '%s'", alias)
 }
 
 // ResolveLine parses a full rule line, resolves the alias, and reconstructs the line with an absolute path.

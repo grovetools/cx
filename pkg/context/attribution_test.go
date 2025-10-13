@@ -33,7 +33,7 @@ func TestResolveFilesWithAttribution_Exclusions(t *testing.T) {
 	rulesContent := `**/*.go
 !*_test.go`
 
-	attribution, rules, exclusions, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, rules, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestResolveFilesWithAttribution_NoExclusions(t *testing.T) {
 	// Test case: only inclusion pattern, no exclusions
 	rulesContent := `**/*.go`
 
-	attribution, rules, exclusions, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, rules, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestResolveFilesWithAttribution_OnlyExclusions(t *testing.T) {
 	// Test case: only exclusion pattern (should result in no files)
 	rulesContent := `!*_test.go`
 
-	attribution, rules, exclusions, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, rules, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
 	}

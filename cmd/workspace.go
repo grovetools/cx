@@ -43,37 +43,34 @@ func newWorkspaceListCmd() *cobra.Command {
 				logger.SetLevel(logrus.WarnLevel)
 			}
 
-			discoveryService := workspace.NewDiscoveryService(logger)
-			discoveryResult, err := discoveryService.DiscoverAll()
+			projects, err := workspace.GetProjects(logger)
 			if err != nil {
 				return fmt.Errorf("failed to discover workspaces: %w", err)
 			}
 
-			projectInfos := workspace.TransformToProjectInfo(discoveryResult)
-
 			if jsonOutput {
-				// For JSON output, we enrich the data with the identifier used for aliases.
-				type jsonProjectInfo struct {
-					*workspace.ProjectInfo
+				// Create a custom struct to include the identifier in the JSON output.
+				type workspaceJSON struct {
+					*workspace.WorkspaceNode
 					Identifier string `json:"identifier"`
 				}
 
-				output := make([]jsonProjectInfo, len(projectInfos))
-				for i, p := range projectInfos {
-					output[i] = jsonProjectInfo{
-						ProjectInfo: p,
-						Identifier:  p.Identifier(),
+				jsonProjects := make([]workspaceJSON, len(projects))
+				for i, p := range projects {
+					jsonProjects[i] = workspaceJSON{
+						WorkspaceNode: p,
+						Identifier:    p.Identifier(),
 					}
 				}
 
-				jsonData, err := json.MarshalIndent(output, "", "  ")
+				jsonData, err := json.MarshalIndent(jsonProjects, "", "  ")
 				if err != nil {
 					return fmt.Errorf("failed to marshal project info to JSON: %w", err)
 				}
 				fmt.Println(string(jsonData))
 			} else {
 				// Simple text output for human consumption.
-				for _, p := range projectInfos {
+				for _, p := range projects {
 					fmt.Printf("- %s (%s)\n", p.Identifier(), p.Path)
 				}
 			}

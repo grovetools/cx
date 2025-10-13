@@ -129,7 +129,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 	// Process hot rule set imports
 	for _, importInfo := range mainImports {
-		parts := strings.SplitN(importInfo.ImportIdentifier, ":", 2)
+		parts := strings.SplitN(importInfo.ImportIdentifier, "::", 2)
 		if len(parts) != 2 {
 			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importInfo.ImportIdentifier)
 			continue
@@ -179,7 +179,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 	// Process cold rule set imports
 	for _, importInfo := range coldImports {
-		parts := strings.SplitN(importInfo.ImportIdentifier, ":", 2)
+		parts := strings.SplitN(importInfo.ImportIdentifier, "::", 2)
 		if len(parts) != 2 {
 			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importInfo.ImportIdentifier)
 			continue
