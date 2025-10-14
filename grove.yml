@@ -3,3 +3,6 @@ description: LLM context management
 binary:
   name: cx
   path: ./bin/cx
+
+context:
+  default_rules_path: .cx/dev-no-tests.rules
