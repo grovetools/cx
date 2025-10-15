@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
-	"github.com/mattsolo1/grove-core/pkg/workspace/filter"
 	"github.com/mattsolo1/grove-core/tui/components/navigator"
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/tui/theme"
@@ -215,23 +214,21 @@ func (p *repoPage) buildCustomView() string {
 
 // buildTableView constructs and renders the main table of workspaces.
 func (p *repoPage) buildTableView(availableHeight int) string {
-	// Get filtered projects from navigator and convert to pointers
+	// Get filtered projects from navigator - they're already hierarchically ordered
+	// with pre-calculated TreePrefix from BuildWorkspaceTree
 	filtered := p.nav.GetFiltered()
 	if len(filtered) == 0 {
 		return "No workspaces discovered.\n\nTip: Configure search_paths in ~/.grove/config.yml"
 	}
 
-	// Convert to pointers for filter functions
+	// Convert to pointers for buildTableRows
 	filteredPtrs := make([]*workspace.WorkspaceNode, len(filtered))
 	for i := range filtered {
 		filteredPtrs[i] = &filtered[i]
 	}
 
-	// Apply hierarchical grouping
-	hierarchical := filter.GroupHierarchically(filteredPtrs, false)
-
-	// Build table rows
-	allRows := p.buildTableRows(hierarchical)
+	// Build table rows (no need for additional hierarchical grouping)
+	allRows := p.buildTableRows(filteredPtrs)
 
 	// Guard against empty results
 	if len(allRows) == 0 {

@@ -118,14 +118,14 @@ func (r *AliasResolver) Resolve(alias string) (string, error) {
 		var anyMatch *workspace.WorkspaceNode
 		for _, node := range allNodes {
 			if node.Name == name {
-				depth := node.GetDepth()
+				depth := node.Depth // Use pre-calculated depth
 				if depth == 0 { // Top-level nodes (standalone projects, ecosystems)
 					if topLevelMatch == nil {
 						topLevelMatch = node
 					}
 				}
 				// Prefer shallower nodes (e.g., ecosystem sub-projects over worktree sub-projects)
-				if shallowerMatch == nil || node.GetDepth() < shallowerMatch.GetDepth() {
+				if shallowerMatch == nil || node.Depth < shallowerMatch.Depth {
 					shallowerMatch = node
 				}
 				if anyMatch == nil {
