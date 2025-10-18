@@ -20,9 +20,7 @@ func AliasSiblingResolutionScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup ecosystem with main repos and worktree", func(ctx *harness.Context) error {
 				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
-				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
-				groveConfigDir := filepath.Join(testConfigHome, "grove")
-				ctx.Set("testConfigHome", testConfigHome)
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
 
 				// Create global grove.yml
 				groveConfig := fmt.Sprintf(`groves:
@@ -141,7 +139,6 @@ workspaces:
 				}
 
 				repoAWorktreeDir := ctx.Get("repoAWorktreeDir").(string)
-				testConfigHome := ctx.Get("testConfigHome").(string)
 
 				// Create rules in repo-a that reference repo-b
 				rules := `@alias:repo-b/**/*.go`
@@ -149,7 +146,7 @@ workspaces:
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(repoAWorktreeDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(repoAWorktreeDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -176,7 +173,6 @@ workspaces:
 				}
 
 				repoAWorktreeDir := ctx.Get("repoAWorktreeDir").(string)
-				testConfigHome := ctx.Get("testConfigHome").(string)
 
 				// Use explicit ecosystem:repo namespace to get main version
 				rules := `@alias:my-ecosystem:repo-b/**/*.go`
@@ -184,7 +180,7 @@ workspaces:
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(repoAWorktreeDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(repoAWorktreeDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -213,14 +209,13 @@ workspaces:
 				}
 
 				repoADir := ctx.Get("repoADir").(string)
-				testConfigHome := ctx.Get("testConfigHome").(string)
 
 				rules := `@alias:repo-b/**/*.go`
 				if err := fs.WriteString(filepath.Join(repoADir, ".grove", "rules"), rules); err != nil {
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(repoADir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(repoADir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -254,9 +249,7 @@ func AliasNamespacingScenario() *harness.Scenario {
 			harness.NewStep("Setup two ecosystems with duplicate repo names", func(ctx *harness.Context) error {
 				// Create groves directory inside test root for isolation
 				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
-				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
-				groveConfigDir := filepath.Join(testConfigHome, "grove")
-				ctx.Set("testConfigHome", testConfigHome)
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
 
 				// Create global grove.yml
 				groveConfig := fmt.Sprintf(`groves:
@@ -337,7 +330,6 @@ workspaces:
 					return err
 				}
 
-				testConfigHome := ctx.Get("testConfigHome").(string)
 				rules := `@alias:eco-alpha:shared-lib/**/*.go`
 				if err := fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules); err != nil {
 					return err
@@ -346,7 +338,7 @@ workspaces:
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -371,13 +363,12 @@ workspaces:
 					return err
 				}
 
-				testConfigHome := ctx.Get("testConfigHome").(string)
 				rules := `@alias:eco-beta:shared-lib/**/*.go`
 				if err := fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules); err != nil {
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -409,9 +400,7 @@ func AliasWithStatsPerLineScenario() *harness.Scenario {
 			// This step is identical to the setup in AliasWorkflowScenario
 			harness.NewStep("Setup multi-project environment", func(ctx *harness.Context) error {
 				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
-				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
-				groveConfigDir := filepath.Join(testConfigHome, "grove")
-				ctx.Set("testConfigHome", testConfigHome)
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
 
 				groveConfig := fmt.Sprintf(`groves:
   test:
@@ -450,8 +439,7 @@ func AliasWithStatsPerLineScenario() *harness.Scenario {
 				if err != nil {
 					return err
 				}
-				testConfigHome := ctx.Get("testConfigHome").(string)
-				cmd := command.New(cx, "stats", "--per-line", ".grove/rules").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "stats", "--per-line", ".grove/rules").Dir(ctx.RootDir)
 
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -498,9 +486,7 @@ func AliasWorkflowScenario() *harness.Scenario {
 
 				// Set up XDG_CONFIG_HOME to point to a test config directory
 				// This allows us to control what groves discovery finds
-				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
-				groveConfigDir := filepath.Join(testConfigHome, "grove")
-				ctx.Set("testConfigHome", testConfigHome)
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
 
 				// Create global grove.yml with groves configuration
 				groveConfig := fmt.Sprintf(`groves:
@@ -570,8 +556,7 @@ main.go
 				if err != nil {
 					return err
 				}
-				testConfigHome := ctx.Get("testConfigHome").(string)
-				cmd := command.New(cx, "list").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -599,8 +584,7 @@ main.go
 				if err != nil {
 					return err
 				}
-				testConfigHome := ctx.Get("testConfigHome").(string)
-				cmd := command.New(cx, "list-cache").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list-cache").Dir(ctx.RootDir)
 
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)

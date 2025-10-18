@@ -189,9 +189,7 @@ func AliasWithDirectiveScenario() *harness.Scenario {
 			harness.NewStep("Setup ecosystem with library project", func(ctx *harness.Context) error {
 				// Create groves directory inside test root for isolation
 				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
-				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
-				groveConfigDir := filepath.Join(testConfigHome, "grove")
-				ctx.Set("testConfigHome", testConfigHome)
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
 
 				// Create global grove.yml
 				groveConfig := fmt.Sprintf(`groves:
@@ -249,8 +247,7 @@ func AliasWithDirectiveScenario() *harness.Scenario {
 					return err
 				}
 
-				testConfigHome := ctx.Get("testConfigHome").(string)
-				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cxBinary, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)

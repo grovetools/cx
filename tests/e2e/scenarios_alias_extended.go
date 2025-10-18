@@ -20,9 +20,7 @@ func AliasRulesetImportScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup multi-project environment", func(ctx *harness.Context) error {
 				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
-				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
-				groveConfigDir := filepath.Join(testConfigHome, "grove")
-				ctx.Set("testConfigHome", testConfigHome)
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
 
 				// Create global grove.yml to discover projects
 				groveConfig := fmt.Sprintf(`groves:
@@ -54,8 +52,7 @@ func AliasRulesetImportScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx list' and verify imported rules", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				testConfigHome := ctx.Get("testConfigHome").(string)
-				cmd := command.New(cx, "list").Dir(ctx.RootDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {
@@ -87,9 +84,7 @@ func AliasEcosystemWorktreeScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup complex ecosystem worktree environment", func(ctx *harness.Context) error {
 				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
-				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
-				groveConfigDir := filepath.Join(testConfigHome, "grove")
-				ctx.Set("testConfigHome", testConfigHome)
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
 
 				// Create global grove.yml to discover projects
 				groveConfig := fmt.Sprintf(`groves:
@@ -177,7 +172,6 @@ workspaces:
 				}
 
 				contextDir := ctx.Get("contextDir").(string)
-				testConfigHome := ctx.Get("testConfigHome").(string)
 
 				// Create rules importing from sibling via simple name
 				rules := `context.go
@@ -186,7 +180,7 @@ workspaces:
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(contextDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(contextDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -214,7 +208,6 @@ workspaces:
 				}
 
 				contextDir := ctx.Get("contextDir").(string)
-				testConfigHome := ctx.Get("testConfigHome").(string)
 
 				// Create rules importing with eco-worktree:project format
 				rules := `context.go
@@ -223,7 +216,7 @@ workspaces:
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(contextDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(contextDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -248,7 +241,6 @@ workspaces:
 				}
 
 				contextDir := ctx.Get("contextDir").(string)
-				testConfigHome := ctx.Get("testConfigHome").(string)
 
 				// Create rules using eco-worktree:project format with glob pattern
 				rules := `context.go
@@ -257,7 +249,7 @@ workspaces:
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(contextDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(contextDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -282,7 +274,6 @@ workspaces:
 				}
 
 				contextDir := ctx.Get("contextDir").(string)
-				testConfigHome := ctx.Get("testConfigHome").(string)
 
 				// Create rules using full hierarchy format
 				rules := `context.go
@@ -291,7 +282,7 @@ workspaces:
 					return err
 				}
 
-				cmd := command.New(cx, "list").Dir(contextDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(contextDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
