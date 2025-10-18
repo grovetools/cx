@@ -26,6 +26,7 @@ func main() {
 		AliasWithStatsPerLineScenario(),
 		AliasRulesetImportScenario(),
 		AliasEcosystemWorktreeScenario(),
+		AliasResolutionFromEcosystemWorktreeRootScenario(),
 
 		// Hybrid Context Scenarios
 		DualContextWorkflowScenario(),

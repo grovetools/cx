@@ -311,3 +311,87 @@ workspaces:
 		},
 	}
 }
+
+// AliasResolutionFromEcosystemWorktreeRootScenario tests alias resolution from the root of an ecosystem worktree.
+func AliasResolutionFromEcosystemWorktreeRootScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-alias-resolution-from-ecosystem-worktree-root",
+		Description: "Tests that aliases resolve to child projects when CWD is an ecosystem worktree root.",
+		Tags:        []string{"cx", "alias", "ecosystem", "worktree", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup ecosystem with worktree and decoy project", func(ctx *harness.Context) error {
+				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
+				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
+				groveConfigDir := filepath.Join(testConfigHome, "grove")
+				ctx.Set("testConfigHome", testConfigHome)
+
+				// Create global grove.yml to discover projects
+				groveConfig := fmt.Sprintf(`groves:
+  test:
+    path: %s
+    enabled: true
+`, grovesDir)
+				fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig)
+
+				// Create ecosystem root
+				ecoRootDir := filepath.Join(grovesDir, "my-ecosystem")
+				ecoConfig := `name: my-ecosystem
+workspaces:
+  - "*"`
+				fs.WriteString(filepath.Join(ecoRootDir, "grove.yml"), ecoConfig)
+				fs.WriteString(filepath.Join(ecoRootDir, ".gitmodules"), "# ecosystem")
+				command.New("git", "init").Dir(ecoRootDir).Run()
+
+				// Create ecosystem worktree
+				worktreeDir := filepath.Join(ecoRootDir, ".grove-worktrees", "feature-branch")
+				fs.WriteString(filepath.Join(worktreeDir, "grove.yml"), ecoConfig)
+				fs.WriteString(filepath.Join(worktreeDir, ".gitmodules"), "# ecosystem worktree")
+				fs.WriteString(filepath.Join(worktreeDir, ".git"), "gitdir: ../../.git/worktrees/feature-branch")
+				ctx.Set("worktreeDir", worktreeDir)
+
+				// Create project-beta inside the worktree (the correct target)
+				projectBetaWorktreeDir := filepath.Join(worktreeDir, "project-beta")
+				fs.WriteString(filepath.Join(projectBetaWorktreeDir, "grove.yml"), `name: project-beta`)
+				fs.WriteString(filepath.Join(projectBetaWorktreeDir, "beta.go"), "package beta // from worktree")
+				command.New("git", "init").Dir(projectBetaWorktreeDir).Run()
+
+				// Create a decoy project-beta outside the ecosystem (the incorrect target)
+				decoyProjectBetaDir := filepath.Join(grovesDir, "project-beta")
+				fs.WriteString(filepath.Join(decoyProjectBetaDir, "grove.yml"), `name: project-beta`)
+				fs.WriteString(filepath.Join(decoyProjectBetaDir, "decoy.go"), "package beta // from decoy")
+				command.New("git", "init").Dir(decoyProjectBetaDir).Run()
+
+				return nil
+			}),
+			harness.NewStep("Run 'cx list' from worktree root with simple alias", func(ctx *harness.Context) error {
+				cx, _ := FindProjectBinary()
+				testConfigHome := ctx.Get("testConfigHome").(string)
+				worktreeDir := ctx.Get("worktreeDir").(string)
+
+				// Create rules file in the ecosystem worktree root
+				rules := `@a:project-beta/**/*.go`
+				fs.WriteString(filepath.Join(worktreeDir, ".grove", "rules"), rules)
+
+				// Run the command from the ecosystem worktree root
+				cmd := command.New(cx, "list").Dir(worktreeDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+				// Verify the correct file is included (from the worktree)
+				if !strings.Contains(output, "beta.go") {
+					return fmt.Errorf("context is missing 'beta.go' from the worktree's child project")
+				}
+				// Verify the decoy file is NOT included
+				if strings.Contains(output, "decoy.go") {
+					return fmt.Errorf("context incorrectly included 'decoy.go' from the external project")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
