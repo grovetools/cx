@@ -2,7 +2,6 @@ package context
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -74,7 +73,6 @@ func (r *AliasResolver) initProvider() {
 
 // Resolve translates a pure alias string (e.g., "ecosystem:repo") into an absolute path.
 func (r *AliasResolver) Resolve(alias string) (string, error) {
-	fmt.Fprintf(os.Stderr, "DEBUG: Resolve called with alias=%s, workDir=%s\n", alias, r.workDir)
 	r.initProvider()
 	if r.discoverErr != nil {
 		return "", r.discoverErr
@@ -84,70 +82,44 @@ func (r *AliasResolver) Resolve(alias string) (string, error) {
 	}
 
 	allNodes := r.provider.All()
-	fmt.Fprintf(os.Stderr, "DEBUG: Found %d nodes\n", len(allNodes))
 	components := strings.Split(alias, ":")
 
 	// Context-aware resolution for single-component aliases
 	if len(components) == 1 {
 		name := components[0]
-		// Get current workspace context
 		if r.workDir != "" {
-			// Special case: If workDir is inside a .grove-worktrees directory, prioritize child projects of that worktree
-			// This handles the case where the ecosystem worktree node itself may not be in the provider's node list
-			if strings.Contains(r.workDir, ".grove-worktrees") {
-				// Extract the ecosystem worktree path (everything up to and including the worktree name)
-				parts := strings.Split(r.workDir, ".grove-worktrees")
-				if len(parts) >= 2 {
-					// Find the worktree directory (first directory after .grove-worktrees)
-					wtRelPath := strings.TrimPrefix(parts[1], string(filepath.Separator))
-					wtDirName := strings.Split(wtRelPath, string(filepath.Separator))[0]
-					if wtDirName != "" {
-						ecosystemWorktreePath := filepath.Join(parts[0], ".grove-worktrees", wtDirName)
-						fmt.Fprintf(os.Stderr, "DEBUG: Computed ecosystemWorktreePath: %s\n", ecosystemWorktreePath)
-						// Look for child projects of this specific ecosystem worktree
-						for _, node := range allNodes {
-							if node.Name == name {
-								fmt.Fprintf(os.Stderr, "DEBUG: Checking node %s: ParentEcosystemPath=%s\n", node.Name, node.ParentEcosystemPath)
-							}
-							if node.Name == name && node.ParentEcosystemPath == ecosystemWorktreePath {
-								fmt.Fprintf(os.Stderr, "DEBUG: MATCH! Found child project: %s\n", node.Path)
-								return node.Path, nil // Found a direct child project in the worktree
-							}
-						}
-						fmt.Fprintf(os.Stderr, "DEBUG: No match found for worktree child projects\n")
-					}
-				}
+			// Normalize the workDir to handle macOS /private/var symlink
+			normalizedWorkDir := r.workDir
+			// On macOS, /private/var is symlinked to /var, but EvalSymlinks doesn't always resolve it
+			// Try stripping /private prefix if it exists
+			if strings.HasPrefix(normalizedWorkDir, "/private/") {
+				normalizedWorkDir = strings.TrimPrefix(normalizedWorkDir, "/private")
 			}
 
-			currentNode := r.provider.FindByPath(r.workDir)
+			currentNode := r.provider.FindByPath(normalizedWorkDir)
+			// If not found with /private stripped, try the original path
+			if currentNode == nil && normalizedWorkDir != r.workDir {
+				currentNode = r.provider.FindByPath(r.workDir)
+			}
+
 			if currentNode != nil {
-				// If the current node is an ecosystem (root or worktree), prioritize its child projects.
-				if currentNode.Kind == workspace.KindEcosystemRoot || currentNode.Kind == workspace.KindEcosystemWorktree {
-					// Check for direct children of the current node (ecosystem root case)
+				// Priority 1: If the current node is an ecosystem (e.g., an ecosystem worktree root),
+				// prioritize finding a direct child project with the alias name.
+				if currentNode.IsEcosystem() {
 					for _, node := range allNodes {
 						if node.Name == name && node.ParentEcosystemPath == currentNode.Path {
-							return node.Path, nil // Found a direct child project.
+							return node.Path, nil // Found a direct child.
 						}
 					}
 				}
 
-				// Prioritize siblings based on context
-				for _, node := range allNodes {
-					if node.Name != name {
-						continue
-					}
-
-					// If both are worktrees with the same parent project, they're siblings
-					if currentNode.IsWorktree() && node.IsWorktree() &&
-						currentNode.ParentProjectPath != "" && node.ParentProjectPath == currentNode.ParentProjectPath {
-						return node.Path, nil
-					}
-
-					// If both are projects in the same parent ecosystem (including ecosystem worktrees), they're siblings
-					// This handles: EcosystemSubProjects, EcosystemWorktreeSubProjects, and EcosystemWorktreeSubProjectWorktrees
-					if currentNode.ParentEcosystemPath != "" && node.ParentEcosystemPath == currentNode.ParentEcosystemPath &&
-						currentNode.ParentProjectPath == "" && node.ParentProjectPath == "" {
-						return node.Path, nil
+				// Priority 2: If the current node is a project within an ecosystem, prioritize finding a sibling project.
+				// This handles resolving aliases between projects in the same ecosystem or ecosystem worktree.
+				if currentNode.ParentEcosystemPath != "" {
+					for _, node := range allNodes {
+						if node.Name == name && node.ParentEcosystemPath == currentNode.ParentEcosystemPath {
+							return node.Path, nil // Found a sibling.
+						}
 					}
 				}
 			}
