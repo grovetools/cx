@@ -307,14 +307,14 @@ func (p *repoPage) buildTableRows(projects []*workspace.WorkspaceNode) [][]strin
 		// Apply styling based on workspace type
 		var nameStyle lipgloss.Style
 		if proj.IsWorktree() {
-			// Worktrees: teal color (blue in the theme)
-			nameStyle = lipgloss.NewStyle().Foreground(theme.DefaultColors.Blue)
+			// Worktrees: info style (blue/teal)
+			nameStyle = theme.DefaultTheme.Info
 		} else if proj.IsEcosystem() {
-			// Ecosystems: bold cyan
-			nameStyle = lipgloss.NewStyle().Foreground(theme.DefaultColors.Cyan).Bold(true)
+			// Ecosystems: bold header style
+			nameStyle = theme.DefaultTheme.Header
 		} else {
-			// Primary workspaces: cyan color
-			nameStyle = lipgloss.NewStyle().Foreground(theme.DefaultColors.Cyan)
+			// Primary workspaces: info style
+			nameStyle = theme.DefaultTheme.Info
 		}
 
 		// Use pre-calculated TreePrefix for hierarchical display

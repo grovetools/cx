@@ -831,17 +831,17 @@ func (p *treePage) getStyle(node *grove_context.FileNode) lipgloss.Style {
 	var style lipgloss.Style
 	switch node.Status {
 	case grove_context.StatusIncludedHot:
-		style = lipgloss.NewStyle().Foreground(theme.Colors.Green)
+		style = theme.Success
 	case grove_context.StatusIncludedCold:
-		style = lipgloss.NewStyle().Foreground(theme.Colors.Cyan)
+		style = theme.Info
 	case grove_context.StatusExcludedByRule:
-		style = lipgloss.NewStyle().Foreground(theme.Colors.Red)
+		style = theme.Error
 	case grove_context.StatusOmittedNoMatch:
-		style = lipgloss.NewStyle().Foreground(theme.Colors.MutedText)
+		style = theme.Muted
 	case grove_context.StatusDirectory:
 		style = lipgloss.NewStyle().Foreground(theme.Colors.LightText)
 	case grove_context.StatusIgnoredByGit:
-		style = lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Muted.GetForeground()) // Very dark grey for gitignored
+		style = theme.Muted
 	default:
 		style = lipgloss.NewStyle()
 	}
