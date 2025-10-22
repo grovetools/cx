@@ -1024,13 +1024,15 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			}
 
 			// Apply filtering logic:
-			// - If any patterns with directives match, the file MUST pass at least one directive filter
-			// - If only patterns without directives match, include the file
-			// - If both match, directive patterns take precedence (file must pass a directive)
+			// - If a file matches any non-directive rule, it's automatically included
+			// - If a file ONLY matches directive rules, it must pass at least one directive filter
 			shouldInclude := false
 
-			if len(matchesWithDirective) > 0 {
-				// File matched patterns with directives - it MUST pass at least one directive filter
+			if len(matchesWithoutDirective) > 0 {
+				// File matched at least one pattern without a directive - include it
+				shouldInclude = true
+			} else if len(matchesWithDirective) > 0 {
+				// File ONLY matched patterns with directives - it MUST pass at least one directive filter
 				for _, info := range matchesWithDirective {
 					filtered, err := m.applyDirectiveFilter([]string{file}, info.directive, info.query)
 					if err != nil {
@@ -1041,11 +1043,6 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 						break
 					}
 				}
-				// Note: if the file fails ALL directive filters, shouldInclude stays false
-				// even if matchesWithoutDirective is not empty
-			} else if len(matchesWithoutDirective) > 0 {
-				// No directive patterns match, but non-directive patterns do - include the file
-				shouldInclude = true
 			}
 
 			if shouldInclude {
