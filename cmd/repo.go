@@ -269,9 +269,9 @@ func setupDefaultAuditRules(repoPath string) error {
 	return os.WriteFile(rulesPath, rulesContent, 0o644)
 }
 
-// runInteractiveView executes the 'cx view' command as a subprocess.
+// runInteractiveView executes the 'grove cx view' command as a subprocess.
 func runInteractiveView() error {
-	cxCmd := exec.Command("cx", "view")
+	cxCmd := exec.Command("grove", "cx", "view")
 	cxCmd.Stdin = os.Stdin
 	cxCmd.Stdout = os.Stdout
 	cxCmd.Stderr = os.Stderr
@@ -321,8 +321,9 @@ func runLLMAnalysis() (string, error) {
 		"--file", tmpFile.Name(),
 		"--yes", // Skip any confirmations
 	}
-	gemapiCmd := exec.Command("gemapi", args...)
-	gemapiCmd.Stderr = os.Stderr // Pipe stderr to see progress from gemapi
+	// Use 'grove llm request' to ensure workspace-aware context is used
+	gemapiCmd := exec.Command("grove", append([]string{"llm", "request"}, args...)...)
+	gemapiCmd.Stderr = os.Stderr // Pipe stderr to see progress from llm
 
 	// Execute the command and capture stdout
 	output, err := gemapiCmd.Output()
