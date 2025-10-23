@@ -213,7 +213,7 @@ type pickerKeyMap struct {
 }
 
 func (k pickerKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Select, k.Help, k.Quit}
+	return []key.Binding{k.Select, k.Quit}
 }
 
 func (k pickerKeyMap) FullHelp() [][]key.Binding {

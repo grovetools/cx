@@ -25,7 +25,7 @@ type dashboardKeyMap struct {
 }
 
 func (k dashboardKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.Refresh, k.Quit}
+	return []key.Binding{k.Refresh, k.Quit}
 }
 
 func (k dashboardKeyMap) FullHelp() [][]key.Binding {
