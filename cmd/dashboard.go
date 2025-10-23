@@ -335,17 +335,16 @@ func renderSummaryBox(title string, stats *context.ContextStats, horizontal bool
 		BorderForeground(theme.Colors.Cyan).
 		Width(boxWidth)
 
-	// Title style
-	titleStyle := theme.Title.Copy().
-		Foreground(theme.Colors.Cyan).
+	// Title style - use bold for emphasis without explicit color
+	titleStyle := theme.Bold.Copy().
 		MarginBottom(1)
 
 	// Content
 	content := titleStyle.Render(title) + "\n\n"
 
-	// Stats
-	labelStyle := theme.Info.Copy()
-	valueStyle := theme.Info.Copy().Foreground(theme.Colors.LightText).Bold(true)
+	// Stats - use terminal defaults for regular text
+	labelStyle := lipgloss.NewStyle()
+	valueStyle := theme.Bold
 
 	// Format file count
 	fileCount := fmt.Sprintf("%-16s %s", "Total Files:", valueStyle.Render(fmt.Sprintf("%d", stats.TotalFiles)))

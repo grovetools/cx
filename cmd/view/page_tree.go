@@ -537,13 +537,10 @@ func (p *treePage) View() string {
 
 	// Show search bar if searching
 	if p.isSearching {
-		searchStyle := lipgloss.NewStyle().
-			Foreground(core_theme.DefaultTheme.Success.GetForeground()).
-			Bold(true)
+		searchStyle := core_theme.DefaultTheme.Bold
 		content += "\n" + searchStyle.Render(fmt.Sprintf("/%s_", p.searchQuery))
 	} else if len(p.searchResults) > 0 {
-		resultsStyle := lipgloss.NewStyle().
-			Foreground(core_theme.DefaultTheme.Success.GetForeground())
+		resultsStyle := core_theme.DefaultTheme.Muted
 		content += "\n" + resultsStyle.Render(fmt.Sprintf("Found %d results (%d of %d) - n/N to navigate",
 			len(p.searchResults), p.searchCursor+1, len(p.searchResults)))
 	}
@@ -789,7 +786,7 @@ func (p *treePage) renderNode(index int) string {
 		} else if node.TokenCount >= 10000 {
 			tokenStyle = core_theme.DefaultTheme.Highlight // Yellow for 10K+
 		} else {
-			tokenStyle = core_theme.DefaultTheme.Faint // Dim gray for < 10K
+			tokenStyle = core_theme.DefaultTheme.Muted // Dim gray for < 10K
 		}
 		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", grove_context.FormatTokenCount(node.TokenCount)))
 	}
@@ -801,9 +798,8 @@ func (p *treePage) renderNode(index int) string {
 
 func (p *treePage) getIcon(node *grove_context.FileNode) string {
 	if node.IsDir {
-		// Return blue-styled directory icon
-		dirStyle := core_theme.DefaultTheme.Info // Blue
-		return dirStyle.Render("📁")
+		// Directory icon without explicit color
+		return "📁"
 	}
 	return "📄"
 }
@@ -839,7 +835,8 @@ func (p *treePage) getStyle(node *grove_context.FileNode) lipgloss.Style {
 	case grove_context.StatusOmittedNoMatch:
 		style = theme.Muted
 	case grove_context.StatusDirectory:
-		style = lipgloss.NewStyle().Foreground(theme.Colors.LightText)
+		// Directories use bold for emphasis without explicit color
+		style = lipgloss.NewStyle().Bold(true)
 	case grove_context.StatusIgnoredByGit:
 		style = theme.Muted
 	default:
