@@ -2,9 +2,99 @@ package context
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
+
+func TestResolveFilesWithAttribution_RespectsGitignore(t *testing.T) {
+	// Skip if git is not available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	// Create test directory structure
+	testDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = testDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Create .gitignore
+	gitignoreContent := `node_modules/
+dist/
+`
+	if err := os.WriteFile(filepath.Join(testDir, ".gitignore"), []byte(gitignoreContent), 0644); err != nil {
+		t.Fatalf("Failed to write .gitignore: %v", err)
+	}
+
+	// Create test files
+	if err := os.WriteFile(filepath.Join(testDir, "main.go"), []byte("package main"), 0644); err != nil {
+		t.Fatalf("Failed to write main.go: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(testDir, "node_modules", "dep"), 0755); err != nil {
+		t.Fatalf("Failed to create node_modules dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "node_modules", "dep", "index.js"), []byte("console.log('ignored')"), 0644); err != nil {
+		t.Fatalf("Failed to write ignored file: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(testDir, "dist"), 0755); err != nil {
+		t.Fatalf("Failed to create dist dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "dist", "bundle.js"), []byte("var app;"), 0644); err != nil {
+		t.Fatalf("Failed to write ignored file in dist: %v", err)
+	}
+
+	// Create manager
+	mgr := NewManager(testDir)
+
+	// Broad rule that should be filtered by gitignore
+	rulesContent := `**/*`
+
+	attribution, _, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	if err != nil {
+		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
+	}
+
+	// Verify attribution
+	// Only main.go and .gitignore should be included. `resolveFilesFromPatterns` doesn't ignore .gitignore itself.
+	assert.NotNil(t, attribution[1], "Attribution for line 1 should not be nil")
+
+	includedFiles := attribution[1]
+
+	// Check that main.go is included
+	foundMainGo := false
+	for _, file := range includedFiles {
+		if filepath.Base(file) == "main.go" {
+			foundMainGo = true
+			break
+		}
+	}
+	assert.True(t, foundMainGo, "Expected main.go to be included")
+
+	// Check that gitignored files are NOT included
+	for _, file := range includedFiles {
+		if strings.Contains(file, "node_modules") {
+			t.Errorf("Gitignored file from node_modules was found in attribution: %s", file)
+		}
+		if strings.Contains(file, "dist") {
+			t.Errorf("Gitignored file from dist was found in attribution: %s", file)
+		}
+	}
+
+	// .gitignore itself is usually not ignored by git ls-files, so it might be included by **/*
+	// We expect 2 files: main.go and .gitignore
+	assert.Len(t, includedFiles, 2, "Expected 2 files in attribution (main.go, .gitignore)")
+
+	// Verify exclusions are empty because gitignored files should never be considered "potential"
+	assert.Empty(t, exclusions, "Exclusions map should be empty for gitignored files")
+}
 
 func TestResolveFilesWithAttribution_Exclusions(t *testing.T) {
 	// Create test directory structure

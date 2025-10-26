@@ -84,6 +84,9 @@ func main() {
 		AliasWithDirectiveScenario(),
 		AliasWithOverlappingDirectiveScenario(),
 		CombinedDirectivesScenario(),
+
+		// Gitignore Scenarios
+		GitignoreStatsPerLineScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.

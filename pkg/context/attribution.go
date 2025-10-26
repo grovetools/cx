@@ -267,10 +267,18 @@ func (m *Manager) matchPattern(pattern, relPath string) bool {
 		return true
 	}
 
-	// If pattern doesn't contain /, try matching just the basename
+	// If pattern doesn't contain /, it matches against the basename or any directory component.
 	if !strings.Contains(pattern, "/") {
+		// Check basename
 		if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
 			return true
+		}
+		// Check directory components
+		parts := strings.Split(relPath, "/")
+		for _, part := range parts {
+			if matched, _ := filepath.Match(pattern, part); matched {
+				return true
+			}
 		}
 	}
 

@@ -1125,7 +1125,13 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 
 		// First, check if the file or directory is ignored by git. This is the most efficient check.
 		// The `path` from WalkDir is absolute if the root is absolute, which it always will be.
-		if gitIgnoredFiles[path] {
+		// We need to resolve symlinks in the path to match how git and filepath.Abs work.
+		resolvedPath := path
+		if evalPath, err := filepath.EvalSymlinks(path); err == nil {
+			resolvedPath = evalPath
+		}
+
+		if gitIgnoredFiles[resolvedPath] {
 			if d.IsDir() {
 				return filepath.SkipDir // Prune the walk for ignored directories.
 			}
