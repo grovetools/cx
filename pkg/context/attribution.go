@@ -152,21 +152,17 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 	exclusions := make(ExclusionResult)
 	filtered := make(FilteredResult)
 
-	// 6. For each included file, find the last matching rule (for attribution).
-	// Use EffectiveLineNum for attribution to handle imported rulesets correctly.
+	// 6. For each included file, find all matching rules to determine attribution,
+	// superseded rules, and directive-filtered rules.
 	for _, file := range allFiles {
-		lastMatchEffectiveLineNum := -1
-		isIncluded := false
-
-		// Get path relative to workDir for matching
 		relPath, err := filepath.Rel(m.workDir, file)
 		if err != nil {
 			relPath = file
 		}
 		relPath = filepath.ToSlash(relPath)
 
-		// Track which rules had base pattern match but were filtered
-		filteredFromLines := []int{}
+		var matchingInclusionRules []RuleInfo
+		var directiveFilteredLines []int
 
 		for _, rule := range allRules {
 			// For absolute path patterns (e.g., from Git repos), match against absolute path
@@ -175,10 +171,7 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			if filepath.IsAbs(rule.Pattern) {
 				pathToMatch = filepath.ToSlash(file)
 			}
-
 			// Skip patterns that shouldn't match external files
-			// If the file is outside workDir (relPath starts with ..) and the pattern is not
-			// absolute and doesn't start with .., then skip this pattern
 			isExternalFile := strings.HasPrefix(relPath, "..")
 			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..")
 			if isExternalFile && !isExternalPattern {
@@ -187,34 +180,55 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 			baseMatch := m.matchPattern(rule.Pattern, pathToMatch)
 
-			// Track if base pattern matched but directive filtered it out
-			if baseMatch && rule.Directive != "" && !rule.IsExclude {
-				// Apply directive filter
-				directiveFiltered, err := m.applyDirectiveFilter([]string{file}, rule.Directive, rule.DirectiveQuery)
-				if err != nil || len(directiveFiltered) == 0 {
-					// Base pattern matched but directive filtered it out
-					// We'll record this after we know which line won
-					filteredFromLines = append(filteredFromLines, rule.EffectiveLineNum)
-					baseMatch = false
+			if baseMatch && !rule.IsExclude {
+				if rule.Directive != "" {
+					directiveFiltered, err := m.applyDirectiveFilter([]string{file}, rule.Directive, rule.DirectiveQuery)
+					if err != nil || len(directiveFiltered) == 0 {
+						// Base pattern matched but directive filtered it out
+						directiveFilteredLines = append(directiveFilteredLines, rule.EffectiveLineNum)
+					} else {
+						// Match is valid
+						matchingInclusionRules = append(matchingInclusionRules, rule)
+					}
+				} else {
+					// Match is valid
+					matchingInclusionRules = append(matchingInclusionRules, rule)
 				}
-			}
-
-			if baseMatch {
-				lastMatchEffectiveLineNum = rule.EffectiveLineNum
-				isIncluded = !rule.IsExclude
 			}
 		}
 
-		// 7. If the last match was an inclusion rule, attribute the file to that line.
-		if isIncluded && lastMatchEffectiveLineNum != -1 {
-			result[lastMatchEffectiveLineNum] = append(result[lastMatchEffectiveLineNum], file)
+		if len(matchingInclusionRules) > 0 {
+			winnerRule := matchingInclusionRules[len(matchingInclusionRules)-1]
+			winnerLineNum := winnerRule.EffectiveLineNum
 
-			// Record filtered matches with the winning line number
-			for _, filteredLineNum := range filteredFromLines {
-				filtered[filteredLineNum] = append(filtered[filteredLineNum], FilteredFileInfo{
-					File:           file,
-					WinningLineNum: lastMatchEffectiveLineNum,
-				})
+			// Attribute the file to the winning rule
+			result[winnerLineNum] = append(result[winnerLineNum], file)
+
+			// Use a map to track which lines we've already marked for this file to avoid duplicates
+			processedLines := make(map[int]bool)
+
+			// For all other inclusion rules that matched, mark them as superseded
+			for i := 0; i < len(matchingInclusionRules)-1; i++ {
+				supersededRule := matchingInclusionRules[i]
+				supersededLineNum := supersededRule.EffectiveLineNum
+				if !processedLines[supersededLineNum] {
+					filtered[supersededLineNum] = append(filtered[supersededLineNum], FilteredFileInfo{
+						File:           file,
+						WinningLineNum: winnerLineNum,
+					})
+					processedLines[supersededLineNum] = true
+				}
+			}
+
+			// For rules that matched but were filtered by a directive, mark them as well
+			for _, filteredLineNum := range directiveFilteredLines {
+				if !processedLines[filteredLineNum] {
+					filtered[filteredLineNum] = append(filtered[filteredLineNum], FilteredFileInfo{
+						File:           file,
+						WinningLineNum: winnerLineNum,
+					})
+					processedLines[filteredLineNum] = true
+				}
 			}
 		}
 	}

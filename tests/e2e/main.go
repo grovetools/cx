@@ -78,6 +78,9 @@ func main() {
 		BraceExpansionMultipleScenario(),
 		BraceExpansionWithExclusionScenario(),
 
+		// Stats Scenarios
+		StatsSupersededRuleScenario(),
+
 		// Search Directive Scenarios
 		FindDirectiveScenario(),
 		GrepDirectiveScenario(),

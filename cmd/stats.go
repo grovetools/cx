@@ -374,6 +374,52 @@ func outputPerLineStats(args []string) error {
 		}
 	}
 
+	// Add entries for lines that have filtered matches (superseded rules)
+	for lineNum, filteredInfos := range filteredMatches {
+		// Check if this line already has an entry in results
+		found := false
+		for i := range results {
+			if results[i].LineNumber == lineNum {
+				found = true
+				break
+			}
+		}
+
+		// If not found, add an entry for this superseded rule
+		if !found && len(filteredInfos) > 0 {
+			// Group filtered files by their winning line number
+			var filteredByLine []FilteredByLine
+			lineGroupMap := make(map[int][]string)
+			for _, info := range filteredInfos {
+				lineGroupMap[info.WinningLineNum] = append(lineGroupMap[info.WinningLineNum], info.File)
+			}
+			for winningLine, filesForLine := range lineGroupMap {
+				filteredByLine = append(filteredByLine, FilteredByLine{
+					LineNumber: winningLine,
+					Count:      len(filesForLine),
+					Files:      filesForLine,
+				})
+			}
+			// Sort by line number for consistent output
+			sort.Slice(filteredByLine, func(i, j int) bool {
+				return filteredByLine[i].LineNumber < filteredByLine[j].LineNumber
+			})
+
+			results = append(results, PerLineStat{
+				LineNumber:        lineNum,
+				Rule:              ruleMap[lineNum],
+				FileCount:         0,
+				ExcludedFileCount: 0,
+				ExcludedTokens:    0,
+				FilteredByLine:    filteredByLine,
+				TotalTokens:       0,
+				TotalSize:         0,
+				GitInfo:           nil,
+				ResolvedPaths:     []string{},
+			})
+		}
+	}
+
 	// Add synthetic entries for Git alias/URL lines that don't have attribution yet
 	// This happens because Git URLs get transformed to local paths, breaking attribution tracking
 	for lineNum, ruleText := range ruleMap {
