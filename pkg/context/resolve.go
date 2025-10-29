@@ -850,31 +850,34 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			continue
 		}
 
-		// Check if this is an exact file path (no globs) that exists
-		// This handles files returned by @cmd: directives
-		if !strings.ContainsAny(cleanPattern, "*?[]") {
-			// It's an exact path, check if it exists
-			filePath := cleanPattern
-			if !filepath.IsAbs(filePath) {
-				filePath = filepath.Join(m.workDir, filePath)
-			}
-			filePath = filepath.Clean(filePath)
+		// Check if this is an exact file path that exists
+		// This handles files returned by @cmd: directives and literal filenames with brackets
+		// Try this first before treating as a glob pattern, even if it contains [] characters
+		filePath := cleanPattern
+		if !filepath.IsAbs(filePath) {
+			filePath = filepath.Join(m.workDir, filePath)
+		}
+		filePath = filepath.Clean(filePath)
 
-			if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
-				// It's an existing file, add it directly
-				if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
-					uniqueFiles[filePath] = true
+		if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+			// It's an existing file, add it directly
+			if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
+				uniqueFiles[filePath] = true
+			} else {
+				// Use relative path from workDir
+				relPath, err := filepath.Rel(m.workDir, filePath)
+				if err == nil {
+					uniqueFiles[relPath] = true
 				} else {
-					// Use relative path from workDir
-					relPath, err := filepath.Rel(m.workDir, filePath)
-					if err == nil {
-						uniqueFiles[relPath] = true
-					} else {
-						uniqueFiles[filePath] = true
-					}
+					uniqueFiles[filePath] = true
 				}
-				continue
 			}
+			continue
+		}
+
+		// If file doesn't exist and pattern doesn't contain glob characters, skip it
+		if !strings.ContainsAny(cleanPattern, "*?[]") {
+			continue
 		}
 
 		// Check if this is an absolute path or a relative path that goes outside current directory
