@@ -1062,17 +1062,6 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	return filesToInclude, nil
 }
 
-// matchesPattern checks if a path matches a single pattern
-func (m *Manager) matchesPattern(path, pattern string) bool {
-	// Handle ** patterns
-	if strings.Contains(pattern, "**") {
-		return matchDoubleStarPattern(pattern, path)
-	}
-
-	// Simple pattern matching
-	matched, _ := filepath.Match(pattern, path)
-	return matched
-}
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
 func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIgnoredFiles map[string]bool, uniqueFiles map[string]bool, useRelativePaths bool) error {
@@ -1125,13 +1114,14 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patterns []string, gitIg
 
 		// First, check if the file or directory is ignored by git. This is the most efficient check.
 		// The `path` from WalkDir is absolute if the root is absolute, which it always will be.
-		// We need to resolve symlinks in the path to match how git and filepath.Abs work.
-		resolvedPath := path
+		// Resolve symlinks first, then lowercase for case-insensitive filesystems (macOS/Windows)
+		normalizedPath := path
 		if evalPath, err := filepath.EvalSymlinks(path); err == nil {
-			resolvedPath = evalPath
+			normalizedPath = evalPath
 		}
+		normalizedPath = strings.ToLower(normalizedPath)
 
-		if gitIgnoredFiles[resolvedPath] {
+		if gitIgnoredFiles[normalizedPath] {
 			if d.IsDir() {
 				return filepath.SkipDir // Prune the walk for ignored directories.
 			}

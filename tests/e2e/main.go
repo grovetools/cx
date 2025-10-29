@@ -87,6 +87,7 @@ func main() {
 
 		// Gitignore Scenarios
 		GitignoreStatsPerLineScenario(),
+		StarPatternRespectsGitignoreScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.

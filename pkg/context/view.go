@@ -792,16 +792,9 @@ func (m *Manager) fileExplicitlyExcluded(filePath string, patterns []string) boo
 		// Remove the ! prefix to get the actual pattern
 		excludePattern := strings.TrimPrefix(pattern, "!")
 
-		// Check various matching approaches
-		if m.matchesPattern(relPath, excludePattern) {
+		// Use the centralized matchPattern method from Manager
+		if m.matchPattern(excludePattern, relPath) {
 			return true
-		}
-
-		// Also try matching against basename for patterns without slashes
-		if !strings.Contains(excludePattern, "/") {
-			if matched, _ := filepath.Match(excludePattern, filepath.Base(filePath)); matched {
-				return true
-			}
 		}
 	}
 	return false
@@ -814,15 +807,9 @@ func (m *Manager) fileMatchesAnyPattern(filePath string, patterns []string) bool
 		relPath, _ := filepath.Rel(m.workDir, filePath)
 		relPath = filepath.ToSlash(relPath)
 
-		if m.matchesPattern(relPath, pattern) {
+		// Use the centralized matchPattern method from Manager
+		if m.matchPattern(pattern, relPath) {
 			return true
-		}
-
-		// Also try matching against basename for patterns without slashes
-		if !strings.Contains(pattern, "/") {
-			if matched, _ := filepath.Match(pattern, filepath.Base(filePath)); matched {
-				return true
-			}
 		}
 	}
 	return false

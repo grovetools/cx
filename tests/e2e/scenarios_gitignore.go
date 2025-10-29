@@ -188,3 +188,146 @@ dist/
 		},
 	}
 }
+
+// StarPatternRespectsGitignoreScenario tests that the `*` pattern respects .gitignore
+//
+// This is a regression test for the issue where a rules file with just `*` would incorrectly
+// show gitignored directories like node_modules, dist, and coverage in the statistics,
+// even though they should be automatically excluded by .gitignore.
+//
+// Reported issue:
+// *                                                  ~45.0k tokens (78 files)
+//
+// !node_modules                                      ⚠ no matches
+// !coverage                                          ⚠ no matches
+// !dist                                              ⚠ no matches
+//
+// The `*` pattern was matching files before gitignore filtering, causing incorrect stats.
+func StarPatternRespectsGitignoreScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-star-pattern-respects-gitignore",
+		Description: "Tests that the `*` pattern respects .gitignore and doesn't require explicit exclusions",
+		Tags:        []string{"cx", "gitignore", "pattern-matching", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup git repository with common gitignored directories", func(ctx *harness.Context) error {
+				// Initialize git repo
+				if result := command.New("git", "init").Dir(ctx.RootDir).Run(); result.Error != nil {
+					return fmt.Errorf("failed to init git repo: %w", result.Error)
+				}
+
+				// Create .gitignore with common directories that are usually ignored
+				gitignore := `node_modules
+dist
+coverage
+`
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, ".gitignore"), gitignore); err != nil {
+					return err
+				}
+
+				// Create source files that should be included
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main\n"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "helper.go"), "package main\n"); err != nil {
+					return err
+				}
+
+				// Create gitignored directories with files
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "node_modules", "package.json"), "{}"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "dist", "bundle.js"), "var app;"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "coverage", "lcov.info"), "data"); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Create rules file with only * pattern", func(ctx *harness.Context) error {
+				// Use just * pattern - it should respect gitignore without explicit exclusions
+				rules := `*`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Verify * pattern respects gitignore in cx list", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
+
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// Verify gitignored directories are NOT in the list
+				if strings.Contains(output, "node_modules") {
+					return fmt.Errorf("* pattern should not include node_modules (it's in .gitignore)")
+				}
+				if strings.Contains(output, "dist") {
+					return fmt.Errorf("* pattern should not include dist (it's in .gitignore)")
+				}
+				if strings.Contains(output, "coverage") {
+					return fmt.Errorf("* pattern should not include coverage (it's in .gitignore)")
+				}
+
+				// Verify expected files ARE in the list
+				if !strings.Contains(output, "main.go") {
+					return fmt.Errorf("* pattern should include main.go")
+				}
+				if !strings.Contains(output, "helper.go") {
+					return fmt.Errorf("* pattern should include helper.go")
+				}
+
+				return nil
+			}),
+			harness.NewStep("Verify * pattern stats don't show 'no matches' warnings", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := ctx.Command(cx, "stats", "--per-line", ".grove/rules").Dir(ctx.RootDir)
+
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// Parse JSON output
+				var stats []map[string]interface{}
+				if err := json.Unmarshal([]byte(output), &stats); err != nil {
+					return fmt.Errorf("failed to parse JSON output: %w\nOutput:\n%s", err, output)
+				}
+
+				if len(stats) == 0 {
+					return fmt.Errorf("expected stats for the * pattern")
+				}
+
+				// Check the stats for line 1 (the * pattern)
+				line1Stats := stats[0]
+
+				fileCount, ok := line1Stats["fileCount"].(float64)
+				if !ok {
+					return fmt.Errorf("fileCount is not a number: %v", line1Stats["fileCount"])
+				}
+
+				// Should have around 3-4 files (.gitignore, main.go, helper.go)
+				// NOT including the gitignored files
+				if fileCount > 10 {
+					return fmt.Errorf("* pattern shows %d files, expected around 3-4 (should exclude gitignored dirs)\nFull stats: %v", int(fileCount), line1Stats)
+				}
+
+				fmt.Printf("✓ * pattern correctly shows %d files (gitignored dirs excluded)\n", int(fileCount))
+				return nil
+			}),
+		},
+	}
+}

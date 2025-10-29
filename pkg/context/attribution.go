@@ -175,6 +175,16 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			if filepath.IsAbs(rule.Pattern) {
 				pathToMatch = filepath.ToSlash(file)
 			}
+
+			// Skip patterns that shouldn't match external files
+			// If the file is outside workDir (relPath starts with ..) and the pattern is not
+			// absolute and doesn't start with .., then skip this pattern
+			isExternalFile := strings.HasPrefix(relPath, "..")
+			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..")
+			if isExternalFile && !isExternalPattern {
+				continue
+			}
+
 			baseMatch := m.matchPattern(rule.Pattern, pathToMatch)
 
 			// Track if base pattern matched but directive filtered it out
@@ -229,6 +239,14 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			if filepath.IsAbs(rule.Pattern) {
 				pathToMatch = filepath.ToSlash(file)
 			}
+
+			// Skip patterns that shouldn't match external files
+			isExternalFile := strings.HasPrefix(relPath, "..")
+			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..")
+			if isExternalFile && !isExternalPattern {
+				continue
+			}
+
 			match := m.matchPattern(rule.Pattern, pathToMatch)
 
 			// If the pattern matches, check if directive filter passes (if present)
@@ -257,26 +275,30 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 // matchPattern matches a file path against a pattern using gitignore-style matching
 func (m *Manager) matchPattern(pattern, relPath string) bool {
+	// Normalize for case-insensitive filesystems (macOS/Windows)
+	normalizedPattern := strings.ToLower(pattern)
+	normalizedPath := strings.ToLower(relPath)
+
 	// Handle ** patterns
-	if strings.Contains(pattern, "**") {
-		return matchDoubleStarPattern(pattern, relPath)
+	if strings.Contains(normalizedPattern, "**") {
+		return matchDoubleStarPattern(normalizedPattern, normalizedPath)
 	}
 
 	// Handle single * or ? patterns
-	if matched, _ := filepath.Match(pattern, relPath); matched {
+	if matched, _ := filepath.Match(normalizedPattern, normalizedPath); matched {
 		return true
 	}
 
 	// If pattern doesn't contain /, it matches against the basename or any directory component.
-	if !strings.Contains(pattern, "/") {
+	if !strings.Contains(normalizedPattern, "/") {
 		// Check basename
-		if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
+		if matched, _ := filepath.Match(normalizedPattern, filepath.Base(normalizedPath)); matched {
 			return true
 		}
 		// Check directory components
-		parts := strings.Split(relPath, "/")
+		parts := strings.Split(normalizedPath, "/")
 		for _, part := range parts {
-			if matched, _ := filepath.Match(pattern, part); matched {
+			if matched, _ := filepath.Match(normalizedPattern, part); matched {
 				return true
 			}
 		}

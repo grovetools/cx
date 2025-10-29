@@ -140,8 +140,11 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 	}
 	gitRootPath := strings.TrimSpace(string(gitRootOutput))
 
+	// Normalize the cache key for case-insensitive filesystems
+	cacheKey := strings.ToLower(gitRootPath)
+
 	// Check if we have a cached result for this repository
-	if cachedResult, found := m.gitIgnoredCache[gitRootPath]; found {
+	if cachedResult, found := m.gitIgnoredCache[cacheKey]; found {
 		return cachedResult, nil
 	}
 
@@ -180,13 +183,19 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 			if !trackedFiles[relativePath] {
 				// Store the full absolute path for consistent and easy lookup later.
 				absolutePath := filepath.Join(gitRootPath, relativePath)
-				ignoredFiles[absolutePath] = true
+
+				// Resolve symlinks first, then lowercase for case-insensitive lookup
+				if evalPath, err := filepath.EvalSymlinks(absolutePath); err == nil {
+					absolutePath = evalPath
+				}
+				normalizedPath := strings.ToLower(absolutePath)
+				ignoredFiles[normalizedPath] = true
 			}
 		}
 	}
 
-	// Cache the result before returning
-	m.gitIgnoredCache[gitRootPath] = ignoredFiles
+	// Cache the result before returning (use normalized key)
+	m.gitIgnoredCache[cacheKey] = ignoredFiles
 
 	return ignoredFiles, nil
 }

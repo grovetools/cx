@@ -262,3 +262,93 @@ func TestResolveFilesWithAttribution_OnlyExclusions(t *testing.T) {
 		t.Errorf("Expected 0 files in attribution, got %d", len(attribution))
 	}
 }
+
+func TestResolveFilesWithAttribution_StarPatternRespectsGitignore(t *testing.T) {
+	// Skip if git is not available
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+
+	// Create test directory structure
+	testDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = testDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
+	// Create .gitignore with common directories
+	gitignoreContent := `node_modules
+dist
+coverage
+`
+	if err := os.WriteFile(filepath.Join(testDir, ".gitignore"), []byte(gitignoreContent), 0644); err != nil {
+		t.Fatalf("Failed to write .gitignore: %v", err)
+	}
+
+	// Create test files
+	if err := os.WriteFile(filepath.Join(testDir, "main.go"), []byte("package main"), 0644); err != nil {
+		t.Fatalf("Failed to write main.go: %v", err)
+	}
+
+	// Create gitignored directories
+	if err := os.MkdirAll(filepath.Join(testDir, "node_modules"), 0755); err != nil {
+		t.Fatalf("Failed to create node_modules dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "node_modules", "package.json"), []byte("{}"), 0644); err != nil {
+		t.Fatalf("Failed to write file in node_modules: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(testDir, "dist"), 0755); err != nil {
+		t.Fatalf("Failed to create dist dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "dist", "bundle.js"), []byte("var app;"), 0644); err != nil {
+		t.Fatalf("Failed to write file in dist: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(testDir, "coverage"), 0755); err != nil {
+		t.Fatalf("Failed to create coverage dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "coverage", "lcov.info"), []byte("data"), 0644); err != nil {
+		t.Fatalf("Failed to write file in coverage: %v", err)
+	}
+
+	// Create manager
+	mgr := NewManager(testDir)
+
+	// Use * pattern which should respect .gitignore
+	rulesContent := `*`
+
+	attribution, _, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	if err != nil {
+		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
+	}
+
+	// Verify attribution - * should match files but respect gitignore
+	assert.NotNil(t, attribution[1], "Attribution for line 1 should not be nil")
+	includedFiles := attribution[1]
+
+	// Check that main.go is included
+	foundMainGo := false
+	for _, file := range includedFiles {
+		if filepath.Base(file) == "main.go" {
+			foundMainGo = true
+		}
+	}
+	assert.True(t, foundMainGo, "Expected main.go to be included by * pattern")
+
+	// Verify gitignored directories are NOT included
+	for _, file := range includedFiles {
+		if strings.Contains(file, "node_modules") {
+			t.Errorf("* pattern should not include gitignored node_modules: %s", file)
+		}
+		if strings.Contains(file, "dist") {
+			t.Errorf("* pattern should not include gitignored dist: %s", file)
+		}
+		if strings.Contains(file, "coverage") {
+			t.Errorf("* pattern should not include gitignored coverage: %s", file)
+		}
+	}
+}
