@@ -768,6 +768,14 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		return []string{}, nil
 	}
 
+	// Apply brace expansion to all incoming patterns
+	var expandedPatterns []string
+	for _, p := range patterns {
+		expandedPatterns = append(expandedPatterns, ExpandBraces(p)...)
+	}
+	// Use the expanded patterns for the rest of the function
+	patterns = expandedPatterns
+
 	// First, decode any directive information and separate patterns
 	type patternInfo struct {
 		pattern   string

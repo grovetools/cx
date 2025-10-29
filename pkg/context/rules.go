@@ -131,9 +131,9 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 	return nil, "", nil
 }
 
-// expandBraces recursively expands shell-style brace patterns.
+// ExpandBraces recursively expands shell-style brace patterns.
 // Example: "path/{a,b}/{c,d}" -> ["path/a/c", "path/a/d", "path/b/c", "path/b/d"]
-func expandBraces(pattern string) []string {
+func ExpandBraces(pattern string) []string {
 	// Find the first opening brace
 	leftBrace := strings.Index(pattern, "{")
 	if leftBrace == -1 {
@@ -172,7 +172,7 @@ func expandBraces(pattern string) []string {
 	var results []string
 	for _, option := range options {
 		// Recursively expand the rest of the pattern for each option
-		expandedSuffixes := expandBraces(prefix + option + suffix)
+		expandedSuffixes := ExpandBraces(prefix + option + suffix)
 		results = append(results, expandedSuffixes...)
 	}
 
@@ -537,7 +537,7 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 			}
 
 			// Apply brace expansion to the base pattern
-			expandedPatterns := expandBraces(basePattern)
+			expandedPatterns := ExpandBraces(basePattern)
 
 			// Add each expanded pattern to the appropriate list
 			for _, expandedPattern := range expandedPatterns {

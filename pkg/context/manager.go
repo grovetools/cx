@@ -63,11 +63,79 @@ func (m *Manager) getAliasResolver() *AliasResolver {
 // It is intended for use by tools like the Neovim plugin's rule previewer.
 func (m *Manager) ResolveLineForRulePreview(line string) (string, error) {
 	resolver := m.getAliasResolver()
-	if resolver != nil && (strings.Contains(line, "@alias:") || strings.Contains(line, "@a:")) {
-		return resolver.ResolveLine(line)
+	trimmedLine := strings.TrimSpace(line)
+
+	// 1. Check for ruleset import syntax (::)
+	if strings.Contains(trimmedLine, "::") && (strings.Contains(trimmedLine, "@a:") || strings.Contains(trimmedLine, "@alias:")) {
+		patterns, err := m.resolvePatternsFromRulesetImport(trimmedLine)
+		if err != nil {
+			return "", err
+		}
+		// Return patterns as a multi-line string for the command to split
+		return strings.Join(patterns, "\n"), nil
 	}
-	// If not an alias line, return the original line.
+
+	// 2. Handle simple aliases or plain patterns
+	if resolver != nil && (strings.Contains(trimmedLine, "@alias:") || strings.Contains(trimmedLine, "@a:")) {
+		return resolver.ResolveLine(trimmedLine)
+	}
+
+	// 3. If not an alias or import, return the original line.
 	return line, nil
+}
+
+// resolvePatternsFromRulesetImport resolves a ruleset import string (e.g., "proj::rules") into a slice of patterns.
+func (m *Manager) resolvePatternsFromRulesetImport(importRule string) ([]string, error) {
+	// 1. Parse the import string
+	// The line might have a prefix like "!", so trim it first for parsing.
+	isExclude := strings.HasPrefix(importRule, "!")
+	if isExclude {
+		importRule = strings.TrimPrefix(importRule, "!")
+	}
+
+	prefix := "@a:"
+	if strings.HasPrefix(importRule, "@alias:") {
+		prefix = "@alias:"
+	}
+	trimmedRule := strings.TrimPrefix(importRule, prefix)
+
+	parts := strings.SplitN(trimmedRule, "::", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid ruleset import format: %s", importRule)
+	}
+	projectAlias, rulesetName := parts[0], parts[1]
+
+	// 2. Resolve the project alias to its absolute path
+	projectPath, err := m.getAliasResolver().Resolve(projectAlias)
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve project alias '%s': %w", projectAlias, err)
+	}
+
+	// 3. Construct the path to the ruleset file
+	rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
+
+	// 4. Expand all rules from that file
+	hotRules, coldRules, _, err := m.expandAllRules(rulesFilePath, make(map[string]bool), 0)
+	if err != nil {
+		return nil, fmt.Errorf("could not expand ruleset '%s' from project '%s': %w", rulesetName, projectAlias, err)
+	}
+
+	// 5. Collect all patterns and prefix them with the project path
+	var resolvedPatterns []string
+	allRules := append(hotRules, coldRules...)
+	for _, rule := range allRules {
+		pattern := rule.Pattern
+		if !filepath.IsAbs(pattern) {
+			pattern = filepath.Join(projectPath, pattern)
+		}
+		if rule.IsExclude || isExclude { // The rule itself or the import line can be an exclusion
+			resolvedPatterns = append(resolvedPatterns, "!"+pattern)
+		} else {
+			resolvedPatterns = append(resolvedPatterns, pattern)
+		}
+	}
+
+	return resolvedPatterns, nil
 }
 
 // ResolveFilesFromPatterns exposes the internal file resolution logic for external use.

@@ -82,7 +82,7 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		basePattern, directive, query, hasDirective := parseSearchDirective(line)
 
 		// Apply brace expansion to the base pattern
-		expandedPatterns := expandBraces(basePattern)
+		expandedPatterns := ExpandBraces(basePattern)
 
 		// Create a rule for each expanded pattern
 		for _, expandedPattern := range expandedPatterns {

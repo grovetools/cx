@@ -26,22 +26,25 @@ func NewResolveCmd() *cobra.Command {
 
 			mgr := context.NewManager(".")
 
-			// First, resolve any potential alias in the line.
-			// The alias resolver is lazily initialized within the manager.
-			resolvedPattern, err := mgr.ResolveLineForRulePreview(ruleLine)
+			// First, resolve the line. This one call now handles simple globs, aliases,
+			// and ruleset imports, returning a potentially multi-line string of patterns.
+			resolvedPatternsStr, err := mgr.ResolveLineForRulePreview(ruleLine)
 			if err != nil {
-				// If alias resolution fails, it's a non-fatal warning for the user.
+				// If resolution fails, it's a non-fatal warning for the user.
 				// Print to stderr so it can be captured by the calling plugin.
-				fmt.Fprintf(os.Stderr, "Warning: could not resolve alias: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve rule: %v\n", err)
 				// Fallback to using the original line as the pattern.
-				resolvedPattern = ruleLine
+				resolvedPatternsStr = ruleLine
 			}
 
-			// Use the manager's file resolution logic with the single pattern.
-			// Note: ResolveFilesFromPatterns expects a slice.
-			files, err := mgr.ResolveFilesFromPatterns([]string{resolvedPattern})
+			// Split the result into individual patterns (for ruleset imports)
+			patterns := strings.Split(resolvedPatternsStr, "\n")
+
+			// Use the manager's file resolution logic with the patterns.
+			// Note: ResolveFilesFromPatterns expects a slice and now handles brace expansion internally.
+			files, err := mgr.ResolveFilesFromPatterns(patterns)
 			if err != nil {
-				return fmt.Errorf("error resolving files for pattern '%s': %w", resolvedPattern, err)
+				return fmt.Errorf("error resolving files for rule '%s': %w", ruleLine, err)
 			}
 
 			// Print the list of files to stdout, one per line.
