@@ -302,26 +302,27 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 		}
 		// Support both @view: and @v: (short form)
 		if strings.HasPrefix(line, "@view:") || strings.HasPrefix(line, "@v:") {
-			// Normalize to @view: for processing
-			normalizedLine := line
-			if strings.HasPrefix(line, "@v:") {
-				normalizedLine = "@view:" + strings.TrimPrefix(line, "@v:")
+			var rulePart string
+			if strings.HasPrefix(line, "@view:") {
+				rulePart = strings.TrimSpace(strings.TrimPrefix(line, "@view:"))
+			} else {
+				rulePart = strings.TrimSpace(strings.TrimPrefix(line, "@v:"))
 			}
 
-			path := strings.TrimSpace(strings.TrimPrefix(normalizedLine, "@view:"))
-			if path != "" {
-				// Check if the value itself is an alias directive (with or without spacing)
-				if resolver != nil && (strings.HasPrefix(path, "@alias:") || strings.HasPrefix(path, "@a:")) {
-					// The value of @view is an alias. Resolve it by calling ResolveLine on just the alias part
-					resolvedPath, resolveErr := resolver.ResolveLine(path)
-					if resolveErr != nil {
-						fmt.Fprintf(os.Stderr, "Warning: could not resolve chained alias in line '%s': %v\n", line, resolveErr)
-						continue // Skip this line if alias resolution fails
+			if rulePart != "" {
+				// Resolve the rule part, which can be a complex rule itself
+				resolvedPatterns, err := m.ResolveLineForRulePreview(rulePart)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not resolve view rule '%s': %v\n", rulePart, err)
+					viewPaths = append(viewPaths, rulePart) // Fallback to unresolved
+				} else {
+					// A ruleset import can return multiple patterns
+					for _, p := range strings.Split(resolvedPatterns, "\n") {
+						if p != "" {
+							viewPaths = append(viewPaths, p)
+						}
 					}
-					// Use the resolved path
-					path = strings.TrimSpace(resolvedPath)
 				}
-				viewPaths = append(viewPaths, path)
 			}
 			continue
 		}

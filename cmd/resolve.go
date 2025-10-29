@@ -18,8 +18,16 @@ func NewResolveCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ruleLine := args[0]
 
+			// Strip @view: prefix to allow Neovim's <leader>f? to work on view rules
+			trimmedLine := strings.TrimSpace(ruleLine)
+			if strings.HasPrefix(trimmedLine, "@view:") {
+				trimmedLine = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "@view:"))
+			} else if strings.HasPrefix(trimmedLine, "@v:") {
+				trimmedLine = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "@v:"))
+			}
+
 			// Do not process exclusion rules, as they don't resolve to a file list on their own.
-			if strings.HasPrefix(strings.TrimSpace(ruleLine), "!") {
+			if strings.HasPrefix(strings.TrimSpace(trimmedLine), "!") {
 				// Print nothing and exit successfully.
 				return nil
 			}
@@ -28,7 +36,7 @@ func NewResolveCmd() *cobra.Command {
 
 			// First, resolve the line. This one call now handles simple globs, aliases,
 			// and ruleset imports, returning a potentially multi-line string of patterns.
-			resolvedPatternsStr, err := mgr.ResolveLineForRulePreview(ruleLine)
+			resolvedPatternsStr, err := mgr.ResolveLineForRulePreview(trimmedLine)
 			if err != nil {
 				// If resolution fails, it's a non-fatal warning for the user.
 				// Print to stderr so it can be captured by the calling plugin.

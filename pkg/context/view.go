@@ -1,6 +1,7 @@
 package context
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -457,24 +458,8 @@ func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus,
 	// Get all unique root paths to walk from patterns
 	rootPaths := m.extractRootPaths(allPatterns)
 
-	// Add paths from @view directives to the list of roots to walk
-	for _, vp := range viewPaths {
-		var absPath string
-		if filepath.IsAbs(vp) {
-			absPath = vp
-		} else {
-			absPath = filepath.Join(m.workDir, vp)
-		}
-
-		// Make sure path is absolute
-		absPath, err := filepath.Abs(absPath)
-		if err == nil {
-			// Check if the path exists before adding it
-			if _, statErr := os.Stat(absPath); statErr == nil {
-				rootPaths = append(rootPaths, absPath)
-			}
-		}
-	}
+	// The old logic for handling viewPaths here was incorrect and has been removed.
+	// New logic is added at the end of the function to correctly handle resolved file paths.
 
 	// De-duplicate rootPaths
 	seen := make(map[string]struct{})
@@ -501,6 +486,23 @@ func (m *Manager) ResolveAndClassifyAllFiles(prune bool) (map[string]NodeStatus,
 		err = m.walkAndClassifyFiles(rootPath, allPatterns, gitIgnoredFiles, hotFiles, coldFiles, result)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// Add files from @view directives if they are not already in the result set
+	if len(viewPaths) > 0 {
+		viewOnlyFiles, err := m.resolveFilesFromPatterns(viewPaths)
+		if err != nil {
+			// Non-fatal error, just print a warning
+			fmt.Fprintf(os.Stderr, "Warning: failed to resolve view-only patterns: %v\n", err)
+		} else {
+			for _, file := range viewOnlyFiles {
+				if _, exists := result[file]; !exists {
+					// Add the file with "omitted" status so it's visible in the TUI
+					// but not part of the actual context.
+					result[file] = StatusOmittedNoMatch
+				}
+			}
 		}
 	}
 
