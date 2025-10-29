@@ -162,7 +162,6 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		relPath = filepath.ToSlash(relPath)
 
 		var matchingInclusionRules []RuleInfo
-		var directiveFilteredLines []int
 
 		for _, rule := range allRules {
 			// For absolute path patterns (e.g., from Git repos), match against absolute path
@@ -183,13 +182,11 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			if baseMatch && !rule.IsExclude {
 				if rule.Directive != "" {
 					directiveFiltered, err := m.applyDirectiveFilter([]string{file}, rule.Directive, rule.DirectiveQuery)
-					if err != nil || len(directiveFiltered) == 0 {
-						// Base pattern matched but directive filtered it out
-						directiveFilteredLines = append(directiveFilteredLines, rule.EffectiveLineNum)
-					} else {
-						// Match is valid
+					if err == nil && len(directiveFiltered) > 0 {
+						// Match is valid only if directive passes
 						matchingInclusionRules = append(matchingInclusionRules, rule)
 					}
+					// If directive filters the file out, it's not a match for this rule.
 				} else {
 					// Match is valid
 					matchingInclusionRules = append(matchingInclusionRules, rule)
@@ -220,16 +217,8 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 				}
 			}
 
-			// For rules that matched but were filtered by a directive, mark them as well
-			for _, filteredLineNum := range directiveFilteredLines {
-				if !processedLines[filteredLineNum] {
-					filtered[filteredLineNum] = append(filtered[filteredLineNum], FilteredFileInfo{
-						File:           file,
-						WinningLineNum: winnerLineNum,
-					})
-					processedLines[filteredLineNum] = true
-				}
-			}
+			// This block has been removed as it was the source of the bug.
+			// Files filtered by a directive should not be considered for superseded attribution.
 		}
 	}
 

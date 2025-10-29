@@ -80,6 +80,7 @@ func main() {
 
 		// Stats Scenarios
 		StatsSupersededRuleScenario(),
+		StatsDirectiveSupersededScenario(),
 
 		// Search Directive Scenarios
 		FindDirectiveScenario(),

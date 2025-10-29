@@ -137,3 +137,94 @@ func StatsSupersededRuleScenario() *harness.Scenario {
 		},
 	}
 }
+
+// StatsDirectiveSupersededScenario tests that a rule with a directive is not incorrectly marked
+// as being "superseded" by another rule if its directive would have filtered out the file anyway.
+func StatsDirectiveSupersededScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-stats-directive-superseded",
+		Description: "Tests that directives are respected when calculating superseded rules in stats",
+		Tags:        []string{"cx", "stats", "rules", "directives", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup project with specific files", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "api", "user_api.go"), "package api"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "api", "product_manager.go"), "package api"); err != nil {
+					return err
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules file with overlapping patterns and a directive", func(ctx *harness.Context) error {
+				rules := `# Line 1
+api/*.go @find: "manager"
+
+# Line 4
+api/user_api.go`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx stats --per-line' and verify directive is respected", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := ctx.Command(cx, "stats", "--per-line", ".grove/rules").Dir(ctx.RootDir)
+
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				// Parse JSON output
+				var stats []struct {
+					LineNumber     int           `json:"lineNumber"`
+					FileCount      int           `json:"fileCount"`
+					FilteredByLine []interface{} `json:"filteredByLine"`
+				}
+				if err := json.Unmarshal([]byte(result.Stdout), &stats); err != nil {
+					return fmt.Errorf("failed to parse JSON: %w", err)
+				}
+
+				var line2Stats, line5Stats *struct {
+					LineNumber     int           `json:"lineNumber"`
+					FileCount      int           `json:"fileCount"`
+					FilteredByLine []interface{} `json:"filteredByLine"`
+				}
+
+				for i := range stats {
+					if stats[i].LineNumber == 2 {
+						line2Stats = &stats[i]
+					}
+					if stats[i].LineNumber == 5 {
+						line5Stats = &stats[i]
+					}
+				}
+
+				if line2Stats == nil {
+					return fmt.Errorf("stats for line 2 not found")
+				}
+				if line5Stats == nil {
+					return fmt.Errorf("stats for line 5 not found")
+				}
+
+				// Assertions for Line 2 (api/*.go @find: "manager")
+				if line2Stats.FileCount != 1 {
+					return fmt.Errorf("expected line 2 to have fileCount 1 (for product_manager.go), got %d", line2Stats.FileCount)
+				}
+				// THE CORE OF THE TEST: filteredByLine should be empty.
+				// user_api.go should NOT be considered a match for this line at all.
+				if line2Stats.FilteredByLine != nil && len(line2Stats.FilteredByLine) > 0 {
+					return fmt.Errorf("expected line 2 to have an empty filteredByLine array, but it was not. Bug is still present.")
+				}
+
+				// Assertions for Line 5 (api/user_api.go)
+				if line5Stats.FileCount != 1 {
+					return fmt.Errorf("expected line 5 to have fileCount 1 (for user_api.go), got %d", line5Stats.FileCount)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
