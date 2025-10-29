@@ -12,6 +12,7 @@ import (
 
 	"github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/pkg/repo"
+	"github.com/mattsolo1/grove-core/state"
 )
 
 // RuleStatus represents the current state of a rule
@@ -22,6 +23,9 @@ const (
 	RuleHot                        // Rule exists in hot context
 	RuleCold                       // Rule exists in cold context
 	RuleExcluded                   // Rule exists as exclusion
+
+	// StateSourceKey is the key used in grove-core state to store the path to the active rule set.
+	StateSourceKey = "context.active_rules_source"
 )
 
 // LoadDefaultRulesContent loads only the default rules from grove.yml, ignoring any local rules files.
@@ -70,7 +74,23 @@ func (m *Manager) LoadDefaultRulesContent() (content []byte, rulesPath string) {
 // LoadRulesContent finds and reads the active rules file, falling back to grove.yml defaults.
 // It returns the content of the rules, the path of the file read (if any), and an error.
 func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
-	// 1. Look for local .grove/rules
+	// 1. Check state for an active rule set from .cx/
+	activeSource, _ := state.GetString(StateSourceKey)
+	if activeSource != "" {
+		// The path in state is relative to the project root (m.workDir)
+		rulesPath := filepath.Join(m.workDir, activeSource)
+		if _, err := os.Stat(rulesPath); err == nil {
+			content, err := os.ReadFile(rulesPath)
+			if err != nil {
+				return nil, "", fmt.Errorf("reading active rules file %s: %w", rulesPath, err)
+			}
+			return content, rulesPath, nil
+		}
+		// If the file in state doesn't exist, fall through to default behavior.
+		// A warning could be logged here in a future iteration.
+	}
+
+	// 2. Look for local .grove/rules
 	localRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
 	if _, err := os.Stat(localRulesPath); err == nil {
 		content, err := os.ReadFile(localRulesPath)
@@ -80,7 +100,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		return content, localRulesPath, nil
 	}
 
-	// 2. If not found, look for legacy .grovectx
+	// 3. If not found, look for legacy .grovectx
 	legacyRulesPath := filepath.Join(m.workDir, RulesFile)
 	if _, err := os.Stat(legacyRulesPath); err == nil {
 		content, err := os.ReadFile(legacyRulesPath)
@@ -90,7 +110,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		return content, legacyRulesPath, nil
 	}
 
-	// 3. If not found, check grove.yml for a default
+	// 4. If not found, check grove.yml for a default
 	cfg, err := config.LoadFrom(m.workDir)
 	if err != nil || cfg == nil {
 		// No config, so no default rules
@@ -127,7 +147,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		return content, localRulesPath, nil
 	}
 
-	// 4. No local or default rules found
+	// 5. No local or default rules found
 	return nil, "", nil
 }
 

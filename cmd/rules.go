@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	rulesDir       = ".cx"
-	rulesExt       = ".rules"
-	activeRules    = ".grove/rules"
-	stateSourceKey = "context.active_rules_source"
+	rulesDir     = ".cx"
+	rulesWorkDir = ".cx.work"
+	rulesExt     = ".rules"
+	activeRules  = ".grove/rules"
 )
 
 // --- TUI Model ---
@@ -88,6 +88,11 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
 				m.quitting = true
 				return m, setRuleCmd(m.items[m.selectedIndex])
+			}
+		case key.Matches(msg, m.keys.Load):
+			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
+				m.quitting = true
+				return m, loadRuleCmd(m.items[m.selectedIndex])
 			}
 		case key.Matches(msg, m.keys.Up):
 			if m.selectedIndex > 0 {
@@ -156,25 +161,48 @@ type rulesLoadedMsg struct {
 
 func loadRulesCmd() tea.Msg {
 	var items []ruleItem
-	entries, err := os.ReadDir(rulesDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return rulesLoadedMsg{items: []ruleItem{}, err: nil}
-		}
-		return rulesLoadedMsg{err: fmt.Errorf("reading %s directory: %w", rulesDir, err)}
+	activeSource, _ := state.GetString(context.StateSourceKey)
+
+	// Check if .grove/rules exists and add it as the first option
+	if _, err := os.Stat(activeRules); err == nil {
+		items = append(items, ruleItem{
+			name:   ".grove/rules",
+			path:   activeRules,
+			active: activeSource == "" || activeSource == activeRules,
+		})
 	}
 
-	activeSource, _ := state.GetString(stateSourceKey)
-
-	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == rulesExt {
-			path := filepath.Join(rulesDir, entry.Name())
-			items = append(items, ruleItem{
-				name:   entry.Name()[:len(entry.Name())-len(rulesExt)],
-				path:   path,
-				active: path == activeSource,
-			})
+	// Helper function to load rules from a directory
+	loadRulesFromDir := func(dir string) error {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil // Directory doesn't exist, that's ok
+			}
+			return fmt.Errorf("reading %s directory: %w", dir, err)
 		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && filepath.Ext(entry.Name()) == rulesExt {
+				path := filepath.Join(dir, entry.Name())
+				items = append(items, ruleItem{
+					name:   entry.Name()[:len(entry.Name())-len(rulesExt)],
+					path:   path,
+					active: path == activeSource,
+				})
+			}
+		}
+		return nil
+	}
+
+	// Load named rule sets from .cx/ directory
+	if err := loadRulesFromDir(rulesDir); err != nil {
+		return rulesLoadedMsg{err: err}
+	}
+
+	// Load named rule sets from .cx.work/ directory
+	if err := loadRulesFromDir(rulesWorkDir); err != nil {
+		return rulesLoadedMsg{err: err}
 	}
 
 	return rulesLoadedMsg{items: items, err: nil}
@@ -183,24 +211,73 @@ func loadRulesCmd() tea.Msg {
 func setRuleCmd(item ruleItem) tea.Cmd {
 	return func() tea.Msg {
 		sourcePath := item.path
+
+		// If selecting .grove/rules, unset the state (fall back to default)
+		if sourcePath == activeRules {
+			if err := state.Delete(context.StateSourceKey); err != nil {
+				fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
+				return tea.Quit()
+			}
+			fmt.Println(core_theme.DefaultTheme.Success.Render("✓ Using .grove/rules (default)"))
+			return tea.Quit()
+		}
+
+		// For named rule sets in .cx/, set the state
+		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Error: rule set '%s' not found at %s\n", item.name, sourcePath)
+			return tea.Quit()
+		}
+
+		if err := state.Set(context.StateSourceKey, sourcePath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
+			return tea.Quit()
+		}
+
+		// Warn user if a .grove/rules file exists, as it will now be ignored.
+		if _, err := os.Stat(activeRules); err == nil {
+			fmt.Fprintf(os.Stderr, "Warning: %s exists but will be ignored while '%s' is active.\n", activeRules, item.name)
+		}
+
+		fmt.Println(core_theme.DefaultTheme.Success.Render(fmt.Sprintf("✓ Active context rules set to '%s'", item.name)))
+		return tea.Quit()
+	}
+}
+
+func loadRuleCmd(item ruleItem) tea.Cmd {
+	return func() tea.Msg {
+		sourcePath := item.path
+
+		// Can't load .grove/rules into itself
+		if sourcePath == activeRules {
+			fmt.Fprintf(os.Stderr, "Error: Cannot load .grove/rules into itself\n")
+			return tea.Quit()
+		}
+
+		// Read the source file
 		content, err := os.ReadFile(sourcePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading rule set: %v\n", err)
 			return tea.Quit()
 		}
+
+		// Ensure .grove directory exists
 		if err := os.MkdirAll(filepath.Dir(activeRules), 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating directory: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error creating .grove directory: %v\n", err)
 			return tea.Quit()
 		}
+
+		// Write to .grove/rules
 		if err := os.WriteFile(activeRules, content, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing active rules: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error writing to .grove/rules: %v\n", err)
 			return tea.Quit()
 		}
-		if err := state.Set(stateSourceKey, sourcePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
-			return tea.Quit()
+
+		// Unset any active rule set state so .grove/rules becomes active
+		if err := state.Delete(context.StateSourceKey); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not unset active rule set in state: %v\n", err)
 		}
-		fmt.Println(core_theme.DefaultTheme.Success.Render(fmt.Sprintf("✓ Active context rules set to '%s'", item.name)))
+
+		fmt.Println(core_theme.DefaultTheme.Success.Render(fmt.Sprintf("✓ Loaded '%s' into .grove/rules as working copy", item.name)))
 		return tea.Quit()
 	}
 }
@@ -210,15 +287,16 @@ func setRuleCmd(item ruleItem) tea.Cmd {
 type pickerKeyMap struct {
 	keymap.Base
 	Select key.Binding
+	Load   key.Binding
 }
 
 func (k pickerKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Select, k.Quit}
+	return []key.Binding{k.Select, k.Load, k.Quit}
 }
 
 func (k pickerKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Select},
+		{k.Up, k.Down, k.Select, k.Load},
 		{k.Help, k.Quit},
 	}
 }
@@ -228,6 +306,10 @@ var defaultPickerKeyMap = pickerKeyMap{
 	Select: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "select"),
+	),
+	Load: key.NewBinding(
+		key.WithKeys("l"),
+		key.WithHelp("l", "load to .grove/rules"),
 	),
 }
 
@@ -247,6 +329,8 @@ func NewRulesCmd() *cobra.Command {
 	cmd.AddCommand(newRulesSetCmd())
 	cmd.AddCommand(newRulesSaveCmd())
 	cmd.AddCommand(newRulesSelectCmd())
+	cmd.AddCommand(newRulesUnsetCmd())
+	cmd.AddCommand(newRulesLoadCmd())
 
 	return cmd
 }
@@ -257,6 +341,79 @@ func newRulesSelectCmd() *cobra.Command {
 		Short: "Select the active rule set interactively",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSelectTUI()
+		},
+	}
+}
+
+func newRulesUnsetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "unset",
+		Short: "Unset the active rule set and fall back to .grove/rules",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := state.Delete(context.StateSourceKey); err != nil {
+				return fmt.Errorf("failed to update state: %w", err)
+			}
+			prettyLog.Success("Active rule set unset.")
+			prettyLog.InfoPretty(fmt.Sprintf("Now using fallback file: %s (if it exists).", activeRules))
+			return nil
+		},
+	}
+}
+
+func newRulesLoadCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "load <name>",
+		Short: "Copy a named rule set to .grove/rules as a working copy",
+		Long: `Copy a named rule set from .cx/ or .cx.work/ to .grove/rules.
+This creates a working copy that you can edit freely without affecting the original.
+The state is automatically unset so .grove/rules becomes active.
+
+Examples:
+  cx rules load default          # Copy .cx/default.rules to .grove/rules
+  cx rules load dev-no-tests     # Copy from either .cx/ or .cx.work/`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			// Try to find the source file in .cx/ or .cx.work/
+			var sourcePath string
+			cxPath := filepath.Join(rulesDir, name+rulesExt)
+			cxWorkPath := filepath.Join(rulesWorkDir, name+rulesExt)
+
+			if _, err := os.Stat(cxPath); err == nil {
+				sourcePath = cxPath
+			} else if _, err := os.Stat(cxWorkPath); err == nil {
+				sourcePath = cxWorkPath
+			} else {
+				return fmt.Errorf("rule set '%s' not found in %s/ or %s/", name, rulesDir, rulesWorkDir)
+			}
+
+			// Read the source file
+			content, err := os.ReadFile(sourcePath)
+			if err != nil {
+				return fmt.Errorf("failed to read rule set: %w", err)
+			}
+
+			// Ensure .grove directory exists
+			if err := os.MkdirAll(filepath.Dir(activeRules), 0755); err != nil {
+				return fmt.Errorf("failed to create .grove directory: %w", err)
+			}
+
+			// Write to .grove/rules
+			if err := os.WriteFile(activeRules, content, 0644); err != nil {
+				return fmt.Errorf("failed to write to .grove/rules: %w", err)
+			}
+
+			// Unset any active rule set state so .grove/rules becomes active
+			if err := state.Delete(context.StateSourceKey); err != nil {
+				// Non-fatal, just warn
+				prettyLog.WarnPretty(fmt.Sprintf("Warning: could not unset active rule set in state: %v", err))
+			}
+
+			prettyLog.Success(fmt.Sprintf("Loaded '%s' into .grove/rules as working copy", name))
+			prettyLog.InfoPretty(fmt.Sprintf("Source: %s", sourcePath))
+			prettyLog.InfoPretty("You can now edit .grove/rules freely without affecting the original.")
+			return nil
 		},
 	}
 }
@@ -335,31 +492,47 @@ func newRulesListCmd() *cobra.Command {
 			}
 
 			// Original behavior: list rules for current project
-			activeSource, _ := state.GetString(stateSourceKey)
+			activeSource, _ := state.GetString(context.StateSourceKey)
 			if activeSource == "" {
 				activeSource = "(default)"
 			}
 
-			entries, err := os.ReadDir(rulesDir)
-			if err != nil {
-				if os.IsNotExist(err) {
-					if jsonOutput {
-						fmt.Println("[]")
-						return nil
+			// Helper to collect rules from a directory
+			collectRules := func(dir string) ([]string, error) {
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil, nil // Directory doesn't exist, that's ok
 					}
-					prettyLog.InfoPretty(fmt.Sprintf("  No rule sets found in %s/ directory.", rulesDir))
-					return nil
+					return nil, fmt.Errorf("error reading %s directory: %w", dir, err)
 				}
-				return fmt.Errorf("error reading %s directory: %w", rulesDir, err)
+
+				var names []string
+				for _, entry := range entries {
+					if !entry.IsDir() && strings.HasSuffix(entry.Name(), rulesExt) {
+						name := strings.TrimSuffix(entry.Name(), rulesExt)
+						names = append(names, name)
+					}
+				}
+				return names, nil
 			}
 
-			var ruleNames []string
-			for _, entry := range entries {
-				if !entry.IsDir() && strings.HasSuffix(entry.Name(), rulesExt) {
-					name := strings.TrimSuffix(entry.Name(), rulesExt)
-					ruleNames = append(ruleNames, name)
-				}
+			// Collect from .cx/
+			cxRules, err := collectRules(rulesDir)
+			if err != nil {
+				return err
 			}
+
+			// Collect from .cx.work/
+			cxWorkRules, err := collectRules(rulesWorkDir)
+			if err != nil {
+				return err
+			}
+
+			// Combine all rules
+			var ruleNames []string
+			ruleNames = append(ruleNames, cxRules...)
+			ruleNames = append(ruleNames, cxWorkRules...)
 
 			if jsonOutput {
 				return outputJSON(ruleNames)
@@ -368,10 +541,17 @@ func newRulesListCmd() *cobra.Command {
 			// Human-readable output
 			prettyLog.InfoPretty("Available Rule Sets:")
 			if len(ruleNames) == 0 {
-				prettyLog.InfoPretty(fmt.Sprintf("  No rule sets found in %s/ directory.", rulesDir))
+				prettyLog.InfoPretty("  No rule sets found.")
 			} else {
 				for _, name := range ruleNames {
-					path := filepath.Join(rulesDir, name+rulesExt)
+					// Check both directories for the rule
+					var path string
+					if _, err := os.Stat(filepath.Join(rulesDir, name+rulesExt)); err == nil {
+						path = filepath.Join(rulesDir, name+rulesExt)
+					} else if _, err := os.Stat(filepath.Join(rulesWorkDir, name+rulesExt)); err == nil {
+						path = filepath.Join(rulesWorkDir, name+rulesExt)
+					}
+
 					indicator := "  "
 					if path == activeSource {
 						indicator = "✓ "
@@ -401,22 +581,17 @@ func newRulesSetCmd() *cobra.Command {
 			name := args[0]
 			sourcePath := filepath.Join(rulesDir, name+rulesExt)
 
-			content, err := os.ReadFile(sourcePath)
-			if err != nil {
+			if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
 				return fmt.Errorf("rule set '%s' not found at %s", name, sourcePath)
 			}
 
-			// Ensure .grove dir exists
-			if err := os.MkdirAll(filepath.Dir(activeRules), 0755); err != nil {
-				return fmt.Errorf("failed to create .grove directory: %w", err)
-			}
-
-			if err := os.WriteFile(activeRules, content, 0644); err != nil {
-				return fmt.Errorf("failed to write active rules file: %w", err)
-			}
-
-			if err := state.Set(stateSourceKey, sourcePath); err != nil {
+			if err := state.Set(context.StateSourceKey, sourcePath); err != nil {
 				return fmt.Errorf("failed to update state: %w", err)
+			}
+
+			// Warn user if a .grove/rules file exists, as it will now be ignored.
+			if _, err := os.Stat(activeRules); err == nil {
+				prettyLog.WarnPretty(fmt.Sprintf("Warning: %s exists but will be ignored while '%s' is active.", activeRules, name))
 			}
 
 			prettyLog.Success(fmt.Sprintf("Active context rules set to '%s'", name))
@@ -434,12 +609,13 @@ func newRulesSaveCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			content, err := os.ReadFile(activeRules)
+			mgr := context.NewManager("")
+			content, _, err := mgr.LoadRulesContent()
 			if err != nil {
-				if os.IsNotExist(err) {
-					return fmt.Errorf("no active rules file at %s to save", activeRules)
-				}
-				return fmt.Errorf("failed to read active rules: %w", err)
+				return fmt.Errorf("failed to load active rules to save: %w", err)
+			}
+			if content == nil {
+				return fmt.Errorf("no active rules found to save")
 			}
 
 			if err := os.MkdirAll(rulesDir, 0755); err != nil {

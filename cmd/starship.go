@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/starship"
 	"github.com/mattsolo1/grove-core/state"
 )
@@ -16,7 +17,7 @@ func init() {
 // cxStatusProvider is the status provider for grove-context.
 // It displays the name of the active rule set.
 func cxStatusProvider(s state.State) (string, error) {
-	source, ok := s[stateSourceKey]
+	source, ok := s[context.StateSourceKey]
 	if !ok || source == nil {
 		return "", nil // No active source, display nothing.
 	}

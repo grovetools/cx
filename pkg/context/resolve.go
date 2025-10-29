@@ -419,15 +419,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
-	// Find the active rules file to start the recursive resolution
-	activeRulesFile := m.findActiveRulesFile()
-	if activeRulesFile == "" {
-		// If no rules file, check for defaults configured in grove.yml
-		defaultContent, _ := m.LoadDefaultRulesContent()
-		if defaultContent != nil {
-			// Use the non-recursive content-based resolver
-			return m.resolveFilesFromRulesContent(defaultContent)
-		}
+	// Load the active rules content (respects state-based rules)
+	rulesContent, activeRulesFile, err := m.LoadRulesContent()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load rules: %w", err)
+	}
+	if rulesContent == nil || activeRulesFile == "" {
 		// No active or default rules found
 		return []string{}, nil
 	}
@@ -583,40 +580,16 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
 func (m *Manager) ResolveColdContextFiles() ([]string, error) {
-	activeRulesFile := m.findActiveRulesFile()
-	if activeRulesFile == "" {
-		// If no rules file, check for defaults configured in grove.yml
-		defaultContent, _ := m.LoadDefaultRulesContent()
-		if defaultContent != nil {
-			// Parse the default content to get cold patterns
-			_, coldRules, _, _, _, _, _, _, _, _, _, err := m.parseRulesFile(defaultContent)
-			if err != nil {
-				return nil, err
-			}
-			// Extract patterns from RuleInfo
-			coldPatterns := make([]string, len(coldRules))
-			for i, rule := range coldRules {
-				pattern := rule.Pattern
-				// Encode directive if present
-				if rule.Directive != "" {
-					pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-				}
-				if rule.IsExclude {
-					coldPatterns[i] = "!" + pattern
-				} else {
-					coldPatterns[i] = pattern
-				}
-			}
-			coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
-			if err != nil {
-				return nil, err
-			}
-			sort.Strings(coldFiles)
-			return coldFiles, nil
-		}
+	// Load the active rules content (respects state-based rules)
+	rulesContent, activeRulesFile, err := m.LoadRulesContent()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load rules: %w", err)
+	}
+	if rulesContent == nil || activeRulesFile == "" {
 		// No active or default rules found
 		return []string{}, nil
 	}
+
 
 	// Resolve all patterns recursively from the active rules file
 	_, coldRules, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)

@@ -5,9 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	
+
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/state"
 )
 
 func NewResetCmd() *cobra.Command {
@@ -82,7 +83,12 @@ func NewResetCmd() *cobra.Command {
 			if err == nil {
 				prettyLog.Code(string(content))
 			}
-			
+
+			// Unset any active rule set to ensure the reset rules are now active.
+			if err := state.Delete(context.StateSourceKey); err != nil {
+				prettyLog.WarnPretty(fmt.Sprintf("Warning: could not unset active rule set in state: %v", err))
+			}
+
 			return nil
 		},
 	}
