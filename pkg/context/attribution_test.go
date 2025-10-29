@@ -1,6 +1,7 @@
 package context
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -351,4 +352,50 @@ coverage
 			t.Errorf("* pattern should not include gitignored coverage: %s", file)
 		}
 	}
+}
+
+func TestResolveFilesWithAttribution_ExternalFileExclusion(t *testing.T) {
+	// Setup: main project and an external project to simulate an alias
+	testDir := t.TempDir()
+	mainProjectDir := filepath.Join(testDir, "main-project")
+	externalProjectDir := filepath.Join(testDir, "external-project")
+	err := os.MkdirAll(mainProjectDir, 0755)
+	assert.NoError(t, err)
+	err = os.MkdirAll(externalProjectDir, 0755)
+	assert.NoError(t, err)
+
+	// Create files in the external project
+	externalGoFile := filepath.Join(externalProjectDir, "lib.go")
+	externalJsonFile := filepath.Join(externalProjectDir, "config.json")
+	err = os.WriteFile(externalGoFile, []byte("package external"), 0644)
+	assert.NoError(t, err)
+	err = os.WriteFile(externalJsonFile, []byte(`{"key":"value"}`), 0644)
+	assert.NoError(t, err)
+
+	// Create manager for the main project
+	mgr := NewManager(mainProjectDir)
+
+	// Create rules that include the external project directory and have a floating exclusion
+	// Using absolute path pattern to simulate a resolved alias
+	rulesContent := fmt.Sprintf(`%s/**
+!*.json`,
+		filepath.ToSlash(externalProjectDir),
+	)
+
+	attribution, _, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	assert.NoError(t, err)
+
+	// Verify attribution: only the .go file should be included from line 1
+	assert.Len(t, attribution, 1, "Should only have attribution for one line")
+	includedFiles, ok := attribution[1]
+	assert.True(t, ok, "Line 1 should have attributed files")
+	assert.Len(t, includedFiles, 1, "Only one file should be included")
+	assert.Contains(t, includedFiles[0], "lib.go")
+
+	// Verify exclusions: the .json file should be excluded by line 2
+	assert.Len(t, exclusions, 1, "Should have one exclusion rule")
+	excludedFiles, ok := exclusions[2]
+	assert.True(t, ok, "Line 2 should have excluded files")
+	assert.Len(t, excludedFiles, 1, "Only one file should be excluded")
+	assert.Contains(t, excludedFiles[0], "config.json")
 }

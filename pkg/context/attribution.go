@@ -172,7 +172,8 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			}
 			// Skip patterns that shouldn't match external files
 			isExternalFile := strings.HasPrefix(relPath, "..")
-			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..")
+			isFloatingPattern := !strings.Contains(rule.Pattern, "/")
+			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..") || isFloatingPattern
 			if isExternalFile && !isExternalPattern {
 				continue
 			}
@@ -259,7 +260,8 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 			// Skip patterns that shouldn't match external files
 			isExternalFile := strings.HasPrefix(relPath, "..")
-			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..")
+			isFloatingPattern := !strings.Contains(rule.Pattern, "/")
+			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..") || isFloatingPattern
 			if isExternalFile && !isExternalPattern {
 				continue
 			}
@@ -322,7 +324,8 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 			// Skip patterns that shouldn't match external files
 			isExternalFile := strings.HasPrefix(relPath, "..")
-			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..")
+			isFloatingPattern := !strings.Contains(rule.Pattern, "/")
+			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..") || isFloatingPattern
 			if isExternalFile && !isExternalPattern {
 				continue
 			}
