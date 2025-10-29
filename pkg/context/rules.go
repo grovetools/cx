@@ -474,15 +474,25 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 				// Check the base pattern part before any directives
 				baseForCheck, _, _, _ := parseSearchDirective(processedLine)
 				if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
-					// Replace the base pattern with base + /**
-					if baseForCheck == processedLine {
-						// No directive, just append /**
-						processedLine = processedLine + "/**"
-					} else {
-						// Has directive, insert /** before it
-						directivePart := strings.TrimPrefix(processedLine, baseForCheck)
-						processedLine = baseForCheck + "/**" + directivePart
+					// Check if the path is actually a directory before appending /**
+					checkPath := baseForCheck
+					// Handle exclusion prefix
+					if strings.HasPrefix(checkPath, "!") {
+						checkPath = strings.TrimPrefix(checkPath, "!")
 					}
+					if info, err := os.Stat(checkPath); err == nil && info.IsDir() {
+						// It's a directory, append /**
+						// Replace the base pattern with base + /**
+						if baseForCheck == processedLine {
+							// No directive, just append /**
+							processedLine = processedLine + "/**"
+						} else {
+							// Has directive, insert /** before it
+							directivePart := strings.TrimPrefix(processedLine, baseForCheck)
+							processedLine = baseForCheck + "/**" + directivePart
+						}
+					}
+					// If it's a file or doesn't exist, keep as-is
 				}
 			}
 
