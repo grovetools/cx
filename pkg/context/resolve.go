@@ -152,17 +152,27 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		// The patterns from external project need to be prefixed with the project path
 		// so they resolve files from that project, not the current one
 		for i := range nestedHot {
-			if !nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
-				nestedHot[i].Pattern = filepath.Join(projectPath, nestedHot[i].Pattern)
-			} else if nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
-				nestedHot[i].Pattern = filepath.Join(projectPath, nestedHot[i].Pattern)
+			pattern := nestedHot[i].Pattern
+			if !filepath.IsAbs(pattern) {
+				if strings.Contains(pattern, "/") {
+					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
+					nestedHot[i].Pattern = filepath.Join(projectPath, pattern)
+				} else {
+					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
+					nestedHot[i].Pattern = filepath.Join(projectPath, "**", pattern)
+				}
 			}
 		}
 		for i := range nestedCold {
-			if !nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
-				nestedCold[i].Pattern = filepath.Join(projectPath, nestedCold[i].Pattern)
-			} else if nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
-				nestedCold[i].Pattern = filepath.Join(projectPath, nestedCold[i].Pattern)
+			pattern := nestedCold[i].Pattern
+			if !filepath.IsAbs(pattern) {
+				if strings.Contains(pattern, "/") {
+					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
+					nestedCold[i].Pattern = filepath.Join(projectPath, pattern)
+				} else {
+					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
+					nestedCold[i].Pattern = filepath.Join(projectPath, "**", pattern)
+				}
 			}
 		}
 		hotRules = append(hotRules, nestedHot...)
@@ -201,17 +211,27 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		}
 		// The patterns from external project need to be prefixed with the project path
 		for i := range nestedHot {
-			if !nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
-				nestedHot[i].Pattern = filepath.Join(projectPath, nestedHot[i].Pattern)
-			} else if nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
-				nestedHot[i].Pattern = filepath.Join(projectPath, nestedHot[i].Pattern)
+			pattern := nestedHot[i].Pattern
+			if !filepath.IsAbs(pattern) {
+				if strings.Contains(pattern, "/") {
+					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
+					nestedHot[i].Pattern = filepath.Join(projectPath, pattern)
+				} else {
+					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
+					nestedHot[i].Pattern = filepath.Join(projectPath, "**", pattern)
+				}
 			}
 		}
 		for i := range nestedCold {
-			if !nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
-				nestedCold[i].Pattern = filepath.Join(projectPath, nestedCold[i].Pattern)
-			} else if nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
-				nestedCold[i].Pattern = filepath.Join(projectPath, nestedCold[i].Pattern)
+			pattern := nestedCold[i].Pattern
+			if !filepath.IsAbs(pattern) {
+				if strings.Contains(pattern, "/") {
+					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
+					nestedCold[i].Pattern = filepath.Join(projectPath, pattern)
+				} else {
+					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
+					nestedCold[i].Pattern = filepath.Join(projectPath, "**", pattern)
+				}
 			}
 		}
 		// For cold imports, add everything to cold patterns
@@ -276,17 +296,27 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		// The patterns from external project need to be prefixed with the project path
 		// so they resolve files from that project, not the current one
 		for i := range nestedHot {
-			if !nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
-				nestedHot[i].Pattern = filepath.Join(realPath, nestedHot[i].Pattern)
-			} else if nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
-				nestedHot[i].Pattern = filepath.Join(realPath, nestedHot[i].Pattern)
+			pattern := nestedHot[i].Pattern
+			if !filepath.IsAbs(pattern) {
+				if strings.Contains(pattern, "/") {
+					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
+					nestedHot[i].Pattern = filepath.Join(realPath, pattern)
+				} else {
+					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
+					nestedHot[i].Pattern = filepath.Join(realPath, "**", pattern)
+				}
 			}
 		}
 		for i := range nestedCold {
-			if !nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
-				nestedCold[i].Pattern = filepath.Join(realPath, nestedCold[i].Pattern)
-			} else if nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
-				nestedCold[i].Pattern = filepath.Join(realPath, nestedCold[i].Pattern)
+			pattern := nestedCold[i].Pattern
+			if !filepath.IsAbs(pattern) {
+				if strings.Contains(pattern, "/") {
+					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
+					nestedCold[i].Pattern = filepath.Join(realPath, pattern)
+				} else {
+					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
+					nestedCold[i].Pattern = filepath.Join(realPath, "**", pattern)
+				}
 			}
 		}
 		hotRules = append(hotRules, nestedHot...)
@@ -349,17 +379,27 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		}
 		// The patterns from external project need to be prefixed with the project path
 		for i := range nestedHot {
-			if !nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
-				nestedHot[i].Pattern = filepath.Join(realPath, nestedHot[i].Pattern)
-			} else if nestedHot[i].IsExclude && !filepath.IsAbs(nestedHot[i].Pattern) {
-				nestedHot[i].Pattern = filepath.Join(realPath, nestedHot[i].Pattern)
+			pattern := nestedHot[i].Pattern
+			if !filepath.IsAbs(pattern) {
+				if strings.Contains(pattern, "/") {
+					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
+					nestedHot[i].Pattern = filepath.Join(realPath, pattern)
+				} else {
+					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
+					nestedHot[i].Pattern = filepath.Join(realPath, "**", pattern)
+				}
 			}
 		}
 		for i := range nestedCold {
-			if !nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
-				nestedCold[i].Pattern = filepath.Join(realPath, nestedCold[i].Pattern)
-			} else if nestedCold[i].IsExclude && !filepath.IsAbs(nestedCold[i].Pattern) {
-				nestedCold[i].Pattern = filepath.Join(realPath, nestedCold[i].Pattern)
+			pattern := nestedCold[i].Pattern
+			if !filepath.IsAbs(pattern) {
+				if strings.Contains(pattern, "/") {
+					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
+					nestedCold[i].Pattern = filepath.Join(realPath, pattern)
+				} else {
+					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
+					nestedCold[i].Pattern = filepath.Join(realPath, "**", pattern)
+				}
 			}
 		}
 		coldRules = append(coldRules, nestedHot...)
