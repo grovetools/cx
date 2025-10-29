@@ -235,9 +235,14 @@ func (r *AliasResolver) ResolveLine(line string) (string, error) {
 		// No pattern, just the alias - append /** to match all files
 		finalPath = resolvedPath + "/**"
 	} else {
-		// Pattern is a file path like "/pkg/**"
-		// Use filepath.Join
-		finalPath = filepath.Join(resolvedPath, parts.Pattern)
+		// Pattern is a file path like "/pkg/**" or a glob like "**/*.go"
+		// If pattern doesn't start with /, prepend it to make it relative
+		pattern := parts.Pattern
+		if !strings.HasPrefix(pattern, "/") {
+			pattern = "/" + pattern
+		}
+		// Use filepath.Join to combine paths
+		finalPath = filepath.Join(resolvedPath, pattern)
 	}
 
 	parts.ResolvedLine = strings.TrimSpace(parts.Prefix) + finalPath
@@ -255,10 +260,12 @@ func (r *AliasResolver) parseAliasLine(line string) (*aliasLineParts, error) {
 	// It handles prefixes like '!', '@view:' (or '@v:'), and combinations.
 	// Supports short forms: @a: for @alias:, @v: for @view:
 	// Pattern can be:
-	//   - /path/pattern (traditional)
+	//   - /path/pattern (traditional with leading slash)
+	//   - **/*.go or *.go (glob patterns without leading slash)
 	//   - @directive: "query" (search directives)
 	//   - (nothing)
-	re := regexp.MustCompile(`^(?P<prefix>!?(?:\s*@(?:view|v):\s*)?)?\s*@(?:alias|a):(?P<alias>[^/\s@]+)(?P<pattern>/.+|\s+@(?:find|grep):.+)?$`)
+	// The alias part matches everything except /, whitespace, @, and glob characters (*, ?, [)
+	re := regexp.MustCompile(`^(?P<prefix>!?(?:\s*@(?:view|v):\s*)?)?\s*@(?:alias|a):(?P<alias>[^/\s@*?\[]+)(?P<pattern>/.+|[*?\[].*|\s+@(?:find|grep):.+)?$`)
 	matches := re.FindStringSubmatch(line)
 	if matches == nil {
 		return nil, fmt.Errorf("invalid alias format in line: '%s'", line)

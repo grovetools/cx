@@ -135,6 +135,13 @@ func TestAliasResolver_ResolveLine(t *testing.T) {
 		{"line without alias", "*.go", "", true},
 		{"commented alias", "# @alias:my-ecosystem", "", true},
 		{"not found", "@alias:not-found/main.go", "", true},
+		// Test cases for specific file paths (bug fix)
+		{"alias with specific file", "@alias:standalone-project/src/main.go", "/path/to/standalone-project/src/main.go", false},
+		{"alias with glob pattern no leading slash", "@alias:standalone-project/**/*.go", "/path/to/standalone-project/**/*.go", false},
+		{"alias with nested path", "@alias:my-ecosystem:my-repo/src/components/Header.astro", "/path/to/my-ecosystem/my-repo/src/components/Header.astro", false},
+		// Test cases for patterns without leading slash (should fail initially)
+		{"alias with pattern no leading slash 1", "@alias:standalone-project**/*.go", "/path/to/standalone-project/**/*.go", false},
+		{"alias with pattern no leading slash 2", "@a:my-ecosystem:my-repo*.go", "/path/to/my-ecosystem/my-repo/*.go", false},
 	}
 
 	for _, tt := range tests {
