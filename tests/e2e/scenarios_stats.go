@@ -228,3 +228,90 @@ api/user_api.go`
 		},
 	}
 }
+
+// StatsPrefixAttributionScenario tests that prefix matching in ** patterns respects directory boundaries.
+// A pattern for "my-repo/**" should not match files in "my-repo-hihi/".
+func StatsPrefixAttributionScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-stats-prefix-attribution",
+		Description: "Tests that ** pattern prefix matching respects directory boundaries",
+		Tags:        []string{"cx", "stats", "patterns", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup directories with overlapping names", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "my-repo", "file1.txt"), "test content 1"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "my-repo-hihi", "file2.txt"), "test content 2"); err != nil {
+					return err
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules file with patterns for both directories", func(ctx *harness.Context) error {
+				rules := `my-repo/**
+my-repo-hihi/**`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx stats --per-line' and verify correct attribution", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := ctx.Command(cx, "stats", "--per-line", ".grove/rules").Dir(ctx.RootDir)
+
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				// Parse JSON output
+				var stats []struct {
+					LineNumber     int           `json:"lineNumber"`
+					FileCount      int           `json:"fileCount"`
+					FilteredByLine []interface{} `json:"filteredByLine"`
+				}
+				if err := json.Unmarshal([]byte(result.Stdout), &stats); err != nil {
+					return fmt.Errorf("failed to parse JSON: %w", err)
+				}
+
+				var line1Stats, line2Stats *struct {
+					LineNumber     int           `json:"lineNumber"`
+					FileCount      int           `json:"fileCount"`
+					FilteredByLine []interface{} `json:"filteredByLine"`
+				}
+
+				for i := range stats {
+					if stats[i].LineNumber == 1 {
+						line1Stats = &stats[i]
+					}
+					if stats[i].LineNumber == 2 {
+						line2Stats = &stats[i]
+					}
+				}
+
+				if line1Stats == nil {
+					return fmt.Errorf("stats for line 1 not found")
+				}
+				if line2Stats == nil {
+					return fmt.Errorf("stats for line 2 not found")
+				}
+
+				// Assertions for Line 1 (my-repo/**)
+				if line1Stats.FileCount != 1 {
+					return fmt.Errorf("expected line 1 to have fileCount 1 (my-repo/file1.txt), got %d", line1Stats.FileCount)
+				}
+				// Should not have filtered files
+				if line1Stats.FilteredByLine != nil && len(line1Stats.FilteredByLine) > 0 {
+					return fmt.Errorf("expected line 1 to have no filtered files, but found %v", line1Stats.FilteredByLine)
+				}
+
+				// Assertions for Line 2 (my-repo-hihi/**)
+				if line2Stats.FileCount != 1 {
+					return fmt.Errorf("expected line 2 to have fileCount 1 (my-repo-hihi/file2.txt), got %d", line2Stats.FileCount)
+				}
+
+				return nil
+			}),
+		},
+	}
+}

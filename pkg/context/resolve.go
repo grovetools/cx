@@ -1345,8 +1345,15 @@ func matchDoubleStarPattern(pattern, path string) bool {
 		suffix := strings.TrimPrefix(parts[1], "/")
 
 		// Check prefix match
-		if prefix != "" && !strings.HasPrefix(path, prefix) {
-			return false
+		if prefix != "" {
+			if !strings.HasPrefix(path, prefix) {
+				return false
+			}
+			// Ensure it's a directory boundary match.
+			// The path must either be identical to the prefix or have a '/' after it.
+			if len(path) > len(prefix) && path[len(prefix)] != '/' {
+				return false
+			}
 		}
 
 		// Remove the prefix from the path for suffix matching
