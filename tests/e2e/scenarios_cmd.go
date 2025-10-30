@@ -141,7 +141,7 @@ func FromCmdScenario() *harness.Scenario {
 					return err
 				}
 
-				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -308,7 +308,7 @@ func CommandExpressionAbsolutePathsScenario() *harness.Scenario {
 					return err
 				}
 
-				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -338,7 +338,7 @@ func CommandExpressionAbsolutePathsScenario() *harness.Scenario {
 					return err
 				}
 
-				cmd := command.New(cxBinary, "generate").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -418,7 +418,7 @@ go.mod`
 					return err
 				}
 
-				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -461,7 +461,7 @@ go.mod`
 					return err
 				}
 
-				cmd := command.New(cxBinary, "generate").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)

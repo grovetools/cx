@@ -52,6 +52,7 @@ func main() {
 		AbsolutePathDirectoryPatternScenario(),
 		ExplicitWorktreeInclusionScenario(),
 		AbsolutePathFilePatternScenario(),
+		UnauthorizedExternalPathScenario(),
 
 		// Git Repository Scenarios
 		// GitRepositoryCloneScenario(),

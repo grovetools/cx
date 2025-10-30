@@ -613,7 +613,12 @@ func (m *Manager) initAllowedRoots() {
 			}
 			for _, node := range allProjects {
 				if includedNames[node.Name] {
-					allowed = append(allowed, node.Path)
+					// Canonicalize workspace paths
+					canonicalPath, err := filepath.EvalSymlinks(node.Path)
+					if err != nil {
+						canonicalPath = node.Path
+					}
+					allowed = append(allowed, canonicalPath)
 				}
 			}
 		} else {
@@ -624,7 +629,12 @@ func (m *Manager) initAllowedRoots() {
 			}
 			for _, node := range allProjects {
 				if !excludedNames[node.Name] {
-					allowed = append(allowed, node.Path)
+					// Canonicalize workspace paths
+					canonicalPath, err := filepath.EvalSymlinks(node.Path)
+					if err != nil {
+						canonicalPath = node.Path
+					}
+					allowed = append(allowed, canonicalPath)
 				}
 			}
 		}
@@ -633,7 +643,12 @@ func (m *Manager) initAllowedRoots() {
 		homeDir, err := os.UserHomeDir()
 		if err == nil {
 			groveHome := filepath.Join(homeDir, ".grove")
-			allowed = append(allowed, groveHome)
+			// Canonicalize grove home path
+			canonicalGroveHome, err := filepath.EvalSymlinks(groveHome)
+			if err != nil {
+				canonicalGroveHome = groveHome
+			}
+			allowed = append(allowed, canonicalGroveHome)
 		}
 
 		// Also add notebook root directories to allowed paths
@@ -644,16 +659,21 @@ func (m *Manager) initAllowedRoots() {
 					if err != nil {
 						fmt.Fprintf(os.Stderr, "Warning: could not expand notebook '%s' root_dir '%s': %v\n", notebookName, notebook.RootDir, err)
 					} else {
+						// Canonicalize notebook root path
+						canonicalNotebookRoot, err := filepath.EvalSymlinks(notebookRootDir)
+						if err != nil {
+							canonicalNotebookRoot = notebookRootDir
+						}
 						// Add the notebook root to the list of allowed paths if not already present.
 						isAlreadyAllowed := false
 						for _, root := range allowed {
-							if root == notebookRootDir {
+							if root == canonicalNotebookRoot {
 								isAlreadyAllowed = true
 								break
 							}
 						}
 						if !isAlreadyAllowed {
-							allowed = append(allowed, notebookRootDir)
+							allowed = append(allowed, canonicalNotebookRoot)
 						}
 					}
 				}
@@ -676,16 +696,24 @@ func (m *Manager) initAllowedRoots() {
 				continue
 			}
 
+			// Resolve symlinks for canonical path
+			canonicalPath, err := filepath.EvalSymlinks(absPath)
+			if err != nil {
+				// Fallback to absolute path if symlink resolution fails
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve symlinks for allowed_path '%s': %v\n", absPath, err)
+				canonicalPath = absPath
+			}
+
 			// Check if already present
 			isAlreadyAllowed := false
 			for _, root := range allowed {
-				if root == absPath {
+				if root == canonicalPath {
 					isAlreadyAllowed = true
 					break
 				}
 			}
 			if !isAlreadyAllowed {
-				allowed = append(allowed, absPath)
+				allowed = append(allowed, canonicalPath)
 			}
 		}
 
@@ -740,16 +768,24 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 		return false, fmt.Sprintf("could not resolve absolute path for '%s': %v", path, err)
 	}
 
+	// Resolve symlinks to get the canonical path for comparison
+	canonicalPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		// If symlink resolution fails, fall back to the non-symlinked absolute path for the check.
+		// This might happen for paths that don't exist yet but are part of a pattern.
+		canonicalPath = absPath
+	}
+
 	// FIRST, check if this exact path is an excluded workspace (higher priority than parent allowance)
 	resolver := m.getAliasResolver()
 	if resolver.Provider != nil {
 		// Try to find the node by path
-		node := resolver.Provider.FindByPath(absPath)
+		node := resolver.Provider.FindByPath(canonicalPath)
 
 		// If not found, manually search through all nodes (case-insensitive on macOS)
 		if node == nil {
 			allNodes := resolver.Provider.All()
-			normalizedPath := strings.ToLower(absPath)
+			normalizedPath := strings.ToLower(canonicalPath)
 			for _, n := range allNodes {
 				if strings.ToLower(n.Path) == normalizedPath {
 					node = n
@@ -776,8 +812,8 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 
 	// THEN check if it's under an allowed root
 	for _, root := range m.allowedRoots {
-		// Check if absPath is equal to or a subdirectory of root.
-		if absPath == root || strings.HasPrefix(absPath, root+string(filepath.Separator)) {
+		// Check if canonicalPath is equal to or a subdirectory of root.
+		if canonicalPath == root || strings.HasPrefix(canonicalPath, root+string(filepath.Separator)) {
 			return true, ""
 		}
 	}

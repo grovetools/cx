@@ -98,7 +98,7 @@ context:
 					return err
 				}
 
-				cmd := command.New(cxBinary, "generate").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -235,7 +235,7 @@ context:
 					return err
 				}
 
-				cmd := command.New(cxBinary, "generate").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -352,7 +352,7 @@ context:
 					return err
 				}
 
-				cmd := command.New(cxBinary, "generate").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)

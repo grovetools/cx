@@ -193,3 +193,107 @@ func AbsolutePathFilePatternScenario() *harness.Scenario {
 		},
 	}
 }
+
+// UnauthorizedExternalPathScenario tests that absolute paths outside workspace roots are rejected with a warning.
+func UnauthorizedExternalPathScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-unauthorized-external-path",
+		Description: "Tests that absolute paths outside allowed workspaces are rejected with a warning (like Go modules).",
+		Tags:        []string{"cx", "rules", "patterns", "absolute-path", "security"},
+		Steps: []harness.Step{
+			harness.NewStep("Create an external directory that simulates Go modules", func(ctx *harness.Context) error {
+				// Create a directory completely outside the test's RootDir to simulate Go modules path
+				externalDir, err := os.MkdirTemp("", "grove-e2e-gomod-")
+				if err != nil {
+					return fmt.Errorf("failed to create external temp dir: %w", err)
+				}
+				// Store external dir path
+				externalDirFile := filepath.Join(ctx.RootDir, ".external_dir_path")
+				if err := fs.WriteString(externalDirFile, externalDir); err != nil {
+					os.RemoveAll(externalDir)
+					return err
+				}
+
+				// Create some Go files that mimic Go module structure
+				gomodDir := filepath.Join(externalDir, "some-module")
+				if err := os.MkdirAll(gomodDir, 0755); err != nil {
+					os.RemoveAll(externalDir)
+					return err
+				}
+
+				if err := fs.WriteString(filepath.Join(gomodDir, "module.go"), "package somemodule"); err != nil {
+					os.RemoveAll(externalDir)
+					return err
+				}
+
+				// Create a local file in the test directory
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main"); err != nil {
+					os.RemoveAll(externalDir)
+					return err
+				}
+
+				// IMPORTANT: Do NOT add the external directory to allowed_paths
+				// This simulates the Go modules case where paths are outside workspace
+				return nil
+			}),
+			harness.NewStep("Create rules file with unauthorized absolute path pattern", func(ctx *harness.Context) error {
+				// Read the external dir path
+				externalDirBytes, err := os.ReadFile(filepath.Join(ctx.RootDir, ".external_dir_path"))
+				if err != nil {
+					return fmt.Errorf("failed to read external dir path: %w", err)
+				}
+				externalDir := string(externalDirBytes)
+
+				// Create a rules file that references the external directory (like Go modules)
+				// This should be rejected because it's outside workspace roots
+				rules := fmt.Sprintf(`*.go
+%s/**/*.go`, externalDir)
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx list' and verify external path is rejected", func(ctx *harness.Context) error {
+				// Read the external dir path
+				externalDirBytes, err := os.ReadFile(filepath.Join(ctx.RootDir, ".external_dir_path"))
+				if err != nil {
+					return fmt.Errorf("failed to read external dir path: %w", err)
+				}
+				externalDir := string(externalDirBytes)
+				defer os.RemoveAll(externalDir) // Clean up after test
+
+				cx, _ := FindProjectBinary()
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				// Command should still succeed (not fatal error)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+				stderr := result.Stderr
+
+				// Verify that main.go from the local directory IS included
+				if !strings.Contains(output, "main.go") {
+					return fmt.Errorf("expected local main.go to be included in output:\n%s", output)
+				}
+
+				// Verify that files from the external directory are NOT included
+				if strings.Contains(output, "module.go") {
+					return fmt.Errorf("external module.go should NOT be included in output:\n%s", output)
+				}
+
+				// Verify that there's a warning in stderr about the skipped rule
+				if !strings.Contains(stderr, "skipping rule") && !strings.Contains(stderr, "outside") {
+					return fmt.Errorf("expected warning about skipped external path in stderr, got:\n%s", stderr)
+				}
+
+				// Verify the warning mentions the external path
+				if !strings.Contains(stderr, externalDir) {
+					return fmt.Errorf("expected warning to mention external path '%s' in stderr:\n%s", externalDir, stderr)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
