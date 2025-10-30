@@ -142,6 +142,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
+		// Validate that the resolved project path is allowed
+		if allowed, reason := m.IsPathAllowed(projectPath); !allowed {
+			fmt.Fprintf(os.Stderr, "Warning: skipping import from '%s': %s\n", projectAlias, reason)
+			continue
+		}
+
 		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
 
 		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
@@ -202,6 +208,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
+		// Validate that the resolved project path is allowed
+		if allowed, reason := m.IsPathAllowed(projectPath); !allowed {
+			fmt.Fprintf(os.Stderr, "Warning: skipping import from '%s': %s\n", projectAlias, reason)
+			continue
+		}
+
 		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
 
 		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
@@ -258,6 +270,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		realPath, err := filepath.EvalSymlinks(resolvedPath)
 		if err != nil {
 			realPath = resolvedPath
+		}
+
+		// Validate that the default path is within an allowed workspace
+		if allowed, reason := m.IsPathAllowed(realPath); !allowed {
+			fmt.Fprintf(os.Stderr, "Warning: skipping @default for '%s': %s\n", defaultPath, reason)
+			continue
 		}
 
 		// Load the config directly from the grove.yml file in that directory
@@ -342,6 +360,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		realPath, err := filepath.EvalSymlinks(resolvedPath)
 		if err != nil {
 			realPath = resolvedPath
+		}
+
+		// Validate that the default path is within an allowed workspace
+		if allowed, reason := m.IsPathAllowed(realPath); !allowed {
+			fmt.Fprintf(os.Stderr, "Warning: skipping @default for '%s': %s\n", defaultPath, reason)
+			continue
 		}
 
 		// Load the config directly from the grove.yml file in that directory
@@ -792,6 +816,49 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 	// Use processed patterns for the rest of the logic
 	patterns = m.preProcessPatterns(patterns)
+
+	// Validate absolute/relative-up patterns before processing
+	validatedPatterns := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		isExclude := strings.HasPrefix(pattern, "!")
+		cleanPattern := pattern
+		if isExclude {
+			cleanPattern = strings.TrimPrefix(pattern, "!")
+		}
+
+		if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
+			// Resolve path for validation. For globs, validate the base path.
+			pathToValidate := cleanPattern
+			if strings.ContainsAny(pathToValidate, "*?[") {
+				// Find base path before glob
+				// e.g., /foo/bar/**/*.go -> /foo/bar
+				// e.g., ../foo/**/*.go -> ../foo
+				parts := strings.Split(filepath.ToSlash(pathToValidate), "/")
+				baseParts := []string{}
+				for _, part := range parts {
+					if strings.ContainsAny(part, "*?[") {
+						break
+					}
+					baseParts = append(baseParts, part)
+				}
+				pathToValidate = strings.Join(baseParts, "/")
+			}
+
+			// Resolve relative paths
+			if !filepath.IsAbs(pathToValidate) {
+				pathToValidate = filepath.Join(m.workDir, pathToValidate)
+			}
+
+			if allowed, reason := m.IsPathAllowed(pathToValidate); !allowed {
+				fmt.Fprintf(os.Stderr, "Warning: skipping rule '%s': %s\n", pattern, reason)
+				// Track this skipped rule (line number will be resolved later in stats)
+				m.addSkippedRule(0, pattern, reason)
+				continue // Skip this pattern
+			}
+		}
+		validatedPatterns = append(validatedPatterns, pattern)
+	}
+	patterns = validatedPatterns
 
 	// Get gitignored files for the current working directory for handling relative patterns.
 	gitIgnoredForCWD, err := m.getGitIgnoredFiles(m.workDir)

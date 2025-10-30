@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+
+	"github.com/mattsolo1/grove-core/config"
 )
 
 // Constants for context file paths
@@ -22,11 +25,26 @@ const (
 	CachedContextFile          = ".grove/cached-context"
 )
 
+// ContextConfig defines configuration specific to grove-context.
+// This is intended to be nested under the "context" key in grove.yml Extensions.
+type ContextConfig struct {
+	// IncludedWorkspaces is a strict allowlist: if set, only these workspaces are scanned for context.
+	IncludedWorkspaces []string `yaml:"included_workspaces,omitempty"`
+	// ExcludedWorkspaces is a denylist: these workspaces are excluded from context scanning.
+	// Ignored if IncludedWorkspaces is set.
+	ExcludedWorkspaces []string `yaml:"excluded_workspaces,omitempty"`
+}
+
 // Manager handles context operations
 type Manager struct {
 	workDir         string
 	gitIgnoredCache map[string]map[string]bool // Cache for gitignored files by repository root
 	aliasResolver   *AliasResolver             // Lazily initialized alias resolver
+	allowedRoots    []string
+	allowedRootsErr error
+	rootsOnce       sync.Once
+	skippedRules    []SkippedRule // Rules that were skipped during parsing with reasons
+	skippedMutex    sync.Mutex    // Protects skippedRules
 }
 
 // NewManager creates a new context manager
@@ -56,6 +74,7 @@ func (m *Manager) getAliasResolver() *AliasResolver {
 	if m.aliasResolver == nil {
 		m.aliasResolver = NewAliasResolverWithWorkDir(m.workDir)
 	}
+	m.aliasResolver.InitProvider() // This is idempotent
 	return m.aliasResolver
 }
 
@@ -548,4 +567,164 @@ func FormatBytes(bytes int) string {
 	} else {
 		return fmt.Sprintf("%.1f GB", float64(bytes)/GB)
 	}
+}
+
+// initAllowedRoots discovers all workspaces and filters them based on
+// included_workspaces and excluded_workspaces configurations. The result is
+// a cached list of allowed root directories for context scanning.
+func (m *Manager) initAllowedRoots() {
+	m.rootsOnce.Do(func() {
+		resolver := m.getAliasResolver()
+		if resolver.DiscoverErr != nil {
+			m.allowedRootsErr = resolver.DiscoverErr
+			return
+		}
+		if resolver.Provider == nil {
+			m.allowedRootsErr = fmt.Errorf("workspace provider could not be initialized")
+			return
+		}
+
+		allProjects := resolver.Provider.All()
+
+		mergedCfg, err := config.LoadFrom(m.workDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not load grove configuration to apply workspace filters: %v\n", err)
+		}
+
+		// Read context-specific configuration from the extension
+		var ctxCfg ContextConfig
+		if mergedCfg != nil {
+			if err := mergedCfg.UnmarshalExtension("context", &ctxCfg); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to read context configuration: %v\n", err)
+			}
+		}
+
+		var allowed []string
+
+		if len(ctxCfg.IncludedWorkspaces) > 0 {
+			// --- ALLOWLIST MODE ---
+			includedNames := make(map[string]bool)
+			for _, name := range ctxCfg.IncludedWorkspaces {
+				includedNames[name] = true
+			}
+			for _, node := range allProjects {
+				if includedNames[node.Name] {
+					allowed = append(allowed, node.Path)
+				}
+			}
+		} else {
+			// --- DENYLIST MODE (Default) ---
+			excludedNames := make(map[string]bool)
+			for _, name := range ctxCfg.ExcludedWorkspaces {
+				excludedNames[name] = true
+			}
+			for _, node := range allProjects {
+				if !excludedNames[node.Name] {
+					allowed = append(allowed, node.Path)
+				}
+			}
+		}
+
+		// Add ~/.grove as an explicit exception
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			groveHome := filepath.Join(homeDir, ".grove")
+			allowed = append(allowed, groveHome)
+		}
+
+		m.allowedRoots = allowed
+	})
+}
+
+// GetAllowedRoots returns the list of sandboxed root directories for scanning.
+func (m *Manager) GetAllowedRoots() ([]string, error) {
+	m.initAllowedRoots()
+	return m.allowedRoots, m.allowedRootsErr
+}
+
+// GetSkippedRules returns the list of rules that were skipped during the last parsing operation
+func (m *Manager) GetSkippedRules() []SkippedRule {
+	m.skippedMutex.Lock()
+	defer m.skippedMutex.Unlock()
+	// Return a copy to avoid concurrent modification
+	result := make([]SkippedRule, len(m.skippedRules))
+	copy(result, m.skippedRules)
+	return result
+}
+
+// ClearSkippedRules clears the list of skipped rules
+func (m *Manager) ClearSkippedRules() {
+	m.skippedMutex.Lock()
+	defer m.skippedMutex.Unlock()
+	m.skippedRules = nil
+}
+
+// AddSkippedRule adds a skipped rule to the list
+func (m *Manager) addSkippedRule(lineNum int, rule string, reason string) {
+	m.skippedMutex.Lock()
+	defer m.skippedMutex.Unlock()
+	m.skippedRules = append(m.skippedRules, SkippedRule{
+		LineNum: lineNum,
+		Rule:    rule,
+		Reason:  reason,
+	})
+}
+
+// IsPathAllowed checks if a given path is within one of the allowed workspace roots.
+// It returns true if allowed, or false and a reason string if not.
+func (m *Manager) IsPathAllowed(path string) (bool, string) {
+	m.initAllowedRoots()
+	if m.allowedRootsErr != nil {
+		return false, fmt.Sprintf("cannot validate path, workspace discovery failed: %v", m.allowedRootsErr)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false, fmt.Sprintf("could not resolve absolute path for '%s': %v", path, err)
+	}
+
+	// FIRST, check if this exact path is an excluded workspace (higher priority than parent allowance)
+	resolver := m.getAliasResolver()
+	if resolver.Provider != nil {
+		// Try to find the node by path
+		node := resolver.Provider.FindByPath(absPath)
+
+		// If not found, manually search through all nodes (case-insensitive on macOS)
+		if node == nil {
+			allNodes := resolver.Provider.All()
+			normalizedPath := strings.ToLower(absPath)
+			for _, n := range allNodes {
+				if strings.ToLower(n.Path) == normalizedPath {
+					node = n
+					break
+				}
+			}
+		}
+
+		if node != nil {
+			// Load config to check exclusions
+			mergedCfg, _ := config.LoadFrom(m.workDir)
+			var ctxCfg ContextConfig
+			if mergedCfg != nil {
+				mergedCfg.UnmarshalExtension("context", &ctxCfg)
+			}
+			// Check if this workspace is in the excluded list
+			for _, excludedName := range ctxCfg.ExcludedWorkspaces {
+				if node.Name == excludedName {
+					return false, fmt.Sprintf("workspace '%s' containing path '%s' is in your 'excluded_workspaces' list", node.Name, path)
+				}
+			}
+		}
+	}
+
+	// THEN check if it's under an allowed root
+	for _, root := range m.allowedRoots {
+		// Check if absPath is equal to or a subdirectory of root.
+		if absPath == root || strings.HasPrefix(absPath, root+string(filepath.Separator)) {
+			return true, ""
+		}
+	}
+
+	// If not found in allowed roots, return error
+	return false, fmt.Sprintf("path '%s' is outside of any known or allowed workspace", path)
 }

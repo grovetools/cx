@@ -28,6 +28,13 @@ const (
 	StateSourceKey = "context.active_rules_source"
 )
 
+// SkippedRule represents a rule that was skipped during parsing along with the reason why
+type SkippedRule struct {
+	LineNum int
+	Rule    string
+	Reason  string
+}
+
 // LoadDefaultRulesContent loads only the default rules from grove.yml, ignoring any local rules files.
 // It returns the default rules content and the path where rules should be written.
 func (m *Manager) LoadDefaultRulesContent() (content []byte, rulesPath string) {
@@ -488,6 +495,39 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 					fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in line '%s': %v\n", line, resolveErr)
 					continue // Skip this line if alias resolution fails
 				}
+
+				// Extract the project path from the resolved line to validate against workspace exclusions
+				// The resolved line will be something like "/path/to/project/**" or "!/path/to/project/src/**/*.go"
+				pathToValidate := resolvedLine
+				if strings.HasPrefix(pathToValidate, "!") {
+					pathToValidate = strings.TrimPrefix(pathToValidate, "!")
+				}
+				// Parse out any search directives to get the base path
+				basePathForValidation, _, _, _ := parseSearchDirective(pathToValidate)
+				// Extract just the directory part (remove glob patterns)
+				// For patterns like "/path/to/project/**" or "/path/to/project/src/**/*.go"
+				// we want to extract the project root path
+				pathParts := strings.Split(basePathForValidation, string(filepath.Separator))
+				var projectPath string
+				for i, part := range pathParts {
+					if strings.Contains(part, "*") || strings.Contains(part, "?") {
+						// Found the first glob part, take everything before it
+						projectPath = strings.Join(pathParts[:i], string(filepath.Separator))
+						break
+					}
+				}
+				if projectPath == "" {
+					// No glob found, the entire path might be a directory
+					projectPath = basePathForValidation
+				}
+
+				// Validate that the resolved project path is allowed
+				if allowed, reason := m.IsPathAllowed(projectPath); !allowed {
+					fmt.Fprintf(os.Stderr, "Warning: skipping rule '%s': %s\n", line, reason)
+					m.addSkippedRule(lineNum, line, reason)
+					continue
+				}
+
 				processedLine = resolvedLine
 
 				// If the resolved line is just a directory path (no glob pattern),

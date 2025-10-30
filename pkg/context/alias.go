@@ -27,9 +27,9 @@ type aliasLineParts struct {
 
 // AliasResolver discovers available workspaces and resolves aliases to their absolute paths.
 type AliasResolver struct {
-	provider     *workspace.Provider
+	Provider     *workspace.Provider
 	providerOnce sync.Once
-	discoverErr  error
+	DiscoverErr  error
 	configPath   string // Optional: custom config path for testing
 	workDir      string // Current working directory for context-aware resolution
 }
@@ -50,8 +50,8 @@ func NewAliasResolverWithConfig(configPath string) *AliasResolver {
 	return &AliasResolver{configPath: configPath}
 }
 
-// initProvider performs the workspace discovery process once and initializes the provider.
-func (r *AliasResolver) initProvider() {
+// InitProvider performs the workspace discovery process once and initializes the provider.
+func (r *AliasResolver) InitProvider() {
 	r.providerOnce.Do(func() {
 		logger := logrus.New()
 		logger.SetLevel(logrus.WarnLevel)
@@ -63,25 +63,25 @@ func (r *AliasResolver) initProvider() {
 
 		discoveryResult, err := discoveryService.DiscoverAll()
 		if err != nil {
-			r.discoverErr = fmt.Errorf("failed to discover workspaces: %w", err)
+			r.DiscoverErr = fmt.Errorf("failed to discover workspaces: %w", err)
 			return
 		}
 
-		r.provider = workspace.NewProvider(discoveryResult)
+		r.Provider = workspace.NewProvider(discoveryResult)
 	})
 }
 
 // Resolve translates a pure alias string (e.g., "ecosystem:repo") into an absolute path.
 func (r *AliasResolver) Resolve(alias string) (string, error) {
-	r.initProvider()
-	if r.discoverErr != nil {
-		return "", r.discoverErr
+	r.InitProvider()
+	if r.DiscoverErr != nil {
+		return "", r.DiscoverErr
 	}
-	if r.provider == nil {
+	if r.Provider == nil {
 		return "", fmt.Errorf("workspace provider not initialized")
 	}
 
-	allNodes := r.provider.All()
+	allNodes := r.Provider.All()
 	components := strings.Split(alias, ":")
 
 	// Context-aware resolution for single-component aliases
@@ -96,10 +96,10 @@ func (r *AliasResolver) Resolve(alias string) (string, error) {
 				normalizedWorkDir = strings.TrimPrefix(normalizedWorkDir, "/private")
 			}
 
-			currentNode := r.provider.FindByPath(normalizedWorkDir)
+			currentNode := r.Provider.FindByPath(normalizedWorkDir)
 			// If not found with /private stripped, try the original path
 			if currentNode == nil && normalizedWorkDir != r.workDir {
-				currentNode = r.provider.FindByPath(r.workDir)
+				currentNode = r.Provider.FindByPath(r.workDir)
 			}
 
 			if currentNode != nil {

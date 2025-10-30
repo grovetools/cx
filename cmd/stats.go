@@ -171,6 +171,7 @@ func outputPerLineStats(args []string) error {
 		TotalSize         int64            `json:"totalSize"`
 		GitInfo           *GitInfo         `json:"gitInfo,omitempty"`
 		ResolvedPaths     []string         `json:"resolvedPaths"`
+		SkipReason        string           `json:"skipReason,omitempty"` // Reason why this rule was skipped
 	}
 
 	var results []PerLineStat
@@ -487,6 +488,50 @@ func outputPerLineStats(args []string) error {
 					})
 				}
 			}
+		}
+	}
+
+	// Add entries for skipped rules
+	skippedRules := mgr.GetSkippedRules()
+	for _, skipped := range skippedRules {
+		// If line number is 0, try to find it by matching the rule pattern
+		lineNum := skipped.LineNum
+		if lineNum == 0 {
+			// Search through ruleMap to find matching rule
+			for num, rule := range ruleMap {
+				if rule == skipped.Rule {
+					lineNum = num
+					break
+				}
+			}
+		}
+
+		// If we still don't have a line number, skip this entry
+		if lineNum == 0 {
+			continue
+		}
+
+		// Check if this line already has an entry in results
+		found := false
+		for i := range results {
+			if results[i].LineNumber == lineNum {
+				// Update the existing entry with skip reason if it doesn't have one
+				if results[i].SkipReason == "" {
+					results[i].SkipReason = skipped.Reason
+				}
+				found = true
+				break
+			}
+		}
+
+		// If not found, add an entry for this skipped rule
+		if !found {
+			results = append(results, PerLineStat{
+				LineNumber: lineNum,
+				Rule:       skipped.Rule,
+				FileCount:  0,
+				SkipReason: skipped.Reason,
+			})
 		}
 	}
 
