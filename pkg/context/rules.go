@@ -15,6 +15,22 @@ import (
 	"github.com/mattsolo1/grove-core/state"
 )
 
+// parsedRules holds the fully parsed contents of a single rules file,
+// including all rules, directives, and import statements.
+type parsedRules struct {
+	hotRules             []RuleInfo
+	coldRules            []RuleInfo
+	mainDefaultPaths     []string
+	coldDefaultPaths     []string
+	mainImportedRuleSets []ImportInfo
+	coldImportedRuleSets []ImportInfo
+	viewPaths            []string
+	freezeCache          bool
+	disableExpiration    bool
+	disableCache         bool
+	expireTime           time.Duration
+}
+
 // RuleStatus represents the current state of a rule
 type RuleStatus int
 
@@ -278,10 +294,12 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 	return line, "", "", false
 }
 
-// parseRulesFile parses the rules file content and extracts patterns, directives, and default paths
-func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []RuleInfo, mainDefaultPaths, coldDefaultPaths []string, mainImportedRuleSets, coldImportedRuleSets []ImportInfo, viewPaths []string, freezeCache, disableExpiration, disableCache bool, expireTime time.Duration, err error) {
+// parseRulesFileContent parses the rules file content and extracts patterns, directives, and default paths.
+// It does not handle recursion for imports or defaults.
+func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, error) {
+	results := &parsedRules{}
 	if len(rulesContent) == 0 {
-		return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, nil
+		return results, nil
 	}
 
 	// Create repo manager for processing Git URLs
@@ -304,15 +322,15 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 		lineNum++ // Increment line number for each line
 		line := strings.TrimSpace(scanner.Text())
 		if line == "@freeze-cache" {
-			freezeCache = true
+			results.freezeCache = true
 			continue
 		}
 		if line == "@no-expire" {
-			disableExpiration = true
+			results.disableExpiration = true
 			continue
 		}
 		if line == "@disable-cache" {
-			disableCache = true
+			results.disableCache = true
 			continue
 		}
 		if strings.HasPrefix(line, "@expire-time ") {
@@ -321,9 +339,9 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 			if durationStr != "" {
 				parsedDuration, parseErr := time.ParseDuration(durationStr)
 				if parseErr != nil {
-					return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
+					return nil, fmt.Errorf("invalid duration format for @expire-time: %w", parseErr)
 				}
-				expireTime = parsedDuration
+				results.expireTime = parsedDuration
 			}
 			continue
 		}
@@ -341,12 +359,12 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 				resolvedPatterns, err := m.ResolveLineForRulePreview(rulePart)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: could not resolve view rule '%s': %v\n", rulePart, err)
-					viewPaths = append(viewPaths, rulePart) // Fallback to unresolved
+					results.viewPaths = append(results.viewPaths, rulePart) // Fallback to unresolved
 				} else {
 					// A ruleset import can return multiple patterns
 					for _, p := range strings.Split(resolvedPatterns, "\n") {
 						if p != "" {
-							viewPaths = append(viewPaths, p)
+							results.viewPaths = append(results.viewPaths, p)
 						}
 					}
 				}
@@ -357,9 +375,9 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 			path := strings.TrimSpace(strings.TrimPrefix(line, "@default:"))
 			if path != "" {
 				if inColdSection {
-					coldDefaultPaths = append(coldDefaultPaths, path)
+					results.coldDefaultPaths = append(results.coldDefaultPaths, path)
 				} else {
-					mainDefaultPaths = append(mainDefaultPaths, path)
+					results.mainDefaultPaths = append(results.mainDefaultPaths, path)
 				}
 			}
 			continue
@@ -416,12 +434,12 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 						importIdentifier := strings.Join(parts, "::")
 
 						if inColdSection {
-							coldImportedRuleSets = append(coldImportedRuleSets, ImportInfo{
+							results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
 							})
 						} else {
-							mainImportedRuleSets = append(mainImportedRuleSets, ImportInfo{
+							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
 							})
@@ -444,9 +462,9 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 					// Add each file from command output as a pattern
 					for _, file := range cmdFiles {
 						if inColdSection {
-							coldRules = append(coldRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
+							results.coldRules = append(results.coldRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
 						} else {
-							mainRules = append(mainRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
+							results.hotRules = append(results.hotRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
 						}
 					}
 				} else {
@@ -630,18 +648,18 @@ func (m *Manager) parseRulesFile(rulesContent []byte) (mainRules, coldRules []Ru
 				}
 
 				if inColdSection {
-					coldRules = append(coldRules, ruleInfo)
+					results.coldRules = append(results.coldRules, ruleInfo)
 				} else {
-					mainRules = append(mainRules, ruleInfo)
+					results.hotRules = append(results.hotRules, ruleInfo)
 				}
 			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, false, false, false, 0, err
+		return nil, err
 	}
-	return mainRules, coldRules, mainDefaultPaths, coldDefaultPaths, mainImportedRuleSets, coldImportedRuleSets, viewPaths, freezeCache, disableExpiration, disableCache, expireTime, nil
+	return results, nil
 }
 
 // findActiveRulesFile returns the path to the active rules file if it exists
@@ -670,12 +688,12 @@ func (m *Manager) ShouldFreezeCache() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, _, _, _, freezeCache, _, _, _, err := m.parseRulesFile(rulesContent)
+	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
 
-	return freezeCache, nil
+	return parsed.freezeCache, nil
 }
 
 // ShouldDisableExpiration checks if the @no-expire directive is present in the rules file.
@@ -687,12 +705,12 @@ func (m *Manager) ShouldDisableExpiration() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, _, _, _, _, disableExpiration, _, _, err := m.parseRulesFile(rulesContent)
+	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
 
-	return disableExpiration, nil
+	return parsed.disableExpiration, nil
 }
 
 // GetExpireTime returns the custom expiration duration if @expire-time directive is present.
@@ -705,12 +723,12 @@ func (m *Manager) GetExpireTime() (time.Duration, error) {
 	if rulesContent == nil {
 		return 0, nil
 	}
-	_, _, _, _, _, _, _, _, _, _, expireTime, err := m.parseRulesFile(rulesContent)
+	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
 		return 0, fmt.Errorf("error parsing rules file for expire time: %w", err)
 	}
 
-	return expireTime, nil
+	return parsed.expireTime, nil
 }
 
 // ShouldDisableCache checks if the @disable-cache directive is present in the rules file.
@@ -722,12 +740,12 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 	if rulesContent == nil {
 		return false, nil
 	}
-	_, _, _, _, _, _, _, _, _, disableCache, _, err := m.parseRulesFile(rulesContent)
+	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
 		return false, fmt.Errorf("error parsing rules file for cache directive: %w", err)
 	}
 
-	return disableCache, nil
+	return parsed.disableCache, nil
 }
 
 // SetActiveRules copies a rules file to the active rules location

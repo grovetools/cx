@@ -19,14 +19,128 @@ type patternInfo struct {
 	isExclude bool
 }
 
+// patternMatcher holds pre-processed patterns and provides a method to classify files.
+type patternMatcher struct {
+	patternInfos               []patternInfo
+	workDir                    string
+	dirExclusions              map[string]bool
+	includeBinary              bool
+	hasExplicitWorktreePattern bool
+}
+
+// newPatternMatcher creates a new patternMatcher and pre-processes the patterns.
+func newPatternMatcher(patternInfos []patternInfo, workDir string) *patternMatcher {
+	matcher := &patternMatcher{
+		patternInfos:               patternInfos,
+		workDir:                    workDir,
+		dirExclusions:              make(map[string]bool),
+		includeBinary:              false,
+		hasExplicitWorktreePattern: false,
+	}
+
+	for _, info := range patternInfos {
+		pattern := info.pattern
+		// Check for special pattern to include binary files
+		if pattern == "!binary:exclude" || pattern == "binary:include" {
+			matcher.includeBinary = true
+			continue
+		}
+
+		// Check if any pattern explicitly includes .grove-worktrees
+		if !info.isExclude && strings.Contains(pattern, ".grove-worktrees") {
+			matcher.hasExplicitWorktreePattern = true
+		}
+
+		if info.isExclude {
+			cleanPattern := filepath.ToSlash(pattern)
+
+			if !strings.HasSuffix(cleanPattern, "/") {
+				if strings.Contains(cleanPattern, "**") {
+					parts := strings.Split(cleanPattern, "/")
+					if len(parts) > 0 {
+						dirName := parts[len(parts)-1]
+						if dirName != "" && !strings.Contains(dirName, "*") && !strings.Contains(dirName, "?") {
+							matcher.dirExclusions[dirName] = true
+						}
+					}
+				} else if !strings.Contains(cleanPattern, "*") && !strings.Contains(cleanPattern, "?") {
+					matcher.dirExclusions[cleanPattern] = true
+				}
+			}
+		}
+	}
+
+	return matcher
+}
+
+// classify determines if a file should be included based on the matcher's rules.
+// It implements the "last matching pattern wins" logic.
+func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
+	isIncluded := false
+
+	for _, info := range pm.patternInfos {
+		if info.pattern == "!binary:exclude" || info.pattern == "binary:include" {
+			continue
+		}
+		cleanPattern := info.pattern
+
+		match := false
+		matchPath := relPath
+
+		if filepath.IsAbs(cleanPattern) {
+			matchPath = filepath.ToSlash(path)
+		} else if strings.HasPrefix(cleanPattern, "../") {
+			relFromWorkDir, err := filepath.Rel(pm.workDir, path)
+			if err == nil {
+				matchPath = filepath.ToSlash(relFromWorkDir)
+			}
+		}
+
+		if strings.Contains(cleanPattern, "**") {
+			match = matchDoubleStarPattern(cleanPattern, matchPath)
+		} else if matched, _ := filepath.Match(cleanPattern, matchPath); matched {
+			match = true
+		} else if !strings.Contains(cleanPattern, "/") {
+			if matched, _ := filepath.Match(cleanPattern, filepath.Base(matchPath)); matched {
+				match = true
+			}
+			if !match {
+				parts := strings.Split(matchPath, "/")
+				for _, part := range parts {
+					if matched, _ := filepath.Match(cleanPattern, part); matched {
+						match = true
+						break
+					}
+				}
+			}
+		}
+
+		if match {
+			if !info.isExclude && info.directive == "" {
+				isIncluded = true
+			} else if !info.isExclude && info.directive != "" {
+				filtered, err := m.applyDirectiveFilter([]string{path}, info.directive, info.query)
+				if err == nil && len(filtered) > 0 {
+					isIncluded = true
+				}
+			} else if info.isExclude {
+				isIncluded = false
+			}
+		}
+	}
+	return isIncluded
+}
+
 // resolveFilesFromRulesContent resolves files based on rules content provided as a byte slice.
 func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, error) {
 	// Parse the rules content directly without recursion for this case
 	// This is used by commands that provide rules content directly (not from a file)
-	mainRules, coldRules, _, _, _, _, _, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules content: %w", err)
 	}
+	mainRules := parsed.hotRules
+	coldRules := parsed.coldRules
 
 	// Extract patterns from RuleInfo
 	mainPatterns := make([]string, len(mainRules))
@@ -108,10 +222,18 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		return nil, nil, nil, fmt.Errorf("reading rules file %s: %w", absRulesPath, err)
 	}
 
-	localHot, localCold, mainDefaults, coldDefaults, mainImports, coldImports, localView, _, _, _, _, err := m.parseRulesFile(rulesContent)
+	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
 	}
+
+	localHot := parsed.hotRules
+	localCold := parsed.coldRules
+	mainDefaults := parsed.mainDefaultPaths
+	coldDefaults := parsed.coldDefaultPaths
+	mainImports := parsed.mainImportedRuleSets
+	coldImports := parsed.coldImportedRuleSets
+	localView := parsed.viewPaths
 
 	// Set EffectiveLineNum for local rules
 	for i := range localHot {
@@ -981,7 +1103,8 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 	// Process relative patterns
 	if len(relativePatternInfos) > 0 {
-		err = m.walkAndMatchPatterns(m.workDir, relativePatternInfos, gitIgnoredForCWD, uniqueFiles, true)
+		relativeMatcher := newPatternMatcher(relativePatternInfos, m.workDir)
+		err = m.walkAndMatchPatterns(m.workDir, relativeMatcher, gitIgnoredForCWD, uniqueFiles, true)
 		if err != nil {
 			return nil, fmt.Errorf("error walking working directory: %w", err)
 		}
@@ -999,7 +1122,8 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			gitIgnoredForAbsPath = make(map[string]bool)
 		}
 
-		err = m.walkAndMatchPatterns(absPath, pathPatternInfos, gitIgnoredForAbsPath, uniqueFiles, false)
+		absoluteMatcher := newPatternMatcher(pathPatternInfos, m.workDir)
+		err = m.walkAndMatchPatterns(absPath, absoluteMatcher, gitIgnoredForAbsPath, uniqueFiles, false)
 		if err != nil {
 			fmt.Printf("Warning: error walking absolute path %s: %v\n", absPath, err)
 		}
@@ -1018,48 +1142,11 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
-func (m *Manager) walkAndMatchPatterns(rootPath string, patternInfos []patternInfo, gitIgnoredFiles map[string]bool, uniqueFiles map[string]bool, useRelativePaths bool) error {
-	// Pre-process patterns to identify directory exclusions and special flags
-	dirExclusions := make(map[string]bool)
-	includeBinary := false
-	hasExplicitWorktreePattern := false
-
-	for _, info := range patternInfos {
-		pattern := info.pattern
-		// Check for special pattern to include binary files
-		if pattern == "!binary:exclude" || pattern == "binary:include" {
-			includeBinary = true
-			continue
-		}
-
-		// Check if any pattern explicitly includes .grove-worktrees
-		if !info.isExclude && strings.Contains(pattern, ".grove-worktrees") {
-			hasExplicitWorktreePattern = true
-		}
-
-		if info.isExclude {
-			cleanPattern := pattern
-			cleanPattern = filepath.ToSlash(cleanPattern)
-
-			// Check if this is a directory exclusion pattern without trailing slash
-			// Patterns like !**/bin or !bin should exclude the directory and its contents
-			if !strings.HasSuffix(cleanPattern, "/") {
-				if strings.Contains(cleanPattern, "**") {
-					// Extract the directory name from patterns like !**/bin
-					parts := strings.Split(cleanPattern, "/")
-					if len(parts) > 0 {
-						dirName := parts[len(parts)-1]
-						if dirName != "" && !strings.Contains(dirName, "*") && !strings.Contains(dirName, "?") {
-							dirExclusions[dirName] = true
-						}
-					}
-				} else if !strings.Contains(cleanPattern, "*") && !strings.Contains(cleanPattern, "?") {
-					// Simple directory name like !bin
-					dirExclusions[cleanPattern] = true
-				}
-			}
-		}
-	}
+func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher, gitIgnoredFiles map[string]bool, uniqueFiles map[string]bool, useRelativePaths bool) error {
+	// Pre-processing is now done in newPatternMatcher. We access the results from the matcher.
+	dirExclusions := matcher.dirExclusions
+	includeBinary := matcher.includeBinary
+	hasExplicitWorktreePattern := matcher.hasExplicitWorktreePattern
 
 	// Walk the directory tree from the specified root path.
 	return filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
@@ -1113,7 +1200,7 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patternInfos []patternIn
 
 				// Check all patterns to see if this directory is excluded
 				isExcluded := false
-				for _, info := range patternInfos {
+				for _, info := range matcher.patternInfos {
 					if info.isExclude {
 						cleanPattern := info.pattern
 						cleanPattern = filepath.ToSlash(cleanPattern)
@@ -1154,72 +1241,8 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patternInfos []patternIn
 			return nil
 		}
 
-		// --- Gitignore-style matching logic ---
-		// Default to not included. A file must match an include pattern.
-		isIncluded := false
-
-		for _, info := range patternInfos {
-			if info.pattern == "!binary:exclude" || info.pattern == "binary:include" {
-				continue
-			}
-			cleanPattern := info.pattern
-
-			match := false
-			matchPath := relPath // Default path to match against (relative to walk root)
-
-			// If pattern is absolute or starts with ../, we need to use a different path for matching.
-			if filepath.IsAbs(cleanPattern) {
-				matchPath = filepath.ToSlash(path) // Use the full absolute path of the file
-			} else if strings.HasPrefix(cleanPattern, "../") {
-				// Reconstruct path relative to workDir to give context to "../"
-				relFromWorkDir, err := filepath.Rel(m.workDir, path)
-				if err == nil {
-					matchPath = filepath.ToSlash(relFromWorkDir)
-				}
-			}
-
-			// Now perform the match using the correctly contextualized path
-			if strings.Contains(cleanPattern, "**") {
-				match = matchDoubleStarPattern(cleanPattern, matchPath)
-			} else if matched, _ := filepath.Match(cleanPattern, matchPath); matched {
-				match = true
-			} else if !strings.Contains(cleanPattern, "/") { // Basename match (e.g., "*.go" or "tests")
-				// Gitignore behavior: patterns without slashes match against the basename at any level
-				if matched, _ := filepath.Match(cleanPattern, filepath.Base(matchPath)); matched {
-					match = true
-				}
-				// Also check if this matches any directory component in the path
-				if !match {
-					parts := strings.Split(matchPath, "/")
-					for _, part := range parts {
-						if matched, _ := filepath.Match(cleanPattern, part); matched {
-							match = true
-							break
-						}
-					}
-				}
-			}
-
-			// The last matching pattern wins.
-			if match {
-				if !info.isExclude && info.directive == "" {
-					// Non-directive inclusion pattern
-					isIncluded = true
-				} else if !info.isExclude && info.directive != "" {
-					// For patterns with directives, check immediately if the file passes the directive filter
-					// Only consider it a "true match" if both the glob pattern AND the directive filter pass
-					filtered, err := m.applyDirectiveFilter([]string{path}, info.directive, info.query)
-					if err == nil && len(filtered) > 0 {
-						// File passes the directive filter - this is a true match
-						isIncluded = true
-					}
-					// If the directive filter fails, this is NOT considered a match, so don't change isIncluded
-				} else if info.isExclude {
-					// Exclusions always apply immediately
-					isIncluded = false
-				}
-			}
-		}
+		// Use the pattern matcher to classify this file
+		isIncluded := matcher.classify(m, path, relPath)
 
 		if isIncluded {
 			// Special handling for .grove-worktrees: by default, we exclude files inside these directories
@@ -1228,7 +1251,7 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patternInfos []patternIn
 			// indicating the user intentionally wants to include content from them.
 			if strings.Contains(path, string(filepath.Separator)+".grove-worktrees"+string(filepath.Separator)) {
 				isExplicitlyIncludedByRule := false
-				for _, info := range patternInfos {
+				for _, info := range matcher.patternInfos {
 					if !info.isExclude && strings.Contains(info.pattern, ".grove-worktrees") {
 						isExplicitlyIncludedByRule = true
 						break
