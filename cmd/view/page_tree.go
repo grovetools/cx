@@ -8,7 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
-	grove_context "github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-context/pkg/context/tree"
 )
 
 // --- Page Implementation ---
@@ -17,7 +18,7 @@ type treePage struct {
 	sharedState *sharedState
 
 	// Tree view state
-	tree          *grove_context.FileNode
+	tree          *tree.FileNode
 	cursor        int
 	visibleNodes  []*nodeWithLevel
 	expandedPaths map[string]bool
@@ -43,12 +44,12 @@ type treePage struct {
 // --- Messages ---
 
 type treeLoadedMsg struct {
-	tree *grove_context.FileNode
+	tree *tree.FileNode
 	err  error
 }
 
 type nodeWithLevel struct {
-	node  *grove_context.FileNode
+	node  *tree.FileNode
 	level int
 }
 
@@ -110,15 +111,15 @@ func (p *treePage) SetSize(width, height int) {
 
 func (p *treePage) loadTreeCmd() tea.Cmd {
 	return func() tea.Msg {
-		manager := grove_context.NewManager("")
-		tree, err := manager.AnalyzeProjectTree(p.pruning, p.showGitIgnored)
-		return treeLoadedMsg{tree: tree, err: err}
+		manager := context.NewManager("")
+		projectTree, err := tree.AnalyzeProjectTree(manager, p.pruning, p.showGitIgnored)
+		return treeLoadedMsg{tree: projectTree, err: err}
 	}
 }
 
 func (p *treePage) toggleRuleCmd(path, targetType string, isDirectory bool) tea.Cmd {
 	return func() tea.Msg {
-		manager := grove_context.NewManager("")
+		manager := context.NewManager("")
 
 		// Check current status
 		currentStatus := manager.GetRuleStatus(path)
@@ -136,9 +137,9 @@ func (p *treePage) toggleRuleCmd(path, targetType string, isDirectory bool) tea.
 		switch targetType {
 		case "hot":
 			switch currentStatus {
-			case grove_context.RuleNotFound, grove_context.RuleCold, grove_context.RuleExcluded:
+			case context.RuleNotFound, context.RuleCold, context.RuleExcluded:
 				// Remove existing rule first if it exists
-				if currentStatus != grove_context.RuleNotFound {
+				if currentStatus != context.RuleNotFound {
 					if removeErr := manager.RemoveRule(path); removeErr != nil {
 						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
 					}
@@ -146,16 +147,16 @@ func (p *treePage) toggleRuleCmd(path, targetType string, isDirectory bool) tea.
 				// Add to hot context
 				err = manager.AppendRule(path, "hot")
 				successMsg = fmt.Sprintf("Added %s to hot context: %s", itemType, path)
-			case grove_context.RuleHot:
+			case context.RuleHot:
 				// Remove from hot context
 				err = manager.RemoveRule(path)
 				successMsg = fmt.Sprintf("Removed %s from hot context: %s", itemType, path)
 			}
 		case "cold":
 			switch currentStatus {
-			case grove_context.RuleNotFound, grove_context.RuleHot, grove_context.RuleExcluded:
+			case context.RuleNotFound, context.RuleHot, context.RuleExcluded:
 				// Remove existing rule first if it exists
-				if currentStatus != grove_context.RuleNotFound {
+				if currentStatus != context.RuleNotFound {
 					if removeErr := manager.RemoveRule(path); removeErr != nil {
 						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
 					}
@@ -163,29 +164,29 @@ func (p *treePage) toggleRuleCmd(path, targetType string, isDirectory bool) tea.
 				// Add to cold context
 				err = manager.AppendRule(path, "cold")
 				successMsg = fmt.Sprintf("Added %s to cold context: %s", itemType, path)
-			case grove_context.RuleCold:
+			case context.RuleCold:
 				// Remove from cold context
 				err = manager.RemoveRule(path)
 				successMsg = fmt.Sprintf("Removed %s from cold context: %s", itemType, path)
 			}
 		case "exclude":
 			switch currentStatus {
-			case grove_context.RuleNotFound, grove_context.RuleHot, grove_context.RuleCold:
+			case context.RuleNotFound, context.RuleHot, context.RuleCold:
 				// Remove existing rule first if it exists
-				if currentStatus != grove_context.RuleNotFound {
+				if currentStatus != context.RuleNotFound {
 					if removeErr := manager.RemoveRule(path); removeErr != nil {
 						return ruleChangeResultMsg{err: removeErr, refreshNeeded: false}
 					}
 				}
 				// Add exclusion rule
 				// If the item is currently in cold context, add exclusion to cold section
-				if currentStatus == grove_context.RuleCold {
+				if currentStatus == context.RuleCold {
 					err = manager.AppendRule(path, "exclude-cold")
 				} else {
 					err = manager.AppendRule(path, "exclude")
 				}
 				successMsg = fmt.Sprintf("Excluded %s: %s", itemType, path)
-			case grove_context.RuleExcluded:
+			case context.RuleExcluded:
 				// Remove exclusion
 				err = manager.RemoveRule(path)
 				successMsg = fmt.Sprintf("Removed exclusion for %s: %s", itemType, path)
@@ -574,7 +575,7 @@ func (p *treePage) updateVisibleNodes() {
 	}
 }
 
-func (p *treePage) collectVisibleNodes(node *grove_context.FileNode, level int) {
+func (p *treePage) collectVisibleNodes(node *tree.FileNode, level int) {
 	p.visibleNodes = append(p.visibleNodes, &nodeWithLevel{
 		node:  node,
 		level: level,
@@ -655,7 +656,7 @@ func (p *treePage) collapseCurrent() {
 	}
 }
 
-func (p *treePage) expandAllRecursive(node *grove_context.FileNode) {
+func (p *treePage) expandAllRecursive(node *tree.FileNode) {
 	if node.IsDir && len(node.Children) > 0 {
 		p.expandedPaths[node.Path] = true
 		for _, child := range node.Children {
@@ -664,7 +665,7 @@ func (p *treePage) expandAllRecursive(node *grove_context.FileNode) {
 	}
 }
 
-func (p *treePage) autoExpandToContent(node *grove_context.FileNode) {
+func (p *treePage) autoExpandToContent(node *tree.FileNode) {
 	if !node.IsDir {
 		return
 	}
@@ -771,7 +772,7 @@ func (p *treePage) renderNode(index int) string {
 	relPath, _ := p.getRelativePath(node)
 	isDangerous, _ := p.isPathPotentiallyDangerous(relPath)
 	dangerSymbol := ""
-	if isDangerous && node.Status == grove_context.StatusOmittedNoMatch {
+	if isDangerous && node.Status == tree.StatusOmittedNoMatch {
 		dangerSymbol = " ⚠️"
 	}
 
@@ -788,7 +789,7 @@ func (p *treePage) renderNode(index int) string {
 		} else {
 			tokenStyle = core_theme.DefaultTheme.Muted // Dim gray for < 10K
 		}
-		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", grove_context.FormatTokenCount(node.TokenCount)))
+		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", context.FormatTokenCount(node.TokenCount)))
 	}
 
 	// Combine all parts
@@ -796,7 +797,7 @@ func (p *treePage) renderNode(index int) string {
 	return style.Render(line)
 }
 
-func (p *treePage) getIcon(node *grove_context.FileNode) string {
+func (p *treePage) getIcon(node *tree.FileNode) string {
 	if node.IsDir {
 		// Directory icon without explicit color
 		return "📁"
@@ -804,40 +805,40 @@ func (p *treePage) getIcon(node *grove_context.FileNode) string {
 	return "📄"
 }
 
-func (p *treePage) getStatusSymbol(node *grove_context.FileNode) string {
+func (p *treePage) getStatusSymbol(node *tree.FileNode) string {
 	switch node.Status {
-	case grove_context.StatusIncludedHot:
+	case tree.StatusIncludedHot:
 		greenStyle := core_theme.DefaultTheme.Success // Green
 		return greenStyle.Render(" ✓")
-	case grove_context.StatusIncludedCold:
+	case tree.StatusIncludedCold:
 		lightBlueStyle := core_theme.DefaultTheme.Accent // Light blue
 		return lightBlueStyle.Render(" ❄️")
-	case grove_context.StatusExcludedByRule:
+	case tree.StatusExcludedByRule:
 		return " 🚫"
-	case grove_context.StatusIgnoredByGit:
+	case tree.StatusIgnoredByGit:
 		return " 🙈" // Git ignored
 	default:
 		return ""
 	}
 }
 
-func (p *treePage) getStyle(node *grove_context.FileNode) lipgloss.Style {
+func (p *treePage) getStyle(node *tree.FileNode) lipgloss.Style {
 	theme := core_theme.DefaultTheme
 	// Base style based on status
 	var style lipgloss.Style
 	switch node.Status {
-	case grove_context.StatusIncludedHot:
+	case tree.StatusIncludedHot:
 		style = theme.Success
-	case grove_context.StatusIncludedCold:
+	case tree.StatusIncludedCold:
 		style = theme.Info
-	case grove_context.StatusExcludedByRule:
+	case tree.StatusExcludedByRule:
 		style = theme.Error
-	case grove_context.StatusOmittedNoMatch:
+	case tree.StatusOmittedNoMatch:
 		style = theme.Muted
-	case grove_context.StatusDirectory:
+	case tree.StatusDirectory:
 		// Directories use bold for emphasis without explicit color
 		style = lipgloss.NewStyle().Bold(true)
-	case grove_context.StatusIgnoredByGit:
+	case tree.StatusIgnoredByGit:
 		style = theme.Muted
 	default:
 		style = lipgloss.NewStyle()
@@ -851,8 +852,8 @@ func (p *treePage) getStyle(node *grove_context.FileNode) lipgloss.Style {
 	return style
 }
 
-func (p *treePage) getRelativePath(node *grove_context.FileNode) (string, error) {
-	manager := grove_context.NewManager("")
+func (p *treePage) getRelativePath(node *tree.FileNode) (string, error) {
+	manager := context.NewManager("")
 	workDir := manager.GetWorkDir()
 
 	// Get relative path from current working directory
