@@ -7,311 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattsolo1/grove-context/cmd/rules"
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/state"
-	"github.com/mattsolo1/grove-core/tui/components/help"
-	"github.com/mattsolo1/grove-core/tui/components/table"
-	"github.com/mattsolo1/grove-core/tui/keymap"
-	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
 )
-
-const (
-	rulesDir     = ".cx"
-	rulesWorkDir = ".cx.work"
-	rulesExt     = ".rules"
-	activeRules  = ".grove/rules"
-)
-
-// --- TUI Model ---
-
-type ruleItem struct {
-	name   string
-	path   string
-	active bool
-}
-
-type rulesPickerModel struct {
-	items         []ruleItem
-	selectedIndex int
-	keys          pickerKeyMap
-	help          help.Model
-	width, height int
-	err           error
-	quitting      bool
-}
-
-func newRulesPickerModel() *rulesPickerModel {
-	return &rulesPickerModel{
-		keys: defaultPickerKeyMap,
-		help: help.New(defaultPickerKeyMap),
-	}
-}
-
-func (m *rulesPickerModel) Init() tea.Cmd {
-	return loadRulesCmd
-}
-
-func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		return m, nil
-
-	case rulesLoadedMsg:
-		if msg.err != nil {
-			m.err = msg.err
-			return m, tea.Quit
-		}
-		m.items = msg.items
-		// Set initial selection to the active rule
-		for i, item := range m.items {
-			if item.active {
-				m.selectedIndex = i
-				break
-			}
-		}
-		return m, nil
-
-	case tea.KeyMsg:
-		if m.help.ShowAll {
-			m.help.Toggle()
-			return m, nil
-		}
-		switch {
-		case key.Matches(msg, m.keys.Quit):
-			m.quitting = true
-			return m, tea.Quit
-		case key.Matches(msg, m.keys.Select):
-			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
-				m.quitting = true
-				return m, setRuleCmd(m.items[m.selectedIndex])
-			}
-		case key.Matches(msg, m.keys.Load):
-			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
-				m.quitting = true
-				return m, loadRuleCmd(m.items[m.selectedIndex])
-			}
-		case key.Matches(msg, m.keys.Up):
-			if m.selectedIndex > 0 {
-				m.selectedIndex--
-			}
-		case key.Matches(msg, m.keys.Down):
-			if m.selectedIndex < len(m.items)-1 {
-				m.selectedIndex++
-			}
-		case key.Matches(msg, m.keys.Help):
-			m.help.ShowAll = !m.help.ShowAll
-			return m, nil
-		}
-	}
-
-	return m, nil
-}
-
-func (m *rulesPickerModel) View() string {
-	if m.quitting {
-		return ""
-	}
-	if m.err != nil {
-		return fmt.Sprintf("Error loading rule sets: %v\n", m.err)
-	}
-
-	// Build table data
-	var rows [][]string
-	for _, item := range m.items {
-		status := " "
-		if item.active {
-			status = "✓"
-		}
-		rows = append(rows, []string{
-			status,
-			item.name,
-			item.path,
-		})
-	}
-
-	// Render header
-	header := core_theme.DefaultTheme.Header.Render("Select an Active Rule Set")
-
-	// Render table with selection and highlight the Name column (index 1)
-	tableView := table.SelectableTableWithOptions(
-		[]string{"", "Name", "Path"},
-		rows,
-		m.selectedIndex,
-		table.SelectableTableOptions{
-			HighlightColumn: 1, // Highlight the Name column
-		},
-	)
-
-	// Render help
-	helpContent := m.help.View()
-
-	return fmt.Sprintf("%s\n\n%s\n\n%s", header, tableView, helpContent)
-}
-
-// --- TUI Commands ---
-
-type rulesLoadedMsg struct {
-	items []ruleItem
-	err   error
-}
-
-func loadRulesCmd() tea.Msg {
-	var items []ruleItem
-	activeSource, _ := state.GetString(context.StateSourceKey)
-
-	// Check if .grove/rules exists and add it as the first option
-	if _, err := os.Stat(activeRules); err == nil {
-		items = append(items, ruleItem{
-			name:   ".grove/rules",
-			path:   activeRules,
-			active: activeSource == "" || activeSource == activeRules,
-		})
-	}
-
-	// Helper function to load rules from a directory
-	loadRulesFromDir := func(dir string) error {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil // Directory doesn't exist, that's ok
-			}
-			return fmt.Errorf("reading %s directory: %w", dir, err)
-		}
-
-		for _, entry := range entries {
-			if !entry.IsDir() && filepath.Ext(entry.Name()) == rulesExt {
-				path := filepath.Join(dir, entry.Name())
-				items = append(items, ruleItem{
-					name:   entry.Name()[:len(entry.Name())-len(rulesExt)],
-					path:   path,
-					active: path == activeSource,
-				})
-			}
-		}
-		return nil
-	}
-
-	// Load named rule sets from .cx/ directory
-	if err := loadRulesFromDir(rulesDir); err != nil {
-		return rulesLoadedMsg{err: err}
-	}
-
-	// Load named rule sets from .cx.work/ directory
-	if err := loadRulesFromDir(rulesWorkDir); err != nil {
-		return rulesLoadedMsg{err: err}
-	}
-
-	return rulesLoadedMsg{items: items, err: nil}
-}
-
-func setRuleCmd(item ruleItem) tea.Cmd {
-	return func() tea.Msg {
-		sourcePath := item.path
-
-		// If selecting .grove/rules, unset the state (fall back to default)
-		if sourcePath == activeRules {
-			if err := state.Delete(context.StateSourceKey); err != nil {
-				fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
-				return tea.Quit()
-			}
-			fmt.Println(core_theme.DefaultTheme.Success.Render("✓ Using .grove/rules (default)"))
-			return tea.Quit()
-		}
-
-		// For named rule sets in .cx/, set the state
-		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Error: rule set '%s' not found at %s\n", item.name, sourcePath)
-			return tea.Quit()
-		}
-
-		if err := state.Set(context.StateSourceKey, sourcePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
-			return tea.Quit()
-		}
-
-		// Warn user if a .grove/rules file exists, as it will now be ignored.
-		if _, err := os.Stat(activeRules); err == nil {
-			fmt.Fprintf(os.Stderr, "Warning: %s exists but will be ignored while '%s' is active.\n", activeRules, item.name)
-		}
-
-		fmt.Println(core_theme.DefaultTheme.Success.Render(fmt.Sprintf("✓ Active context rules set to '%s'", item.name)))
-		return tea.Quit()
-	}
-}
-
-func loadRuleCmd(item ruleItem) tea.Cmd {
-	return func() tea.Msg {
-		sourcePath := item.path
-
-		// Can't load .grove/rules into itself
-		if sourcePath == activeRules {
-			fmt.Fprintf(os.Stderr, "Error: Cannot load .grove/rules into itself\n")
-			return tea.Quit()
-		}
-
-		// Read the source file
-		content, err := os.ReadFile(sourcePath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading rule set: %v\n", err)
-			return tea.Quit()
-		}
-
-		// Ensure .grove directory exists
-		if err := os.MkdirAll(filepath.Dir(activeRules), 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating .grove directory: %v\n", err)
-			return tea.Quit()
-		}
-
-		// Write to .grove/rules
-		if err := os.WriteFile(activeRules, content, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing to .grove/rules: %v\n", err)
-			return tea.Quit()
-		}
-
-		// Unset any active rule set state so .grove/rules becomes active
-		if err := state.Delete(context.StateSourceKey); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not unset active rule set in state: %v\n", err)
-		}
-
-		fmt.Println(core_theme.DefaultTheme.Success.Render(fmt.Sprintf("✓ Loaded '%s' into .grove/rules as working copy", item.name)))
-		return tea.Quit()
-	}
-}
-
-// --- TUI Keymap ---
-
-type pickerKeyMap struct {
-	keymap.Base
-	Select key.Binding
-	Load   key.Binding
-}
-
-func (k pickerKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Select, k.Load, k.Quit}
-}
-
-func (k pickerKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.Up, k.Down, k.Select, k.Load},
-		{k.Help, k.Quit},
-	}
-}
-
-var defaultPickerKeyMap = pickerKeyMap{
-	Base: keymap.NewBase(),
-	Select: key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "select"),
-	),
-	Load: key.NewBinding(
-		key.WithKeys("l"),
-		key.WithHelp("l", "load to .grove/rules"),
-	),
-}
 
 // NewRulesCmd creates the 'rules' command and its subcommands.
 func NewRulesCmd() *cobra.Command {
@@ -321,7 +21,7 @@ func NewRulesCmd() *cobra.Command {
 		Long:  `Provides commands to list, set, and save named context rule sets stored in the .cx/ directory.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// If no subcommand is given, run the interactive selector
-			return runSelectTUI()
+			return rules.Run()
 		},
 	}
 
@@ -340,7 +40,7 @@ func newRulesSelectCmd() *cobra.Command {
 		Use:   "select",
 		Short: "Select the active rule set interactively",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSelectTUI()
+			return rules.Run()
 		},
 	}
 }
@@ -354,7 +54,7 @@ func newRulesUnsetCmd() *cobra.Command {
 				return fmt.Errorf("failed to update state: %w", err)
 			}
 			prettyLog.Success("Active rule set unset.")
-			prettyLog.InfoPretty(fmt.Sprintf("Now using fallback file: %s (if it exists).", activeRules))
+			prettyLog.InfoPretty(fmt.Sprintf("Now using fallback file: %s (if it exists).", context.ActiveRulesFile))
 			return nil
 		},
 	}
@@ -377,15 +77,15 @@ Examples:
 
 			// Try to find the source file in .cx/ or .cx.work/
 			var sourcePath string
-			cxPath := filepath.Join(rulesDir, name+rulesExt)
-			cxWorkPath := filepath.Join(rulesWorkDir, name+rulesExt)
+			cxPath := filepath.Join(context.RulesDir, name+context.RulesExt)
+			cxWorkPath := filepath.Join(context.RulesWorkDir, name+context.RulesExt)
 
 			if _, err := os.Stat(cxPath); err == nil {
 				sourcePath = cxPath
 			} else if _, err := os.Stat(cxWorkPath); err == nil {
 				sourcePath = cxWorkPath
 			} else {
-				return fmt.Errorf("rule set '%s' not found in %s/ or %s/", name, rulesDir, rulesWorkDir)
+				return fmt.Errorf("rule set '%s' not found in %s/ or %s/", name, context.RulesDir, context.RulesWorkDir)
 			}
 
 			// Read the source file
@@ -395,12 +95,12 @@ Examples:
 			}
 
 			// Ensure .grove directory exists
-			if err := os.MkdirAll(filepath.Dir(activeRules), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(context.ActiveRulesFile), 0755); err != nil {
 				return fmt.Errorf("failed to create .grove directory: %w", err)
 			}
 
 			// Write to .grove/rules
-			if err := os.WriteFile(activeRules, content, 0644); err != nil {
+			if err := os.WriteFile(context.ActiveRulesFile, content, 0644); err != nil {
 				return fmt.Errorf("failed to write to .grove/rules: %w", err)
 			}
 
@@ -418,20 +118,6 @@ Examples:
 	}
 }
 
-func runSelectTUI() error {
-	m := newRulesPickerModel()
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("error running TUI: %w", err)
-	}
-	// Check for errors that occurred within the model
-	if finalModel.(*rulesPickerModel).err != nil {
-		return finalModel.(*rulesPickerModel).err
-	}
-	return nil
-}
-
 // listRulesForProject lists rule sets for a specific project alias.
 func listRulesForProject(projectAlias string, jsonOutput bool) error {
 	// Import the context package to use AliasResolver
@@ -442,7 +128,7 @@ func listRulesForProject(projectAlias string, jsonOutput bool) error {
 	}
 
 	// Scan the .cx/ directory in the resolved project path
-	cxDir := filepath.Join(projectPath, rulesDir)
+	cxDir := filepath.Join(projectPath, context.RulesDir)
 	entries, err := os.ReadDir(cxDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -450,7 +136,7 @@ func listRulesForProject(projectAlias string, jsonOutput bool) error {
 				fmt.Println("[]")
 				return nil
 			}
-			return fmt.Errorf("no %s directory found in project '%s' at %s", rulesDir, projectAlias, projectPath)
+			return fmt.Errorf("no %s directory found in project '%s' at %s", context.RulesDir, projectAlias, projectPath)
 		}
 		return fmt.Errorf("error reading %s directory: %w", cxDir, err)
 	}
@@ -458,8 +144,8 @@ func listRulesForProject(projectAlias string, jsonOutput bool) error {
 	// Collect rule set names
 	var ruleNames []string
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), rulesExt) {
-			name := strings.TrimSuffix(entry.Name(), rulesExt)
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), context.RulesExt) {
+			name := strings.TrimSuffix(entry.Name(), context.RulesExt)
 			ruleNames = append(ruleNames, name)
 		}
 	}
@@ -509,8 +195,8 @@ func newRulesListCmd() *cobra.Command {
 
 				var names []string
 				for _, entry := range entries {
-					if !entry.IsDir() && strings.HasSuffix(entry.Name(), rulesExt) {
-						name := strings.TrimSuffix(entry.Name(), rulesExt)
+					if !entry.IsDir() && strings.HasSuffix(entry.Name(), context.RulesExt) {
+						name := strings.TrimSuffix(entry.Name(), context.RulesExt)
 						names = append(names, name)
 					}
 				}
@@ -518,13 +204,13 @@ func newRulesListCmd() *cobra.Command {
 			}
 
 			// Collect from .cx/
-			cxRules, err := collectRules(rulesDir)
+			cxRules, err := collectRules(context.RulesDir)
 			if err != nil {
 				return err
 			}
 
 			// Collect from .cx.work/
-			cxWorkRules, err := collectRules(rulesWorkDir)
+			cxWorkRules, err := collectRules(context.RulesWorkDir)
 			if err != nil {
 				return err
 			}
@@ -546,10 +232,10 @@ func newRulesListCmd() *cobra.Command {
 				for _, name := range ruleNames {
 					// Check both directories for the rule
 					var path string
-					if _, err := os.Stat(filepath.Join(rulesDir, name+rulesExt)); err == nil {
-						path = filepath.Join(rulesDir, name+rulesExt)
-					} else if _, err := os.Stat(filepath.Join(rulesWorkDir, name+rulesExt)); err == nil {
-						path = filepath.Join(rulesWorkDir, name+rulesExt)
+					if _, err := os.Stat(filepath.Join(context.RulesDir, name+context.RulesExt)); err == nil {
+						path = filepath.Join(context.RulesDir, name+context.RulesExt)
+					} else if _, err := os.Stat(filepath.Join(context.RulesWorkDir, name+context.RulesExt)); err == nil {
+						path = filepath.Join(context.RulesWorkDir, name+context.RulesExt)
 					}
 
 					indicator := "  "
@@ -579,7 +265,7 @@ func newRulesSetCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			sourcePath := filepath.Join(rulesDir, name+rulesExt)
+			sourcePath := filepath.Join(context.RulesDir, name+context.RulesExt)
 
 			if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
 				return fmt.Errorf("rule set '%s' not found at %s", name, sourcePath)
@@ -590,8 +276,8 @@ func newRulesSetCmd() *cobra.Command {
 			}
 
 			// Warn user if a .grove/rules file exists, as it will now be ignored.
-			if _, err := os.Stat(activeRules); err == nil {
-				prettyLog.WarnPretty(fmt.Sprintf("Warning: %s exists but will be ignored while '%s' is active.", activeRules, name))
+			if _, err := os.Stat(context.ActiveRulesFile); err == nil {
+				prettyLog.WarnPretty(fmt.Sprintf("Warning: %s exists but will be ignored while '%s' is active.", context.ActiveRulesFile, name))
 			}
 
 			prettyLog.Success(fmt.Sprintf("Active context rules set to '%s'", name))
@@ -618,11 +304,11 @@ func newRulesSaveCmd() *cobra.Command {
 				return fmt.Errorf("no active rules found to save")
 			}
 
-			if err := os.MkdirAll(rulesDir, 0755); err != nil {
-				return fmt.Errorf("failed to create %s directory: %w", rulesDir, err)
+			if err := os.MkdirAll(context.RulesDir, 0755); err != nil {
+				return fmt.Errorf("failed to create %s directory: %w", context.RulesDir, err)
 			}
 
-			destPath := filepath.Join(rulesDir, name+rulesExt)
+			destPath := filepath.Join(context.RulesDir, name+context.RulesExt)
 			if err := os.WriteFile(destPath, content, 0644); err != nil {
 				return fmt.Errorf("failed to save rule set: %w", err)
 			}

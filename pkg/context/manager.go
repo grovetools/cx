@@ -24,6 +24,9 @@ const (
 	SnapshotsDir               = ".grove/context-snapshots"
 	CachedContextFilesListFile = ".grove/cached-context-files"
 	CachedContextFile          = ".grove/cached-context"
+	RulesDir                   = ".cx"
+	RulesWorkDir               = ".cx.work"
+	RulesExt                   = ".rules"
 )
 
 // ContextConfig defines configuration specific to grove-context.

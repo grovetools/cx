@@ -28,7 +28,7 @@ func cxStatusProvider(s state.State) (string, error) {
 	}
 
 	// Extract the rule set name from the path (e.g., ".cx/dev.rules" -> "dev")
-	ruleSetName := strings.TrimSuffix(filepath.Base(sourcePath), rulesExt)
+	ruleSetName := strings.TrimSuffix(filepath.Base(sourcePath), context.RulesExt)
 
 	// Format for display in the prompt
 	return fmt.Sprintf("(cx:%s)", ruleSetName), nil
