@@ -773,16 +773,24 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		return []string{}, nil
 	}
 
-	// Apply brace expansion to all incoming patterns
+	// Step 1: Apply brace expansion to all incoming patterns
 	var expandedPatterns []string
 	for _, p := range patterns {
 		expandedPatterns = append(expandedPatterns, ExpandBraces(p)...)
 	}
-	// Use the expanded patterns for the rest of the function
 	patterns = expandedPatterns
 
-	// First, decode any directive information and separate patterns
-	var patternInfos []patternInfo
+	// Step 2: Parse directives BEFORE preprocessing (so we work with clean base patterns)
+	// Build a temporary patternInfos to extract base patterns
+	type tempPatternInfo struct {
+		basePattern string
+		directive   string
+		query       string
+		isExclude   bool
+	}
+
+	tempInfos := make([]tempPatternInfo, 0, len(patterns))
+	cleanPatternsForPreprocess := make([]string, 0, len(patterns))
 
 	for _, pattern := range patterns {
 		isExclude := strings.HasPrefix(pattern, "!")
@@ -799,34 +807,47 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			basePattern, directive, query, _ = decodeDirective(cleanPattern)
 		}
 
-		patternInfos = append(patternInfos, patternInfo{
-			pattern:   basePattern,
-			directive: directive,
-			query:     query,
-			isExclude: isExclude,
+		tempInfos = append(tempInfos, tempPatternInfo{
+			basePattern: basePattern,
+			directive:   directive,
+			query:       query,
+			isExclude:   isExclude,
 		})
 
-		// For the traditional flow, we need to reconstruct the pattern
-		// without directive encoding for preProcessPatterns
+		// Reconstruct pattern without directive for preprocessing
 		if isExclude {
-			patterns[len(patternInfos)-1] = "!" + basePattern
+			cleanPatternsForPreprocess = append(cleanPatternsForPreprocess, "!"+basePattern)
 		} else {
-			patterns[len(patternInfos)-1] = basePattern
+			cleanPatternsForPreprocess = append(cleanPatternsForPreprocess, basePattern)
 		}
 	}
 
-	// Use processed patterns for the rest of the logic
-	patterns = m.preProcessPatterns(patterns)
+	// Step 3: Apply directory-to-glob transformation on clean base patterns
+	processedPatterns := m.preProcessPatterns(cleanPatternsForPreprocess)
 
-	// Validate absolute/relative-up patterns before processing
-	validatedPatternInfos := make([]patternInfo, 0, len(patternInfos))
-	validatedPatterns := make([]string, 0, len(patterns))
-	for i, pattern := range patterns {
-		isExclude := strings.HasPrefix(pattern, "!")
-		cleanPattern := pattern
+	// Step 4: Now build final patternInfos from processed patterns, preserving directive info
+	var patternInfos []patternInfo
+
+	for i, processedPattern := range processedPatterns {
+		isExclude := strings.HasPrefix(processedPattern, "!")
+		cleanProcessedPattern := processedPattern
 		if isExclude {
-			cleanPattern = strings.TrimPrefix(pattern, "!")
+			cleanProcessedPattern = strings.TrimPrefix(processedPattern, "!")
 		}
+
+		patternInfos = append(patternInfos, patternInfo{
+			pattern:   cleanProcessedPattern,
+			directive: tempInfos[i].directive,
+			query:     tempInfos[i].query,
+			isExclude: isExclude,
+		})
+	}
+
+	// Step 5: Validate absolute/relative-up patterns before processing
+	// IMPORTANT: Iterate over patternInfos directly, not a separate patterns array
+	validatedPatternInfos := make([]patternInfo, 0, len(patternInfos))
+	for _, info := range patternInfos {
+		cleanPattern := info.pattern
 
 		if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
 			// Resolve path for validation. For globs, validate the base path.
@@ -852,16 +873,19 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			}
 
 			if allowed, reason := m.IsPathAllowed(pathToValidate); !allowed {
+				// Reconstruct pattern string for error message
+				pattern := info.pattern
+				if info.isExclude {
+					pattern = "!" + pattern
+				}
 				fmt.Fprintf(os.Stderr, "Warning: skipping rule '%s': %s\n", pattern, reason)
 				// Track this skipped rule (line number will be resolved later in stats)
 				m.addSkippedRule(0, pattern, reason)
 				continue // Skip this pattern
 			}
 		}
-		validatedPatterns = append(validatedPatterns, pattern)
-		validatedPatternInfos = append(validatedPatternInfos, patternInfos[i])
+		validatedPatternInfos = append(validatedPatternInfos, info)
 	}
-	patterns = validatedPatterns
 	patternInfos = validatedPatternInfos
 
 	// Get gitignored files for the current working directory for handling relative patterns.
@@ -878,6 +902,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	var relativePatternInfos []patternInfo
 	absolutePathInfos := make(map[string][]patternInfo) // map[absolutePath]patternInfos
 	var deferredExclusionInfos []patternInfo            // Store exclusion patterns to process after inclusions
+	var floatingExclusionInfos []patternInfo            // Store floating exclusions (no path separator, apply globally)
 
 	// First pass: process inclusion and exclusion patterns
 	for _, info := range patternInfos {
@@ -906,9 +931,17 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 		// If not an exact file, treat as a pattern
 		if info.isExclude {
-			if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
+			// Identify "floating" exclusions (gitignore-style patterns without path separators)
+			// These should apply to ALL walks (local and external), not just the current directory
+			isFloatingExclusion := !strings.Contains(info.pattern, "/") && !filepath.IsAbs(info.pattern)
+
+			if isFloatingExclusion {
+				// Floating exclusions like "!tests" or "!*.tmp" should apply globally
+				floatingExclusionInfos = append(floatingExclusionInfos, info)
+			} else if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
 				deferredExclusionInfos = append(deferredExclusionInfos, info)
 			} else {
+				// Path-specific exclusions for relative patterns
 				relativePatternInfos = append(relativePatternInfos, info)
 			}
 			continue
@@ -934,10 +967,14 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		}
 	}
 
-	// Second pass: add deferred exclusions to relative patterns
-	relativePatternInfos = append(relativePatternInfos, deferredExclusionInfos...)
+	// Second pass: add floating exclusions to ALL pattern groups (they apply globally)
+	relativePatternInfos = append(relativePatternInfos, floatingExclusionInfos...)
+	for basePath := range absolutePathInfos {
+		absolutePathInfos[basePath] = append(absolutePathInfos[basePath], floatingExclusionInfos...)
+	}
 
-	// Add exclusions to all absolute path groups
+	// Add deferred (path-specific absolute/../) exclusions to relative patterns and all absolute path groups
+	relativePatternInfos = append(relativePatternInfos, deferredExclusionInfos...)
 	for basePath := range absolutePathInfos {
 		absolutePathInfos[basePath] = append(absolutePathInfos[basePath], deferredExclusionInfos...)
 	}
@@ -1040,10 +1077,16 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patternInfos []patternIn
 		normalizedPath = strings.ToLower(normalizedPath)
 
 		if gitIgnoredFiles[normalizedPath] {
-			if d.IsDir() {
-				return filepath.SkipDir // Prune the walk for ignored directories.
+			// If we have explicit worktree patterns and this path is under .grove-worktrees,
+			// don't skip it even if it's git-ignored (user explicitly wants these files)
+			if hasExplicitWorktreePattern && strings.Contains(path, string(filepath.Separator)+".grove-worktrees"+string(filepath.Separator)) {
+				// Skip the git-ignore check for files under .grove-worktrees when explicitly included
+			} else {
+				if d.IsDir() {
+					return filepath.SkipDir // Prune the walk for ignored directories.
+				}
+				return nil // Skip ignored files.
 			}
-			return nil // Skip ignored files.
 		}
 
 		// Always prune .git and .grove directories from the walk.
@@ -1055,10 +1098,11 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patternInfos []patternIn
 			// Skip .grove-worktrees directories UNLESS:
 			// 1. We have an explicit pattern that includes .grove-worktrees, OR
 			// 2. We're already walking inside a .grove-worktrees directory (rootPath contains it)
-			if d.Name() == ".grove-worktrees" &&
-				!hasExplicitWorktreePattern &&
-				!strings.Contains(rootPath, string(filepath.Separator)+".grove-worktrees"+string(filepath.Separator)) {
-				return filepath.SkipDir
+			if d.Name() == ".grove-worktrees" {
+				if !hasExplicitWorktreePattern &&
+					!strings.Contains(rootPath, string(filepath.Separator)+".grove-worktrees"+string(filepath.Separator)) {
+					return filepath.SkipDir
+				}
 			}
 
 			// Check if this directory should be excluded based on pre-processed exclusions
@@ -1113,8 +1157,6 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patternInfos []patternIn
 		// --- Gitignore-style matching logic ---
 		// Default to not included. A file must match an include pattern.
 		isIncluded := false
-		matchedByNonDirective := false
-		var matchedDirectives []patternInfo
 
 		for _, info := range patternInfos {
 			if info.pattern == "!binary:exclude" || info.pattern == "binary:include" {
@@ -1160,35 +1202,23 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, patternInfos []patternIn
 
 			// The last matching pattern wins.
 			if match {
-				// Track whether this file matches any non-directive pattern
 				if !info.isExclude && info.directive == "" {
-					matchedByNonDirective = true
+					// Non-directive inclusion pattern
 					isIncluded = true
 				} else if !info.isExclude && info.directive != "" {
-					// Track directive matches for later evaluation
-					matchedDirectives = append(matchedDirectives, info)
+					// For patterns with directives, check immediately if the file passes the directive filter
+					// Only consider it a "true match" if both the glob pattern AND the directive filter pass
+					filtered, err := m.applyDirectiveFilter([]string{path}, info.directive, info.query)
+					if err == nil && len(filtered) > 0 {
+						// File passes the directive filter - this is a true match
+						isIncluded = true
+					}
+					// If the directive filter fails, this is NOT considered a match, so don't change isIncluded
 				} else if info.isExclude {
 					// Exclusions always apply immediately
 					isIncluded = false
-					matchedByNonDirective = false
 				}
 			}
-		}
-
-		// Apply directive filtering logic:
-		// - If a file matched any non-directive rule, it's automatically included (matchedByNonDirective = true)
-		// - If a file ONLY matched directive rules, it must pass at least one directive filter
-		if !matchedByNonDirective && len(matchedDirectives) > 0 {
-			// File only matched directive patterns - check if it passes at least one
-			passesAnyDirective := false
-			for _, info := range matchedDirectives {
-				filtered, err := m.applyDirectiveFilter([]string{path}, info.directive, info.query)
-				if err == nil && len(filtered) > 0 {
-					passesAnyDirective = true
-					break
-				}
-			}
-			isIncluded = passesAnyDirective
 		}
 
 		if isIncluded {

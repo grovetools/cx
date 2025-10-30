@@ -776,34 +776,43 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 		canonicalPath = absPath
 	}
 
-	// FIRST, check if this exact path is an excluded workspace (higher priority than parent allowance)
+	// FIRST, check if this path or any containing directory is an excluded workspace
+	// (higher priority than parent allowance)
 	resolver := m.getAliasResolver()
 	if resolver.Provider != nil {
-		// Try to find the node by path
-		node := resolver.Provider.FindByPath(canonicalPath)
-
-		// If not found, manually search through all nodes (case-insensitive on macOS)
-		if node == nil {
-			allNodes := resolver.Provider.All()
-			normalizedPath := strings.ToLower(canonicalPath)
-			for _, n := range allNodes {
-				if strings.ToLower(n.Path) == normalizedPath {
-					node = n
-					break
-				}
-			}
+		// Load config to check exclusions
+		mergedCfg, _ := config.LoadFrom(m.workDir)
+		var ctxCfg ContextConfig
+		if mergedCfg != nil {
+			mergedCfg.UnmarshalExtension("context", &ctxCfg)
 		}
 
-		if node != nil {
-			// Load config to check exclusions
-			mergedCfg, _ := config.LoadFrom(m.workDir)
-			var ctxCfg ContextConfig
-			if mergedCfg != nil {
-				mergedCfg.UnmarshalExtension("context", &ctxCfg)
+		// Check if the given path is within or equals any excluded workspace
+		if len(ctxCfg.ExcludedWorkspaces) > 0 {
+			excludedNames := make(map[string]bool)
+			for _, name := range ctxCfg.ExcludedWorkspaces {
+				excludedNames[name] = true
 			}
-			// Check if this workspace is in the excluded list
-			for _, excludedName := range ctxCfg.ExcludedWorkspaces {
-				if node.Name == excludedName {
+
+			allNodes := resolver.Provider.All()
+			for _, node := range allNodes {
+				// Check if this is an excluded workspace
+				if !excludedNames[node.Name] {
+					continue
+				}
+
+				// Canonicalize the workspace path for comparison
+				nodePath := node.Path
+				if evalPath, err := filepath.EvalSymlinks(node.Path); err == nil {
+					nodePath = evalPath
+				}
+				// Normalize for case-insensitive filesystems
+				normalizedNodePath := strings.ToLower(nodePath)
+				normalizedCanonicalPath := strings.ToLower(canonicalPath)
+
+				// Check if the canonicalPath is equal to or within this excluded workspace
+				if normalizedCanonicalPath == normalizedNodePath ||
+					strings.HasPrefix(normalizedCanonicalPath, normalizedNodePath+string(filepath.Separator)) {
 					return false, fmt.Sprintf("workspace '%s' containing path '%s' is in your 'excluded_workspaces' list", node.Name, path)
 				}
 			}
