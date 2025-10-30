@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattsolo1/grove-tend/pkg/command"
 	"github.com/mattsolo1/grove-tend/pkg/fs"
 	"github.com/mattsolo1/grove-tend/pkg/harness"
 )
@@ -38,6 +37,17 @@ func AbsolutePathDirectoryPatternScenario() *harness.Scenario {
 					return err
 				}
 
+				// Create local grove.yml with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, externalDir)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					os.RemoveAll(externalDir)
+					return err
+				}
+
 				// Note: The external directory will be cleaned up after the test completes
 				return nil
 			}),
@@ -62,7 +72,7 @@ func AbsolutePathDirectoryPatternScenario() *harness.Scenario {
 				defer os.RemoveAll(externalDir) // Clean up after test
 
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {
@@ -95,7 +105,7 @@ func AbsolutePathFilePatternScenario() *harness.Scenario {
 				if err != nil {
 					return fmt.Errorf("failed to create external temp dir: %w", err)
 				}
-				
+
 				// Store external dir path in a temporary file
 				externalDirFile := filepath.Join(ctx.RootDir, ".external_dir_path")
 				if err := fs.WriteString(externalDirFile, externalDir); err != nil {
@@ -117,6 +127,17 @@ func AbsolutePathFilePatternScenario() *harness.Scenario {
 					return err
 				}
 
+				// Create local grove.yml with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, externalDir)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					os.RemoveAll(externalDir)
+					return err
+				}
+
 				return nil
 			}),
 			harness.NewStep("Create rules file with absolute file paths", func(ctx *harness.Context) error {
@@ -126,7 +147,7 @@ func AbsolutePathFilePatternScenario() *harness.Scenario {
 					return fmt.Errorf("failed to read external dir path: %w", err)
 				}
 				externalDir := string(externalDirBytes)
-				
+
 				// Add only the absolute path to target_file.go
 				targetFile := filepath.Join(externalDir, "target_file.go")
 				rules := targetFile
@@ -142,7 +163,7 @@ func AbsolutePathFilePatternScenario() *harness.Scenario {
 				defer os.RemoveAll(externalDir) // Clean up after test
 
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {
@@ -158,7 +179,7 @@ func AbsolutePathFilePatternScenario() *harness.Scenario {
 				if !strings.Contains(output, targetFilePath) {
 					return fmt.Errorf("expected 'cx list' to include '%s', but it was not found in the output:\n%s", targetFilePath, output)
 				}
-				
+
 				// Verify the other files are NOT included
 				if strings.Contains(output, otherFilePath) {
 					return fmt.Errorf("'cx list' should not include '%s', but it was found in the output:\n%s", otherFilePath, output)
@@ -166,10 +187,9 @@ func AbsolutePathFilePatternScenario() *harness.Scenario {
 				if strings.Contains(output, thirdFilePath) {
 					return fmt.Errorf("'cx list' should not include '%s', but it was found in the output:\n%s", thirdFilePath, output)
 				}
-				
+
 				return nil
 			}),
 		},
 	}
 }
-

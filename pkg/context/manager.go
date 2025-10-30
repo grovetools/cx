@@ -34,6 +34,9 @@ type ContextConfig struct {
 	// ExcludedWorkspaces is a denylist: these workspaces are excluded from context scanning.
 	// Ignored if IncludedWorkspaces is set.
 	ExcludedWorkspaces []string `yaml:"excluded_workspaces,omitempty"`
+	// AllowedPaths is a list of additional paths that can be included in context,
+	// regardless of workspace boundaries. Paths can be absolute or use ~/ for home directory.
+	AllowedPaths []string `yaml:"allowed_paths,omitempty"`
 }
 
 // Manager handles context operations
@@ -654,6 +657,35 @@ func (m *Manager) initAllowedRoots() {
 						}
 					}
 				}
+			}
+		}
+
+		// Add paths from context.allowed_paths configuration
+		for _, allowedPath := range ctxCfg.AllowedPaths {
+			// Expand ~ and environment variables
+			expandedPath, err := pathutil.Expand(allowedPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not expand allowed_path '%s': %v\n", allowedPath, err)
+				continue
+			}
+
+			// Convert to absolute path
+			absPath, err := filepath.Abs(expandedPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve absolute path for '%s': %v\n", expandedPath, err)
+				continue
+			}
+
+			// Check if already present
+			isAlreadyAllowed := false
+			for _, root := range allowed {
+				if root == absPath {
+					isAlreadyAllowed = true
+					break
+				}
+			}
+			if !isAlreadyAllowed {
+				allowed = append(allowed, absPath)
 			}
 		}
 

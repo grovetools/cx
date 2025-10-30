@@ -62,7 +62,18 @@ context:
 				if err := fs.WriteString(filepath.Join(projectB, ".grove/default.rules"), defaultRulesContent); err != nil {
 					return err
 				}
-				
+
+				// Create local grove.yml in project A with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, projectB)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					os.RemoveAll(projectB)
+					return err
+				}
+
 				return nil
 			}),
 			harness.NewStep("Create rules file with @default directive", func(ctx *harness.Context) error {

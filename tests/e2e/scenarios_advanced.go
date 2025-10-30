@@ -7,12 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattsolo1/grove-tend/pkg/command"
 	"github.com/mattsolo1/grove-tend/pkg/fs"
 	"github.com/mattsolo1/grove-tend/pkg/git"
 	"github.com/mattsolo1/grove-tend/pkg/harness"
 )
-
 
 // StatsAndValidateScenario tests the `cx stats` and `cx validate` commands.
 func StatsAndValidateScenario() *harness.Scenario {
@@ -38,7 +36,7 @@ func StatsAndValidateScenario() *harness.Scenario {
 				if err != nil {
 					return err
 				}
-				cmd := command.New(cx, "validate").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "validate").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -55,7 +53,7 @@ func StatsAndValidateScenario() *harness.Scenario {
 				if err != nil {
 					return err
 				}
-				cmd := command.New(cx, "stats").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "stats").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -89,7 +87,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "save", "snapshot-ab").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "save", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				return result.Error
@@ -100,7 +98,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx diff snapshot-ab'", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "diff", "snapshot-ab").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "diff", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -117,7 +115,7 @@ func SnapshotWorkflowScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx load snapshot-ab'", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "load", "snapshot-ab").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "load", "snapshot-ab").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				return result.Error
@@ -159,7 +157,7 @@ func GitBasedContextScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx from-git --staged'", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "from-git", "--staged").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "from-git", "--staged").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				return result.Error
@@ -204,7 +202,7 @@ func ComplexPatternScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx list' and verify results", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {
@@ -242,7 +240,7 @@ func PlainDirectoryPatternScenario() *harness.Scenario {
 				groveFlowDir := filepath.Join(parentDir, "grove-flow")
 				groveNotebookDir := filepath.Join(parentDir, "grove-notebook")
 				nvimPluginDir := filepath.Join(groveNotebookDir, "nvim-plugin")
-				
+
 				// Create grove-flow structure
 				fs.CreateDir(filepath.Join(groveFlowDir, "src"))
 				fs.CreateDir(filepath.Join(groveFlowDir, "pkg/core"))
@@ -250,7 +248,7 @@ func PlainDirectoryPatternScenario() *harness.Scenario {
 				fs.WriteString(filepath.Join(groveFlowDir, "README.md"), "# Grove Flow")
 				fs.WriteString(filepath.Join(groveFlowDir, "src/app.go"), "package src")
 				fs.WriteString(filepath.Join(groveFlowDir, "pkg/core/flow.go"), "package core")
-				
+
 				// Create grove-notebook/nvim-plugin structure
 				fs.CreateDir(filepath.Join(nvimPluginDir, "lua"))
 				fs.CreateDir(filepath.Join(nvimPluginDir, "plugin"))
@@ -258,7 +256,17 @@ func PlainDirectoryPatternScenario() *harness.Scenario {
 				fs.WriteString(filepath.Join(nvimPluginDir, "README.md"), "# Nvim Plugin")
 				fs.WriteString(filepath.Join(nvimPluginDir, "lua/config.lua"), "-- Config")
 				fs.WriteString(filepath.Join(nvimPluginDir, "plugin/main.vim"), "\" Main plugin")
-				
+
+				// Create local grove.yml with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, parentDir)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					return fmt.Errorf("failed to write grove.yml to %s: %w", groveYmlPath, err)
+				}
+
 				return nil
 			}),
 			harness.NewStep("Create rules with plain directory patterns", func(ctx *harness.Context) error {
@@ -270,24 +278,25 @@ func PlainDirectoryPatternScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx generate' and verify files are in cached context", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				
+
 				// First generate the context
-				cmd := command.New(cx, "generate").Dir(ctx.RootDir)
+				// Use ctx.Command to ensure sandboxed environment variables are injected
+				cmd := ctx.Command(cx, "generate").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {
 					return result.Error
 				}
-				
+
 				// Read the cached-context-files list to verify cold context files
 				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
 				content, err := os.ReadFile(cachedFilesPath)
 				if err != nil {
 					return fmt.Errorf("failed to read cached-context-files: %v", err)
 				}
-				
+
 				output := string(content)
-				
+
 				// Check that files from grove-flow are included (cold context section)
 				expectedFlowFiles := []string{
 					"grove-flow/main.go",
@@ -295,7 +304,7 @@ func PlainDirectoryPatternScenario() *harness.Scenario {
 					"grove-flow/src/app.go",
 					"grove-flow/pkg/core/flow.go",
 				}
-				
+
 				// Check that files from grove-notebook/nvim-plugin are included
 				expectedNvimFiles := []string{
 					"grove-notebook/nvim-plugin/init.lua",
@@ -303,20 +312,20 @@ func PlainDirectoryPatternScenario() *harness.Scenario {
 					"grove-notebook/nvim-plugin/lua/config.lua",
 					"grove-notebook/nvim-plugin/plugin/main.vim",
 				}
-				
+
 				allExpectedFiles := append(expectedFlowFiles, expectedNvimFiles...)
-				
+
 				missingFiles := []string{}
 				for _, file := range allExpectedFiles {
 					if !strings.Contains(output, file) {
 						missingFiles = append(missingFiles, file)
 					}
 				}
-				
+
 				if len(missingFiles) > 0 {
 					return fmt.Errorf("cached-context-files missing files: %v", missingFiles)
 				}
-				
+
 				return nil
 			}),
 		},
@@ -334,25 +343,35 @@ func RecursiveParentPatternScenario() *harness.Scenario {
 				// Create a parent directory with two sibling projects
 				parentDir := filepath.Dir(ctx.RootDir)
 				siblingDir := filepath.Join(parentDir, "sibling-project")
-				
+
 				// Clean up any existing sibling project first
 				os.RemoveAll(siblingDir)
-				
+
 				// Create sibling project structure with nested directories
 				fs.CreateDir(filepath.Join(siblingDir, "cmd"))
 				fs.CreateDir(filepath.Join(siblingDir, "pkg/util"))
 				fs.CreateDir(filepath.Join(siblingDir, "internal/core/db"))
-				
+
 				// Create Go files at various depths
 				fs.WriteString(filepath.Join(siblingDir, "main.go"), "package main")
 				fs.WriteString(filepath.Join(siblingDir, "cmd/root.go"), "package cmd")
 				fs.WriteString(filepath.Join(siblingDir, "pkg/util/helper.go"), "package util")
 				fs.WriteString(filepath.Join(siblingDir, "internal/core/db/manager.go"), "package db")
-				
+
 				// Create non-Go files to ensure pattern matching works
 				fs.WriteString(filepath.Join(siblingDir, "README.md"), "# Sibling")
 				fs.WriteString(filepath.Join(siblingDir, "pkg/util/config.json"), "{}")
-				
+
+				// Create local grove.yml with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, parentDir)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					return err
+				}
+
 				return nil
 			}),
 			harness.NewStep("Create rules with ../**/*.go pattern", func(ctx *harness.Context) error {
@@ -361,40 +380,40 @@ func RecursiveParentPatternScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx list' and verify recursive matching", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {
 					return result.Error
 				}
-				
+
 				output := result.Stdout
-				
+
 				// Check that files at all depths are included
 				expectedFiles := []string{
-					"main.go",              // Root level
-					"cmd/root.go",          // First level subdirectory
-					"pkg/util/helper.go",   // Second level subdirectory
+					"main.go",                     // Root level
+					"cmd/root.go",                 // First level subdirectory
+					"pkg/util/helper.go",          // Second level subdirectory
 					"internal/core/db/manager.go", // Third level subdirectory
 				}
-				
+
 				for _, file := range expectedFiles {
 					if !strings.Contains(output, file) {
 						return fmt.Errorf("list output missing %s from sibling project", file)
 					}
 				}
-				
+
 				// Ensure non-Go files are not included
 				if strings.Contains(output, "README.md") || strings.Contains(output, "config.json") {
 					return fmt.Errorf("list output should not contain non-Go files")
 				}
-				
+
 				// Count total files - should be exactly 4
 				lines := strings.Split(strings.TrimSpace(output), "\n")
 				if len(lines) != 4 {
 					return fmt.Errorf("expected 4 files, got %d", len(lines))
 				}
-				
+
 				return nil
 			}),
 		},
@@ -415,7 +434,7 @@ func ExclusionPatternsScenario() *harness.Scenario {
 				fs.CreateDir(filepath.Join(ctx.RootDir, "tests/integration"))
 				fs.CreateDir(filepath.Join(ctx.RootDir, "pkg/tests"))
 				fs.CreateDir(filepath.Join(ctx.RootDir, "internal/testutils"))
-				
+
 				// Create Go files
 				fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
 				fs.WriteString(filepath.Join(ctx.RootDir, "src/app.go"), "package src")
@@ -424,7 +443,7 @@ func ExclusionPatternsScenario() *harness.Scenario {
 				fs.WriteString(filepath.Join(ctx.RootDir, "tests/integration/api_test.go"), "package integration")
 				fs.WriteString(filepath.Join(ctx.RootDir, "pkg/tests/helper.go"), "package tests")
 				fs.WriteString(filepath.Join(ctx.RootDir, "internal/testutils/mock.go"), "package testutils")
-				
+
 				// Create sibling project for cross-directory testing
 				parentDir := filepath.Dir(ctx.RootDir)
 				siblingDir := filepath.Join(parentDir, "sibling-project")
@@ -432,37 +451,47 @@ func ExclusionPatternsScenario() *harness.Scenario {
 				fs.CreateDir(filepath.Join(siblingDir, "tests/e2e"))
 				fs.CreateDir(filepath.Join(siblingDir, "pkg/util"))
 				fs.CreateDir(filepath.Join(siblingDir, "internal/core/db"))
-				
+
 				fs.WriteString(filepath.Join(siblingDir, "main.go"), "package main")
 				fs.WriteString(filepath.Join(siblingDir, "cmd/cli.go"), "package cmd")
 				fs.WriteString(filepath.Join(siblingDir, "cmd/root.go"), "package cmd")
 				fs.WriteString(filepath.Join(siblingDir, "tests/e2e/flow_test.go"), "package e2e")
 				fs.WriteString(filepath.Join(siblingDir, "pkg/util/helper.go"), "package util")
 				fs.WriteString(filepath.Join(siblingDir, "internal/core/db/manager.go"), "package db")
-				
+
+				// Create local grove.yml with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, parentDir)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					return err
+				}
+
 				return nil
 			}),
 			harness.NewStep("Test !tests pattern (gitignore compatible)", func(ctx *harness.Context) error {
 				rules := `**/*.go
 !tests`
 				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
-				
+
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				if result.Error != nil {
 					return result.Error
 				}
-				
+
 				output := result.Stdout
-				
+
 				// Should exclude any file in directories named "tests"
 				if strings.Contains(output, "tests/unit/user_test.go") ||
-				   strings.Contains(output, "tests/integration/api_test.go") ||
-				   strings.Contains(output, "pkg/tests/helper.go") {
+					strings.Contains(output, "tests/integration/api_test.go") ||
+					strings.Contains(output, "pkg/tests/helper.go") {
 					return fmt.Errorf("!tests pattern should exclude files in 'tests' directories")
 				}
-				
+
 				// Should NOT exclude testutils or files with test in the name
 				if !strings.Contains(output, "src/app_test.go") {
 					return fmt.Errorf("!tests pattern should not exclude files ending with _test.go")
@@ -470,64 +499,64 @@ func ExclusionPatternsScenario() *harness.Scenario {
 				if !strings.Contains(output, "internal/testutils/mock.go") {
 					return fmt.Errorf("!tests pattern should not exclude 'testutils' directory")
 				}
-				
+
 				return nil
 			}),
 			harness.NewStep("Test !**/tests/** pattern", func(ctx *harness.Context) error {
 				rules := `**/*.go
 !**/tests/**`
 				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
-				
+
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				if result.Error != nil {
 					return result.Error
 				}
-				
+
 				// Same behavior as !tests for this case
 				output := result.Stdout
 				if strings.Contains(output, "tests/") {
 					return fmt.Errorf("!**/tests/** should exclude all files under tests directories")
 				}
-				
+
 				return nil
 			}),
 			harness.NewStep("Test cross-directory exclusions", func(ctx *harness.Context) error {
 				rules := `../sibling-project/**/*.go
 !tests`
 				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
-				
+
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				if result.Error != nil {
 					return result.Error
 				}
-				
+
 				output := result.Stdout
 				ctx.ShowCommandOutput(cmd.String(), output, result.Stderr)
-				
+
 				// Check that we got some files
 				if output == "" {
 					return fmt.Errorf("No files found. Expected files from sibling project")
 				}
-				
+
 				// Should include files from sibling project (checking for path components)
 				if !strings.Contains(output, "sibling-project") {
 					return fmt.Errorf("Output should contain files from sibling-project. Got: %s", output)
 				}
-				
+
 				// Should include main.go and cmd/cli.go
 				if !strings.Contains(output, "main.go") || !strings.Contains(output, "cmd/cli.go") {
 					return fmt.Errorf("Should include main.go and cmd/cli.go from sibling project. Got: %s", output)
 				}
-				
+
 				// Should exclude test directories in sibling project
 				if strings.Contains(output, "tests/e2e/flow_test.go") {
 					return fmt.Errorf("Should exclude test directories from sibling project")
 				}
-				
+
 				return nil
 			}),
 		},
@@ -553,6 +582,17 @@ func WorktreeExclusionScenario() *harness.Scenario {
 				// Create a file in a worktree that MUST be excluded
 				fs.CreateDir(filepath.Join(siblingDir, ".grove-worktrees", "feature", "src"))
 				fs.WriteString(filepath.Join(siblingDir, ".grove-worktrees", "feature", "src", "feature.go"), "package feature")
+
+				// Create local grove.yml with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, parentDir)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					return err
+				}
+
 				return nil
 			}),
 			harness.NewStep("Create rules to include sibling project files", func(ctx *harness.Context) error {
@@ -562,7 +602,7 @@ func WorktreeExclusionScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx list' and verify exclusion", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {
@@ -608,6 +648,17 @@ func ExplicitWorktreeInclusionScenario() *harness.Scenario {
 
 				// Create a file that should be ignored by the rule
 				fs.WriteString(filepath.Join(worktreePath, "README.md"), "ignore this")
+
+				// Create local grove.yml with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, externalDir)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					return err
+				}
+
 				return nil
 			}),
 			harness.NewStep("Create rules to include the worktree directory", func(ctx *harness.Context) error {
@@ -623,7 +674,7 @@ func ExplicitWorktreeInclusionScenario() *harness.Scenario {
 				defer os.RemoveAll(externalDir) // Cleanup after the test
 
 				cx, _ := FindProjectBinary()
-				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {
@@ -631,7 +682,7 @@ func ExplicitWorktreeInclusionScenario() *harness.Scenario {
 				}
 
 				output := result.Stdout
-				
+
 				// Check if the output contains the worktree file
 				if !strings.Contains(output, "feature.go") {
 					return fmt.Errorf("list output is missing the explicitly included worktree file 'feature.go'")

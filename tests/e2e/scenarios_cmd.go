@@ -282,6 +282,17 @@ func CommandExpressionAbsolutePathsScenario() *harness.Scenario {
 				if err := fs.WriteString(filepath.Join(ctx.RootDir, "config.go"), "package main\n// Config"); err != nil {
 					return err
 				}
+
+				// Create local grove.yml with allowed_paths configuration
+				groveConfig := fmt.Sprintf(`context:
+  allowed_paths:
+    - %s
+`, ctx.RootDir)
+				groveYmlPath := filepath.Join(ctx.RootDir, "grove.yml")
+				if err := fs.WriteString(groveYmlPath, groveConfig); err != nil {
+					return err
+				}
+
 				return nil
 			}),
 			harness.NewStep("Create rules file with @cmd: using realpath", func(ctx *harness.Context) error {
