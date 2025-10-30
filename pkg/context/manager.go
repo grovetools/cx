@@ -633,22 +633,26 @@ func (m *Manager) initAllowedRoots() {
 			allowed = append(allowed, groveHome)
 		}
 
-		// Also add notebook root directory to allowed paths
-		if mergedCfg != nil && mergedCfg.Notebook != nil && mergedCfg.Notebook.RootDir != "" {
-			notebookRootDir, err := pathutil.Expand(mergedCfg.Notebook.RootDir)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not expand notebook.root_dir '%s': %v\n", mergedCfg.Notebook.RootDir, err)
-			} else {
-				// Add the notebook root to the list of allowed paths if not already present.
-				isAlreadyAllowed := false
-				for _, root := range allowed {
-					if root == notebookRootDir {
-						isAlreadyAllowed = true
-						break
+		// Also add notebook root directories to allowed paths
+		if mergedCfg != nil && mergedCfg.Notebooks != nil {
+			for notebookName, notebook := range mergedCfg.Notebooks {
+				if notebook.RootDir != "" {
+					notebookRootDir, err := pathutil.Expand(notebook.RootDir)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: could not expand notebook '%s' root_dir '%s': %v\n", notebookName, notebook.RootDir, err)
+					} else {
+						// Add the notebook root to the list of allowed paths if not already present.
+						isAlreadyAllowed := false
+						for _, root := range allowed {
+							if root == notebookRootDir {
+								isAlreadyAllowed = true
+								break
+							}
+						}
+						if !isAlreadyAllowed {
+							allowed = append(allowed, notebookRootDir)
+						}
 					}
-				}
-				if !isAlreadyAllowed {
-					allowed = append(allowed, notebookRootDir)
 				}
 			}
 		}

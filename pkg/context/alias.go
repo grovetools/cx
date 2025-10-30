@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/sirupsen/logrus"
 )
@@ -210,6 +212,65 @@ func (r *AliasResolver) Resolve(alias string) (string, error) {
 
 // ResolveLine parses a full rule line, resolves the alias, and reconstructs the line with an absolute path.
 func (r *AliasResolver) ResolveLine(line string) (string, error) {
+	// --- Start Notebook Alias Resolution ---
+	// Check for special notebook alias first, as it has higher priority.
+	trimmedLine := strings.TrimSpace(line)
+	prefix := ""
+	if strings.HasPrefix(trimmedLine, "!") {
+		prefix = "!"
+		trimmedLine = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "!"))
+	}
+
+	notebookAliasPrefix1 := "@a:nb:"
+	notebookAliasPrefix2 := "@alias:nb:"
+	var notebookAlias string
+
+	if strings.HasPrefix(trimmedLine, notebookAliasPrefix1) {
+		notebookAlias = strings.TrimPrefix(trimmedLine, notebookAliasPrefix1)
+	} else if strings.HasPrefix(trimmedLine, notebookAliasPrefix2) {
+		notebookAlias = strings.TrimPrefix(trimmedLine, notebookAliasPrefix2)
+	}
+
+	if notebookAlias != "" {
+		// Load config to find notebook root. The config loader now handles backward compatibility.
+		cfg, err := config.LoadFrom(r.workDir)
+		if err != nil {
+			return "", fmt.Errorf("could not load grove config to resolve notebook alias: %w", err)
+		}
+		if cfg == nil || len(cfg.Notebooks) == 0 {
+			return "", fmt.Errorf("no 'notebooks' are configured in grove.yml; cannot resolve alias '%s'", line)
+		}
+
+		var notebookName, relativePath string
+		parts := strings.SplitN(notebookAlias, ":", 2)
+
+		// Determine if the alias includes a notebook name or implies "default".
+		if len(parts) > 1 && cfg.Notebooks[parts[0]] != nil {
+			notebookName = parts[0]
+			relativePath = parts[1]
+		} else {
+			notebookName = "default"
+			relativePath = notebookAlias
+		}
+
+		notebook, exists := cfg.Notebooks[notebookName]
+		if !exists {
+			return "", fmt.Errorf("notebook '%s' not found in configuration; cannot resolve alias '%s'", notebookName, line)
+		}
+		if notebook.RootDir == "" {
+			return "", fmt.Errorf("notebook '%s' has no 'root_dir' configured; cannot resolve alias '%s'", notebookName, line)
+		}
+
+		notebookRoot, err := pathutil.Expand(notebook.RootDir)
+		if err != nil {
+			return "", fmt.Errorf("could not expand notebook root_dir '%s': %w", notebook.RootDir, err)
+		}
+
+		resolvedPath := filepath.Join(notebookRoot, relativePath)
+		return prefix + resolvedPath, nil
+	}
+	// --- End Notebook Alias Resolution ---
+
 	parts, err := r.parseAliasLine(line)
 	if err != nil {
 		return "", err
