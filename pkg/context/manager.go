@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/util/pathutil"
 )
 
 // Constants for context file paths
@@ -630,6 +631,26 @@ func (m *Manager) initAllowedRoots() {
 		if err == nil {
 			groveHome := filepath.Join(homeDir, ".grove")
 			allowed = append(allowed, groveHome)
+		}
+
+		// Also add notebook root directory to allowed paths
+		if mergedCfg != nil && mergedCfg.Notebook != nil && mergedCfg.Notebook.RootDir != "" {
+			notebookRootDir, err := pathutil.Expand(mergedCfg.Notebook.RootDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not expand notebook.root_dir '%s': %v\n", mergedCfg.Notebook.RootDir, err)
+			} else {
+				// Add the notebook root to the list of allowed paths if not already present.
+				isAlreadyAllowed := false
+				for _, root := range allowed {
+					if root == notebookRootDir {
+						isAlreadyAllowed = true
+						break
+					}
+				}
+				if !isAlreadyAllowed {
+					allowed = append(allowed, notebookRootDir)
+				}
+			}
 		}
 
 		m.allowedRoots = allowed
