@@ -218,12 +218,16 @@ func (m *pagerModel) renderTabs() string {
 
 	inactiveTab := lipgloss.NewStyle().
 		Foreground(theme.Colors.MutedText).
-		Padding(0, 2)
+		Padding(0, 2).
+		UnderlineSpaces(false).
+		Underline(false)
 
 	activeTab := lipgloss.NewStyle().
 		Foreground(theme.Colors.Green).
 		Bold(true).
-		Padding(0, 2)
+		Padding(0, 2).
+		UnderlineSpaces(false).
+		Underline(false)
 
 	var tabs []string
 	for i, p := range m.pages {
