@@ -14,10 +14,11 @@ import (
 
 // LanguageStats contains statistics for a programming language
 type LanguageStats struct {
-	Name        string  `json:"name"`
-	FileCount   int     `json:"file_count"`
-	TotalTokens int     `json:"total_tokens"`
-	Percentage  float64 `json:"percentage"`
+	Name        string   `json:"name"`
+	FileCount   int      `json:"file_count"`
+	TotalTokens int      `json:"total_tokens"`
+	Percentage  float64  `json:"percentage"`
+	Patterns    []string `json:"-"` // Glob patterns for exclusion, e.g., "**/*.go"
 }
 
 // FileStats contains statistics for a single file
@@ -84,9 +85,15 @@ func (m *Manager) GetStats(contextType string, files []string, topN int) (*Conte
 		stats.TotalTokens += tokens
 		stats.TotalSize += info.Size()
 
-		// Determine language by extension
+		// Determine language by extension or basename
 		ext := strings.ToLower(filepath.Ext(file))
-		lang := getLanguageFromExt(ext)
+		var lang string
+		if ext == "" {
+			// No extension - use basename (e.g., "Makefile", "Dockerfile")
+			lang = filepath.Base(file)
+		} else {
+			lang = getLanguageFromExt(ext)
+		}
 
 		if _, exists := stats.Languages[lang]; !exists {
 			stats.Languages[lang] = &LanguageStats{Name: lang}
@@ -132,68 +139,32 @@ func (m *Manager) GetStats(contextType string, files []string, topN int) (*Conte
 	return stats, nil
 }
 
-// getLanguageFromExt returns the language name for a file extension
+// GetExtsFromLanguage returns the file extensions for a file type.
+// For files without extensions (basenames like "Makefile"), returns the basename pattern.
+func GetExtsFromLanguage(extName string) []string {
+	// For "Other" (legacy), return empty
+	if extName == "Other" || extName == "" {
+		return nil
+	}
+
+	// Extension names are in ".ext" format, return as-is
+	if strings.HasPrefix(extName, ".") {
+		return []string{extName}
+	}
+
+	// For basenames without extensions (e.g., "Makefile"), return as pattern
+	// This matches the exact basename anywhere in the tree
+	return []string{extName}
+}
+
+// getLanguageFromExt returns the file extension as-is for grouping
 func getLanguageFromExt(ext string) string {
-	langMap := map[string]string{
-		".go":       "Go",
-		".js":       "JavaScript",
-		".jsx":      "JavaScript",
-		".ts":       "TypeScript",
-		".tsx":      "TypeScript",
-		".py":       "Python",
-		".java":     "Java",
-		".c":        "C",
-		".cpp":      "C++",
-		".cc":       "C++",
-		".h":        "C/C++",
-		".hpp":      "C++",
-		".rs":       "Rust",
-		".rb":       "Ruby",
-		".php":      "PHP",
-		".cs":       "C#",
-		".swift":    "Swift",
-		".kt":       "Kotlin",
-		".scala":    "Scala",
-		".r":        "R",
-		".m":        "Objective-C",
-		".mm":       "Objective-C++",
-		".sh":       "Shell",
-		".bash":     "Shell",
-		".zsh":      "Shell",
-		".fish":     "Shell",
-		".ps1":      "PowerShell",
-		".md":       "Markdown",
-		".markdown": "Markdown",
-		".rst":      "reStructuredText",
-		".tex":      "LaTeX",
-		".yml":      "YAML",
-		".yaml":     "YAML",
-		".json":     "JSON",
-		".xml":      "XML",
-		".html":     "HTML",
-		".htm":      "HTML",
-		".css":      "CSS",
-		".scss":     "SCSS",
-		".sass":     "Sass",
-		".less":     "Less",
-		".sql":      "SQL",
-		".toml":     "TOML",
-		".ini":      "INI",
-		".conf":     "Config",
-		".cfg":      "Config",
-		".txt":      "Text",
-		"":          "Other",
-	}
-
-	if lang, exists := langMap[ext]; exists {
-		return lang
-	}
-
 	if ext == "" {
 		return "Other"
 	}
 
-	return "Other (" + strings.TrimPrefix(ext, ".") + ")"
+	// Return extension as-is (lowercase with dot)
+	return ext
 }
 
 // calculateDistribution calculates token distribution across files

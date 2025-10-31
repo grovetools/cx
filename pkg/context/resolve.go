@@ -1055,10 +1055,11 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		if info.isExclude {
 			// Identify "floating" exclusions (gitignore-style patterns without path separators)
 			// These should apply to ALL walks (local and external), not just the current directory
-			isFloatingExclusion := !strings.Contains(info.pattern, "/") && !filepath.IsAbs(info.pattern)
+			// Also treat **/ patterns as floating since they match any directory recursively
+			isFloatingExclusion := (!strings.Contains(info.pattern, "/") || strings.HasPrefix(info.pattern, "**/")) && !filepath.IsAbs(info.pattern)
 
 			if isFloatingExclusion {
-				// Floating exclusions like "!tests" or "!*.tmp" should apply globally
+				// Floating exclusions like "!tests" or "!*.tmp" or "!**/*.md" should apply globally
 				floatingExclusionInfos = append(floatingExclusionInfos, info)
 			} else if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
 				deferredExclusionInfos = append(deferredExclusionInfos, info)

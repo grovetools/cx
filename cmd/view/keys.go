@@ -42,6 +42,60 @@ var pagerKeys = pagerKeyMap{
 	),
 }
 
+// statsKeyMap defines the key bindings for the interactive stats page.
+type statsKeyMap struct {
+	keymap.Base
+	SwitchFocus key.Binding
+	Exclude     key.Binding
+	Refresh     key.Binding
+	GotoTop     key.Binding
+	GotoBottom  key.Binding
+	HalfPageUp  key.Binding
+	HalfPageDown key.Binding
+}
+
+// ShortHelp returns keybindings to be shown in the footer.
+func (k statsKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Help, k.SwitchFocus, k.Exclude, k.Refresh, k.Quit}
+}
+
+// FullHelp is not used for this page but is required by the interface.
+func (k statsKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{}
+}
+
+var statsKeys = statsKeyMap{
+	Base: keymap.NewBase(),
+	SwitchFocus: key.NewBinding(
+		key.WithKeys("s", "left", "right"),
+		key.WithHelp("s/←/→", "switch list"),
+	),
+	Exclude: key.NewBinding(
+		key.WithKeys("x"),
+		key.WithHelp("x", "exclude"),
+	),
+	Refresh: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "refresh"),
+	),
+	GotoTop: key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("gg", "go to top"),
+	),
+	GotoBottom: key.NewBinding(
+		key.WithKeys("G"),
+		key.WithHelp("G", "go to bottom"),
+	),
+	HalfPageUp: key.NewBinding(
+		key.WithKeys("ctrl+u"),
+		key.WithHelp("ctrl-u", "half page up"),
+	),
+	HalfPageDown: key.NewBinding(
+		key.WithKeys("ctrl+d"),
+		key.WithHelp("ctrl-d", "half page down"),
+	),
+}
+
 // --- Keymaps from old view.go (to be used in Job 2 & 3) ---
 
 type treeViewKeyMap struct {
