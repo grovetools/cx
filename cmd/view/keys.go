@@ -8,13 +8,15 @@ import (
 // pagerKeyMap defines the key bindings for the main pager view.
 type pagerKeyMap struct {
 	keymap.Base
-	NextPage key.Binding
-	PrevPage key.Binding
+	NextPage    key.Binding
+	PrevPage    key.Binding
+	Edit        key.Binding
+	SelectRules key.Binding
 }
 
 // ShortHelp returns keybindings to be shown in the footer.
 func (k pagerKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.NextPage, k.PrevPage, k.Quit}
+	return []key.Binding{k.Help, k.NextPage, k.PrevPage, k.Edit, k.SelectRules, k.Quit}
 }
 
 // FullHelp returns keybindings for the expanded help view.
@@ -24,6 +26,8 @@ func (k pagerKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithHelp("", "Navigation:")),
 			k.NextPage,
 			k.PrevPage,
+			k.Edit,
+			k.SelectRules,
 			k.Quit,
 			k.Help,
 		},
@@ -39,6 +43,14 @@ var pagerKeys = pagerKeyMap{
 	PrevPage: key.NewBinding(
 		key.WithKeys("shift+tab"),
 		key.WithHelp("shift+tab", "prev page"),
+	),
+	Edit: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "edit rules"),
+	),
+	SelectRules: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "select rule set"),
 	),
 }
 

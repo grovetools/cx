@@ -2,12 +2,15 @@ package view
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattsolo1/grove-context/pkg/context"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
 )
@@ -25,8 +28,18 @@ func NewViewCmd() *cobra.Command {
 				return err
 			}
 			p := tea.NewProgram(m, tea.WithAltScreen())
-			_, err = p.Run()
-			return err
+			finalModel, err := p.Run()
+			if err != nil {
+				return err
+			}
+
+			// After the TUI exits, check if it was for Neovim editing integration
+			if pagerM, ok := finalModel.(*pagerModel); ok && pagerM.exitForNvimEdit {
+				// Print the special string for the Neovim plugin to capture
+				fmt.Println("EDIT_FILE:" + pagerM.nvimEditPath)
+			}
+
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&startPage, "page", "p", "tree", "The page to open on startup (tree, repo, rules, stats, list)")
@@ -41,6 +54,10 @@ type pagerModel struct {
 	height     int
 	keys       pagerKeyMap
 	help       help.Model
+
+	// State for Neovim integration
+	exitForNvimEdit bool
+	nvimEditPath    string
 }
 
 func newPagerModel(startPage string) (*pagerModel, error) {
@@ -63,11 +80,13 @@ func newPagerModel(startPage string) (*pagerModel, error) {
 	}
 
 	return &pagerModel{
-		pages:      pages,
-		activePage: activePage,
-		state:      state,
-		keys:       pagerKeys,
-		help:       help.New(),
+		pages:           pages,
+		activePage:      activePage,
+		state:           state,
+		keys:            pagerKeys,
+		help:            help.New(),
+		exitForNvimEdit: false,
+		nvimEditPath:    "",
 	}, nil
 }
 
@@ -96,6 +115,49 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.PrevPage):
 			m.prevPage()
 			return m, m.pages[m.activePage].Focus()
+		case key.Matches(msg, m.keys.Edit):
+			// Edit action is only available on the RULES page
+			if m.pages[m.activePage].Name() == "rules" {
+				mgr := context.NewManager("")
+
+				// Check if running inside the Neovim plugin
+				if os.Getenv("GROVE_NVIM_PLUGIN") == "true" {
+					// Signal to Neovim to open the file
+					rulesPath, err := mgr.EnsureAndGetRulesPath()
+					if err != nil {
+						m.state.err = fmt.Errorf("failed to get rules path: %w", err)
+						return m, nil
+					}
+					m.exitForNvimEdit = true
+					m.nvimEditPath = rulesPath
+					return m, tea.Quit
+				}
+
+				// Standard terminal: suspend TUI and open editor
+				editorCmd, err := mgr.EditRulesCmd()
+				if err != nil {
+					m.state.err = fmt.Errorf("failed to prepare editor command: %w", err)
+					return m, nil
+				}
+				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
+					// After editor closes, refresh the state
+					return refreshStateMsg{}
+				})
+			}
+		case key.Matches(msg, m.keys.SelectRules):
+			// SelectRules action is only available on the RULES page
+			if m.pages[m.activePage].Name() == "rules" {
+				// Run cx rules command to select a rule set
+				cxCmd := exec.Command("cx", "rules")
+				cxCmd.Stdin = os.Stdin
+				cxCmd.Stdout = os.Stdout
+				cxCmd.Stderr = os.Stderr
+
+				return m, tea.ExecProcess(cxCmd, func(err error) tea.Msg {
+					// After cx rules exits, refresh the state to show new active rule
+					return refreshStateMsg{}
+				})
+			}
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
 		}

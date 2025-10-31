@@ -15,6 +15,7 @@ type sharedState struct {
 	hotFiles     []string
 	coldFiles    []string
 	rulesContent string
+	rulesPath    string // Path to the active rules file
 	hotStats     *context.ContextStats
 	coldStats    *context.ContextStats
 	projects     []*workspace.WorkspaceNode
@@ -39,12 +40,13 @@ func refreshSharedStateCmd() tea.Cmd {
 		newState := sharedState{loading: false}
 
 		// Load rules content
-		rulesBytes, _, err := mgr.LoadRulesContent()
+		rulesBytes, rulesPath, err := mgr.LoadRulesContent()
 		if err != nil {
 			newState.err = err
 			return stateRefreshedMsg{state: newState}
 		}
 		newState.rulesContent = string(rulesBytes)
+		newState.rulesPath = rulesPath
 
 		// Parse rules (pass the manager to resolve aliases)
 		parseRules(&newState, string(rulesBytes), mgr)

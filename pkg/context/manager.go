@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/state"
 	"github.com/mattsolo1/grove-core/util/pathutil"
 )
 
@@ -730,6 +731,34 @@ func (m *Manager) GetAllowedRoots() ([]string, error) {
 	return m.allowedRoots, m.allowedRootsErr
 }
 
+// findGitRoot finds the root directory of the git repository by walking up from the manager's working directory.
+func (m *Manager) findGitRoot() string {
+	// Try using git rev-parse first for efficiency.
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = m.workDir
+	output, err := cmd.Output()
+	if err == nil {
+		return strings.TrimSpace(string(output))
+	}
+
+	// Fallback: walk up the directory tree looking for .git
+	dir := m.workDir
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached the root
+			break
+		}
+		dir = parent
+	}
+
+	return "" // Not in a git repository
+}
+
 // GetSkippedRules returns the list of rules that were skipped during the last parsing operation
 func (m *Manager) GetSkippedRules() []SkippedRule {
 	m.skippedMutex.Lock()
@@ -756,6 +785,83 @@ func (m *Manager) addSkippedRule(lineNum int, rule string, reason string) {
 		Rule:    rule,
 		Reason:  reason,
 	})
+}
+
+// EnsureAndGetRulesPath finds the active rules file, creates it with boilerplate if it doesn't exist,
+// and returns its absolute path. This is useful for integrations that need to open the file directly.
+func (m *Manager) EnsureAndGetRulesPath() (string, error) {
+	rulesContent, rulesPath, err := m.LoadRulesContent()
+	if err != nil {
+		return "", err
+	}
+
+	// If LoadRulesContent didn't return a path, determine where to create the file
+	if rulesPath == "" {
+		// Check if there's an active rule set in state
+		activeSource, _ := state.GetString(StateSourceKey)
+		if activeSource != "" {
+			// Use the active source path from state
+			rulesPath = filepath.Join(m.workDir, activeSource)
+		} else {
+			// Default to .grove/rules
+			rulesPath = filepath.Join(m.workDir, ActiveRulesFile)
+		}
+	}
+
+	// If the rules file doesn't exist, create it
+	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
+		// Ensure parent directory exists
+		groveDir := filepath.Dir(rulesPath)
+		if err := os.MkdirAll(groveDir, 0755); err != nil {
+			return "", fmt.Errorf("error creating %s directory: %w", groveDir, err)
+		}
+
+		// Use default content if available, otherwise use boilerplate
+		if rulesContent == nil {
+			rulesContent = []byte("# Context rules file\n# Add patterns to include files, one per line\n# Use ! prefix to exclude\n# Examples:\n#   *.go\n#   !*_test.go\n#   src/**/*.js\n\n*\n")
+		}
+
+		if err := os.WriteFile(rulesPath, rulesContent, 0644); err != nil {
+			return "", fmt.Errorf("error creating %s: %w", rulesPath, err)
+		}
+	}
+
+	// Get absolute path to rules file
+	absRulesPath, err := filepath.Abs(rulesPath)
+	if err != nil {
+		return "", fmt.Errorf("error getting absolute path: %w", err)
+	}
+
+	return absRulesPath, nil
+}
+
+// EditRulesCmd prepares an *exec.Cmd to open the active rules file in an editor.
+// It handles finding/creating the rules file, determining the editor, and setting the
+// working directory to the git root for a consistent editing experience.
+func (m *Manager) EditRulesCmd() (*exec.Cmd, error) {
+	absRulesPath, err := m.EnsureAndGetRulesPath()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get editor from environment
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vim" // A reasonable default
+	}
+
+	// Prepare the command
+	editorCmd := exec.Command(editor, absRulesPath)
+	editorCmd.Stdin = os.Stdin
+	editorCmd.Stdout = os.Stdout
+	editorCmd.Stderr = os.Stderr
+
+	// Set the command's working directory to the git root for consistency
+	if gitRoot := m.findGitRoot(); gitRoot != "" {
+		editorCmd.Dir = gitRoot
+	}
+
+	return editorCmd, nil
 }
 
 // IsPathAllowed checks if a given path is within one of the allowed workspace roots.
