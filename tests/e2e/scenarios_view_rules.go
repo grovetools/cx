@@ -110,10 +110,9 @@ config.yml`
 					return err
 				}
 				// Wait for the stats page content to appear
-				// Look for "Hot Context Statistics" or "Total Files:" which should appear on stats page
+				// Look for "File Types" which should appear on stats page
 				_, err := session.WaitForAnyText([]string{
-					"Hot Context Statistics",
-					"Total Files:",
+					"File Types",
 					"No files in hot context",
 				}, 3*time.Second)
 				return err

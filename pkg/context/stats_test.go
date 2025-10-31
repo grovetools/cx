@@ -47,16 +47,16 @@ func TestManager_GetStats(t *testing.T) {
 	}
 
 	// Check language detection
-	if _, ok := stats.Languages["Go"]; !ok {
-		t.Error("Expected Go language to be detected")
+	if _, ok := stats.Languages[".go"]; !ok {
+		t.Error("Expected .go language to be detected")
 	}
 
-	if _, ok := stats.Languages["Markdown"]; !ok {
-		t.Error("Expected Markdown language to be detected")
+	if _, ok := stats.Languages[".md"]; !ok {
+		t.Error("Expected .md language to be detected")
 	}
 
-	if _, ok := stats.Languages["YAML"]; !ok {
-		t.Error("Expected YAML language to be detected")
+	if _, ok := stats.Languages[".yaml"]; !ok {
+		t.Error("Expected .yaml language to be detected")
 	}
 
 	if len(stats.LargestFiles) != 3 {

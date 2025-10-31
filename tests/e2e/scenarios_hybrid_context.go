@@ -143,8 +143,8 @@ src/utils.go
 				}
 
 				// Verify language distribution shows both Go and Markdown for hot context
-				if !strings.Contains(output, "Go") || !strings.Contains(output, "Markdown") {
-					return fmt.Errorf("hot context should show both Go and Markdown in language distribution")
+				if !strings.Contains(output, ".go") || !strings.Contains(output, ".md") {
+					return fmt.Errorf("hot context should show both .go and .md in language distribution")
 				}
 				
 				return result.Error

@@ -67,7 +67,7 @@ func TUIViewStatsScenario() *harness.Scenario {
 
 				// Wait for either stats content or error message
 				result, err := session.WaitForAnyText([]string{
-					"Total Files:",
+					"File Types",
 					"No files in hot context",
 					"Error:",
 				}, 8*time.Second)
@@ -99,11 +99,11 @@ func TUIViewStatsScenario() *harness.Scenario {
 				}
 
 				// Basic verification - just check stats are showing
-				if !strings.Contains(content, "Total Files:") {
-					return fmt.Errorf("missing 'Total Files:' in stats")
+				if !strings.Contains(content, "File Types") {
+					return fmt.Errorf("missing 'File Types' in stats")
 				}
-				if !strings.Contains(content, "Go") {
-					return fmt.Errorf("missing 'Go' language in hot context stats")
+				if !strings.Contains(content, ".go") {
+					return fmt.Errorf("missing '.go' language in hot context stats")
 				}
 
 				// Cold context might not be visible on screen, just check hot context works

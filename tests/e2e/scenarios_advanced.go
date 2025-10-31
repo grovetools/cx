@@ -62,7 +62,7 @@ func StatsAndValidateScenario() *harness.Scenario {
 				if !strings.Contains(result.Stdout, "Total Files:    2") {
 					return fmt.Errorf("stats did not report the correct number of total files")
 				}
-				if !strings.Contains(result.Stdout, "Language Distribution:") || !strings.Contains(result.Stdout, "Go") || !strings.Contains(result.Stdout, "Markdown") {
+				if !strings.Contains(result.Stdout, "Language Distribution:") || !strings.Contains(result.Stdout, ".go") || !strings.Contains(result.Stdout, ".md") {
 					return fmt.Errorf("stats did not report language distribution correctly")
 				}
 				return nil
