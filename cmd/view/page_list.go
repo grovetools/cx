@@ -74,7 +74,7 @@ type listPage struct {
 
 func NewListPage(state *sharedState) Page {
 	l := list.New([]list.Item{}, itemDelegate{}, 0, 0)
-	l.Title = "Files in Hot Context"
+	l.Title = "" // Will be set dynamically in Focus()
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
 	return &listPage{
@@ -93,6 +93,13 @@ func (p *listPage) Keys() interface{} {
 func (p *listPage) Init() tea.Cmd { return nil }
 
 func (p *listPage) Focus() tea.Cmd {
+	// Set title only if there are cold context files
+	if len(p.sharedState.coldFiles) > 0 {
+		p.list.Title = "Files in Hot Context"
+	} else {
+		p.list.Title = ""
+	}
+
 	// Create a map of file paths to their stats for quick lookup
 	fileStats := make(map[string]context.FileStats)
 	if p.sharedState.hotStats != nil {
