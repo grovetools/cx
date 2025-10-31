@@ -78,8 +78,18 @@ func newPatternMatcher(patternInfos []patternInfo, workDir string) *patternMatch
 func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 	isIncluded := false
 
+	relToWorkDir, err := filepath.Rel(pm.workDir, path)
+	isExternal := err != nil || strings.HasPrefix(relToWorkDir, "..")
+
 	for _, info := range pm.patternInfos {
 		if info.pattern == "!binary:exclude" || info.pattern == "binary:include" {
+			continue
+		}
+
+		// Floating inclusion patterns should not match external files.
+		// A pattern is "floating" if it doesn't contain "/" and isn't an absolute path and doesn't start with ".."
+		isFloatingInclusion := !info.isExclude && !strings.Contains(info.pattern, "/") && !filepath.IsAbs(info.pattern) && !strings.HasPrefix(info.pattern, "..")
+		if isFloatingInclusion && isExternal {
 			continue
 		}
 		cleanPattern := info.pattern

@@ -96,6 +96,9 @@ func main() {
 		GitignoreStatsPerLineScenario(),
 		StarPatternRespectsGitignoreScenario(),
 
+		// Floating Pattern Scenarios
+		FloatingInclusionScopeScenario(),
+
 		// Workspace Filter Scenarios
 		WorkspaceExclusionScenario(),
 	}

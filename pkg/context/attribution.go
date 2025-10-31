@@ -164,18 +164,18 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		var matchingInclusionRules []RuleInfo
 
 		for _, rule := range allRules {
+			// Floating inclusion patterns should not match external files
+			isFloatingInclusion := !rule.IsExclude && !strings.Contains(rule.Pattern, "/")
+			isExternalFile := strings.HasPrefix(relPath, "..")
+			if isFloatingInclusion && isExternalFile {
+				continue
+			}
+
 			// For absolute path patterns (e.g., from Git repos), match against absolute path
 			// For relative patterns, match against relative path
 			pathToMatch := relPath
 			if filepath.IsAbs(rule.Pattern) {
 				pathToMatch = filepath.ToSlash(file)
-			}
-			// Skip patterns that shouldn't match external files
-			isExternalFile := strings.HasPrefix(relPath, "..")
-			isFloatingPattern := !strings.Contains(rule.Pattern, "/")
-			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..") || isFloatingPattern
-			if isExternalFile && !isExternalPattern {
-				continue
 			}
 
 			baseMatch := m.matchPattern(rule.Pattern, pathToMatch)
@@ -252,18 +252,17 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			}
 			relPath = filepath.ToSlash(relPath)
 
+			// Floating inclusion patterns should not match external files
+			isFloatingInclusion := !rule.IsExclude && !strings.Contains(rule.Pattern, "/")
+			isExternalFile := strings.HasPrefix(relPath, "..")
+			if isFloatingInclusion && isExternalFile {
+				continue
+			}
+
 			// Determine which path to match against
 			pathToMatch := relPath
 			if filepath.IsAbs(rule.Pattern) {
 				pathToMatch = filepath.ToSlash(file)
-			}
-
-			// Skip patterns that shouldn't match external files
-			isExternalFile := strings.HasPrefix(relPath, "..")
-			isFloatingPattern := !strings.Contains(rule.Pattern, "/")
-			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..") || isFloatingPattern
-			if isExternalFile && !isExternalPattern {
-				continue
 			}
 
 			// Check if this rule's pattern matches the file
@@ -315,19 +314,18 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 		// Check if this file matches any rule
 		for _, rule := range allRules {
+			// Floating inclusion patterns should not match external files
+			isFloatingInclusion := !rule.IsExclude && !strings.Contains(rule.Pattern, "/")
+			isExternalFile := strings.HasPrefix(relPath, "..")
+			if isFloatingInclusion && isExternalFile {
+				continue
+			}
+
 			// For absolute path patterns (e.g., from Git repos), match against absolute path
 			// For relative patterns, match against relative path
 			pathToMatch := relPath
 			if filepath.IsAbs(rule.Pattern) {
 				pathToMatch = filepath.ToSlash(file)
-			}
-
-			// Skip patterns that shouldn't match external files
-			isExternalFile := strings.HasPrefix(relPath, "..")
-			isFloatingPattern := !strings.Contains(rule.Pattern, "/")
-			isExternalPattern := filepath.IsAbs(rule.Pattern) || strings.HasPrefix(rule.Pattern, "..") || isFloatingPattern
-			if isExternalFile && !isExternalPattern {
-				continue
 			}
 
 			match := m.matchPattern(rule.Pattern, pathToMatch)

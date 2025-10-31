@@ -63,6 +63,13 @@ func resolveWithContext(mgr *context.Manager, rulesFile string, lineNumber int, 
 		}
 		relPath = filepath.ToSlash(relPath)
 
+		// Floating inclusion patterns should only apply to local files.
+		isFloatingInclusion := !strings.HasPrefix(pattern, "!") && !strings.Contains(pattern, "/")
+		isExternalFile := strings.HasPrefix(relPath, "..")
+		if isFloatingInclusion && isExternalFile {
+			continue // Skip this match.
+		}
+
 		// Determine which path to match against
 		pathToMatch := relPath
 		if filepath.IsAbs(pattern) {

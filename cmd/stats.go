@@ -227,7 +227,10 @@ func outputPerLineStats(args []string) error {
 		if filteredInfos, ok := filteredMatches[lineNum]; ok {
 			lineGroupMap := make(map[int][]string)
 			for _, info := range filteredInfos {
-				lineGroupMap[info.WinningLineNum] = append(lineGroupMap[info.WinningLineNum], info.File)
+				// Skip self-references (when a ruleset import's rules supersede each other)
+				if info.WinningLineNum != lineNum {
+					lineGroupMap[info.WinningLineNum] = append(lineGroupMap[info.WinningLineNum], info.File)
+				}
 			}
 			for winningLine, filesForLine := range lineGroupMap {
 				filteredByLine = append(filteredByLine, FilteredByLine{
@@ -392,7 +395,10 @@ func outputPerLineStats(args []string) error {
 			var filteredByLine []FilteredByLine
 			lineGroupMap := make(map[int][]string)
 			for _, info := range filteredInfos {
-				lineGroupMap[info.WinningLineNum] = append(lineGroupMap[info.WinningLineNum], info.File)
+				// Skip self-references (when a ruleset import's rules supersede each other)
+				if info.WinningLineNum != lineNum {
+					lineGroupMap[info.WinningLineNum] = append(lineGroupMap[info.WinningLineNum], info.File)
+				}
 			}
 			for winningLine, filesForLine := range lineGroupMap {
 				filteredByLine = append(filteredByLine, FilteredByLine{
@@ -406,18 +412,21 @@ func outputPerLineStats(args []string) error {
 				return filteredByLine[i].LineNumber < filteredByLine[j].LineNumber
 			})
 
-			results = append(results, PerLineStat{
-				LineNumber:        lineNum,
-				Rule:              ruleMap[lineNum],
-				FileCount:         0,
-				ExcludedFileCount: 0,
-				ExcludedTokens:    0,
-				FilteredByLine:    filteredByLine,
-				TotalTokens:       0,
-				TotalSize:         0,
-				GitInfo:           nil,
-				ResolvedPaths:     []string{},
-			})
+			// Only add an entry if there are actually filtered files after removing self-references
+			if len(filteredByLine) > 0 {
+				results = append(results, PerLineStat{
+					LineNumber:        lineNum,
+					Rule:              ruleMap[lineNum],
+					FileCount:         0,
+					ExcludedFileCount: 0,
+					ExcludedTokens:    0,
+					FilteredByLine:    filteredByLine,
+					TotalTokens:       0,
+					TotalSize:         0,
+					GitInfo:           nil,
+					ResolvedPaths:     []string{},
+				})
+			}
 		}
 	}
 

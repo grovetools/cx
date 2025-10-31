@@ -451,7 +451,16 @@ func (m *Manager) fileExplicitlyExcluded(filePath string, patterns []string) boo
 
 // fileMatchesAnyPattern checks if a file matches any of the given patterns
 func (m *Manager) fileMatchesAnyPattern(filePath string, patterns []string) bool {
+	relToWorkDir, err := filepath.Rel(m.workDir, filePath)
+	isExternal := err != nil || strings.HasPrefix(relToWorkDir, "..")
+
 	for _, pattern := range patterns {
+		// Floating inclusion patterns should not match external files
+		isFloatingInclusion := !strings.HasPrefix(pattern, "!") && !strings.Contains(pattern, "/")
+		if isFloatingInclusion && isExternal {
+			continue
+		}
+
 		// Get appropriate path for matching
 		relPath, _ := filepath.Rel(m.workDir, filePath)
 		relPath = filepath.ToSlash(relPath)
