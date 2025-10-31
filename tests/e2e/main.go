@@ -48,6 +48,7 @@ func main() {
 		PlainDirectoryPatternScenario(),
 		RecursiveParentPatternScenario(),
 		ExclusionPatternsScenario(),
+		NonExistentPathInRulesScenario(),
 		WorktreeExclusionScenario(),
 		AbsolutePathDirectoryPatternScenario(),
 		ExplicitWorktreeInclusionScenario(),

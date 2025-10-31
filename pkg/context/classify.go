@@ -280,7 +280,11 @@ func (m *Manager) extractRootPaths(patterns []string) []string {
 			}
 
 			if basePath != "" {
-				rootsMap[basePath] = true
+				// Check if the path exists and is a directory before adding it to the walk list.
+				// This prevents WalkDir from crashing on non-existent paths from rules.
+				if stat, err := os.Stat(basePath); err == nil && stat.IsDir() {
+					rootsMap[basePath] = true
+				}
 			}
 		} else if strings.HasPrefix(pattern, "../") {
 			// For relative external paths like ../grove-flow/**/*.go
