@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -165,6 +166,9 @@ func (p *listPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		}
 
 		switch {
+		case key.Matches(msg, p.keys.Exclude):
+			p.lastKey = ""
+			return p, p.excludeFileCmd()
 		case key.Matches(msg, p.keys.GotoTop):
 			// Handle 'gg' - go to top
 			if p.lastKey == "g" {
@@ -217,4 +221,21 @@ func (p *listPage) View() string {
 		Width(p.width).
 		Height(p.height - 5).
 		Render(p.list.View())
+}
+
+// excludeFileCmd creates a command to exclude the selected file from context
+func (p *listPage) excludeFileCmd() tea.Cmd {
+	if item, ok := p.list.SelectedItem().(listItem); ok {
+		return func() tea.Msg {
+			mgr := context.NewManager("")
+			// AppendRule adds the '!' prefix internally for "exclude" type
+			if err := mgr.AppendRule(item.realPath, "exclude"); err != nil {
+				fmt.Fprintf(os.Stderr, "Error excluding %s: %v\n", item.realPath, err)
+				return nil
+			}
+			// Signal the main model to refresh all data
+			return refreshStateMsg{}
+		}
+	}
+	return nil
 }

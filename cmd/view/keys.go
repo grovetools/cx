@@ -12,6 +12,7 @@ type pagerKeyMap struct {
 	PrevPage     key.Binding
 	Edit         key.Binding
 	SelectRules  key.Binding
+	Exclude      key.Binding
 	GotoTop      key.Binding
 	GotoBottom   key.Binding
 	HalfPageUp   key.Binding
@@ -55,6 +56,10 @@ var pagerKeys = pagerKeyMap{
 	SelectRules: key.NewBinding(
 		key.WithKeys("s"),
 		key.WithHelp("s", "select rule set"),
+	),
+	Exclude: key.NewBinding(
+		key.WithKeys("x"),
+		key.WithHelp("x", "exclude"),
 	),
 	GotoTop: key.NewBinding(
 		key.WithKeys("g"),
