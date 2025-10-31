@@ -13,15 +13,19 @@ type pagerKeyMap struct {
 	Edit         key.Binding
 	SelectRules  key.Binding
 	Exclude      key.Binding
+	ExcludeDir   key.Binding
+	ToggleSort   key.Binding
+	Refresh      key.Binding
 	GotoTop      key.Binding
 	GotoBottom   key.Binding
 	HalfPageUp   key.Binding
 	HalfPageDown key.Binding
+	FoldPrefix   key.Binding // 'z' prefix for fold commands
 }
 
 // ShortHelp returns keybindings to be shown in the footer.
 func (k pagerKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.NextPage, k.PrevPage, k.Edit, k.SelectRules, k.Quit}
+	return []key.Binding{k.Help, k.ToggleSort, k.NextPage, k.PrevPage, k.Edit, k.SelectRules, k.Quit}
 }
 
 // FullHelp returns keybindings for the expanded help view.
@@ -57,9 +61,25 @@ var pagerKeys = pagerKeyMap{
 		key.WithKeys("s"),
 		key.WithHelp("s", "select rule set"),
 	),
+	ToggleSort: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "toggle sort"),
+	),
 	Exclude: key.NewBinding(
 		key.WithKeys("x"),
-		key.WithHelp("x", "exclude"),
+		key.WithHelp("x", "exclude file"),
+	),
+	ExcludeDir: key.NewBinding(
+		key.WithKeys("X"),
+		key.WithHelp("X", "exclude dir"),
+	),
+	Refresh: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "refresh"),
+	),
+	FoldPrefix: key.NewBinding(
+		key.WithKeys("z"),
+		key.WithHelp("za/zo/zc/zR/zM", "fold operations"),
 	),
 	GotoTop: key.NewBinding(
 		key.WithKeys("g"),
