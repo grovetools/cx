@@ -9,16 +9,23 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/tui/theme"
 )
 
 type listItem struct {
-	path   string
-	tokens int
+	realPath  string
+	ecosystem string // Ecosystem context (e.g., "grove-ecosystem/")
+	repo      string // Repository name (e.g., "grove-core/")
+	path      string // File path relative to repo
+	tokens    int
+	isLocal   bool // True if file is in CWD, false if external/aliased
 }
 
-func (i listItem) Title() string       { return i.path }
-func (i listItem) Description() string { return fmt.Sprintf("~%s tokens", context.FormatTokenCount(i.tokens)) }
-func (i listItem) FilterValue() string { return i.path }
+func (i listItem) Title() string { return i.ecosystem + i.repo + i.path }
+func (i listItem) Description() string {
+	return fmt.Sprintf("~%s tokens", context.FormatTokenCount(i.tokens))
+}
+func (i listItem) FilterValue() string { return i.realPath }
 
 type itemDelegate struct{}
 
@@ -31,17 +38,29 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		return
 	}
 
-	str := i.Title()
+	// Build the path string with colored components
+	var pathStr string
+	if i.ecosystem != "" {
+		// Render ecosystem in Accent color (Violet)
+		pathStr += theme.DefaultTheme.Accent.Render(i.ecosystem)
+	}
+	if i.repo != "" {
+		// Render repo in Highlight color (Orange)
+		pathStr += theme.DefaultTheme.Highlight.Render(i.repo)
+	}
+	// Path is rendered in normal color
+	pathStr += i.path
+
 	desc := i.Description()
 
 	fn := lipgloss.NewStyle().Padding(0, 0, 0, 2)
 	if index == m.Index() {
-		str = "> " + str
+		pathStr = "> " + pathStr
 	} else {
-		str = "  " + str
+		pathStr = "  " + pathStr
 	}
 
-	fmt.Fprint(w, fn.Render(str)+" "+lipgloss.NewStyle().Faint(true).Render(desc))
+	fmt.Fprint(w, fn.Render(pathStr)+" "+lipgloss.NewStyle().Faint(true).Render(desc))
 }
 
 type listPage struct {
@@ -74,7 +93,6 @@ func (p *listPage) Keys() interface{} {
 func (p *listPage) Init() tea.Cmd { return nil }
 
 func (p *listPage) Focus() tea.Cmd {
-	var items []list.Item
 	// Create a map of file paths to their stats for quick lookup
 	fileStats := make(map[string]context.FileStats)
 	if p.sharedState.hotStats != nil {
@@ -84,13 +102,37 @@ func (p *listPage) Focus() tea.Cmd {
 		}
 	}
 
+	// Separate local and external files
+	var localItems, externalItems []list.Item
+
 	for _, path := range p.sharedState.hotFiles {
 		tokens := 0
 		if stat, ok := fileStats[path]; ok {
 			tokens = stat.Tokens
 		}
-		items = append(items, listItem{path: path, tokens: tokens})
+		pathInfo := p.sharedState.getDisplayPathInfo(path)
+
+		// Determine if file is local (no ecosystem prefix)
+		isLocal := pathInfo.ecosystem == ""
+
+		item := listItem{
+			realPath:  path,
+			ecosystem: pathInfo.ecosystem,
+			repo:      pathInfo.repo,
+			path:      pathInfo.path,
+			tokens:    tokens,
+			isLocal:   isLocal,
+		}
+
+		if isLocal {
+			localItems = append(localItems, item)
+		} else {
+			externalItems = append(externalItems, item)
+		}
 	}
+
+	// Combine: local files first, then external
+	items := append(localItems, externalItems...)
 
 	p.list.SetItems(items)
 	return nil

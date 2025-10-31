@@ -1,24 +1,29 @@
 package view
 
 import (
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/sirupsen/logrus"
 )
 
 // sharedState holds all the data that is shared across different pages of the TUI.
 type sharedState struct {
-	loading      bool
-	err          error
-	hotFiles     []string
-	coldFiles    []string
-	rulesContent string
-	rulesPath    string // Path to the active rules file
-	hotStats     *context.ContextStats
-	coldStats    *context.ContextStats
-	projects     []*workspace.WorkspaceNode
+	loading         bool
+	err             error
+	hotFiles        []string
+	coldFiles       []string
+	rulesContent    string
+	rulesPath       string // Path to the active rules file
+	hotStats        *context.ContextStats
+	coldStats       *context.ContextStats
+	projects        []*workspace.WorkspaceNode
+	projectProvider *workspace.Provider
 	// Parsed rules
 	hotRules  []string
 	coldRules []string
@@ -84,17 +89,86 @@ func refreshSharedStateCmd() tea.Cmd {
 			newState.coldStats = coldStats
 		}
 
-		// Load projects
-		projects, err := workspace.GetProjects(nil)
+		// Load projects using full discovery to get a provider
+		logger := logrus.New()
+		logger.SetOutput(io.Discard) // Discard logs to not mess with TUI
+		discoveryService := workspace.NewDiscoveryService(logger)
+		discoveryResult, err := discoveryService.DiscoverAll()
 		if err != nil {
 			newState.err = err
 			// Continue, don't fail the whole TUI
 		} else {
-			newState.projects = projects
+			provider := workspace.NewProvider(discoveryResult)
+			newState.projectProvider = provider
+			newState.projects = provider.All() // Get all nodes from the provider
 		}
 
 		return stateRefreshedMsg{state: newState}
 	}
+}
+
+// displayPathInfo holds information about how to display a file path
+type displayPathInfo struct {
+	ecosystem string // Ecosystem context (e.g., "grove-ecosystem/")
+	repo      string // Repository name (e.g., "grove-core/")
+	path      string // File path relative to repo (e.g., "pkg/workspace/types.go")
+}
+
+// getDisplayPathInfo converts an absolute file path to a display-friendly format with ecosystem context.
+// Returns ecosystem, repo, and path separately for colored rendering.
+func (s *sharedState) getDisplayPathInfo(filePath string) displayPathInfo {
+	if s.projectProvider == nil {
+		return displayPathInfo{path: filePath}
+	}
+
+	absFilePath, err := filepath.Abs(filePath)
+	if err != nil {
+		return displayPathInfo{path: filePath}
+	}
+
+	node := s.projectProvider.FindByPath(absFilePath)
+	if node != nil {
+		projectName := node.Name
+		projectPath := node.Path
+
+		// If it's a project worktree, use its parent's name for context,
+		// but calculate the relative path from the worktree's own root.
+		if node.IsProjectWorktreeChild() {
+			if parentNode := s.projectProvider.FindByPath(node.ParentProjectPath); parentNode != nil {
+				projectName = parentNode.Name
+				projectPath = node.Path
+			}
+		}
+
+		relPath, err := filepath.Rel(projectPath, absFilePath)
+		if err == nil {
+			// Add ecosystem context if this is part of an ecosystem
+			var ecosystemName string
+			if node.RootEcosystemPath != "" {
+				// Find the ecosystem node to get its name
+				ecosystemNode := s.projectProvider.FindByPath(node.RootEcosystemPath)
+				if ecosystemNode != nil {
+					ecosystemName = ecosystemNode.Name + "/"
+				}
+			}
+
+			return displayPathInfo{
+				ecosystem: ecosystemName,
+				repo:      projectName + "/",
+				path:      relPath,
+			}
+		}
+	}
+
+	// As a fallback, try to make the path relative to the current working directory.
+	cwd, err := os.Getwd()
+	if err == nil {
+		if relPath, err := filepath.Rel(cwd, absFilePath); err == nil && !strings.HasPrefix(relPath, "..") {
+			return displayPathInfo{path: relPath}
+		}
+	}
+
+	return displayPathInfo{path: filePath}
 }
 
 // parseRules parses the rules content and populates hotRules, coldRules, and viewPaths.
