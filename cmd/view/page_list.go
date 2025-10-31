@@ -74,7 +74,8 @@ func (p *listPage) Focus() tea.Cmd {
 	// Create a map of file paths to their stats for quick lookup
 	fileStats := make(map[string]context.FileStats)
 	if p.sharedState.hotStats != nil {
-		for _, fs := range p.sharedState.hotStats.LargestFiles { // LargestFiles contains all files sorted
+		// AllFiles contains stats for every file
+		for _, fs := range p.sharedState.hotStats.AllFiles {
 			fileStats[fs.Path] = fs
 		}
 	}

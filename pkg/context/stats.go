@@ -44,6 +44,7 @@ type ContextStats struct {
 	TotalSize    int64                     `json:"total_size"`
 	Languages    map[string]*LanguageStats `json:"languages"`
 	LargestFiles []FileStats               `json:"largest_files"`
+	AllFiles     []FileStats               `json:"all_files"`
 	Distribution []TokenDistribution       `json:"distribution"`
 	AvgTokens    int                       `json:"avg_tokens"`
 	MedianTokens int                       `json:"median_tokens"`
@@ -108,6 +109,9 @@ func (m *Manager) GetStats(contextType string, files []string, topN int) (*Conte
 			lang.Percentage = float64(lang.TotalTokens) * 100 / float64(stats.TotalTokens)
 		}
 	}
+
+	// Store stats for all files before sorting/slicing
+	stats.AllFiles = allFiles
 
 	// Sort files by token count and get top N
 	sort.Slice(allFiles, func(i, j int) bool {
