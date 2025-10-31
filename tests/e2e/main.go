@@ -19,6 +19,9 @@ func main() {
 		BasicContextGenerationScenario(),
 		MissingRulesScenario(),
 
+		// Regression Scenarios
+		GitignoreStyleBasenameExclusionScenario(),
+
 		// Alias Scenarios
 		AliasWorkflowScenario(),
 		AliasNamespacingScenario(),

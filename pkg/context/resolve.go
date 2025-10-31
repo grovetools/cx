@@ -54,19 +54,36 @@ func newPatternMatcher(patternInfos []patternInfo, workDir string) *patternMatch
 		if info.isExclude {
 			cleanPattern := filepath.ToSlash(pattern)
 
-			if !strings.HasSuffix(cleanPattern, "/") {
-				if strings.Contains(cleanPattern, "**") {
-					parts := strings.Split(cleanPattern, "/")
+			// Only add directory-specific patterns to dirExclusions
+			// A pattern is directory-specific if it ends with "/"
+			if strings.HasSuffix(cleanPattern, "/") {
+				dirName := strings.TrimSuffix(cleanPattern, "/")
+				if dirName != "" && !strings.Contains(dirName, "*") && !strings.Contains(dirName, "?") {
+					// Extract just the directory name for the optimization
+					parts := strings.Split(dirName, "/")
 					if len(parts) > 0 {
-						dirName := parts[len(parts)-1]
-						if dirName != "" && !strings.Contains(dirName, "*") && !strings.Contains(dirName, "?") {
-							matcher.dirExclusions[dirName] = true
+						lastName := parts[len(parts)-1]
+						if lastName != "" {
+							matcher.dirExclusions[lastName] = true
 						}
 					}
-				} else if !strings.Contains(cleanPattern, "*") && !strings.Contains(cleanPattern, "?") {
-					matcher.dirExclusions[cleanPattern] = true
+				}
+			} else if strings.Contains(cleanPattern, "**") {
+				// For ** patterns, only add to dirExclusions if the last component is a literal directory name
+				parts := strings.Split(cleanPattern, "/")
+				if len(parts) > 0 {
+					dirName := parts[len(parts)-1]
+					// Only add if it's a literal name (no wildcards) AND pattern structure suggests it's for directories
+					// For example: !**/node_modules would add "node_modules" since it's commonly a directory
+					// But !**/main.go should NOT be added since .go files are typically files, not directories
+					if dirName != "" && !strings.Contains(dirName, "*") && !strings.Contains(dirName, "?") && !strings.Contains(dirName, ".") {
+						matcher.dirExclusions[dirName] = true
+					}
 				}
 			}
+			// Note: We deliberately do NOT add simple literal patterns like "main.go" to dirExclusions
+			// because they could match files OR directories, and the optimization only works for directories.
+			// Such patterns will be handled by the classify function for both files and directories.
 		}
 	}
 
@@ -106,24 +123,7 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 			}
 		}
 
-		if strings.Contains(cleanPattern, "**") {
-			match = matchDoubleStarPattern(cleanPattern, matchPath)
-		} else if matched, _ := filepath.Match(cleanPattern, matchPath); matched {
-			match = true
-		} else if !strings.Contains(cleanPattern, "/") {
-			if matched, _ := filepath.Match(cleanPattern, filepath.Base(matchPath)); matched {
-				match = true
-			}
-			if !match {
-				parts := strings.Split(matchPath, "/")
-				for _, part := range parts {
-					if matched, _ := filepath.Match(cleanPattern, part); matched {
-						match = true
-						break
-					}
-				}
-			}
-		}
+		match = m.matchPattern(cleanPattern, matchPath)
 
 		if match {
 			if !info.isExclude && info.directive == "" {
@@ -1039,14 +1039,17 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	// First pass: process inclusion and exclusion patterns
 	for _, info := range patternInfos {
 		// Check if this is an exact file path that exists
-		filePath := info.pattern
-		if !filepath.IsAbs(filePath) {
-			filePath = filepath.Join(m.workDir, filePath)
-		}
-		filePath = filepath.Clean(filePath)
+		// IMPORTANT: Only treat as an exact file for INCLUSION patterns.
+		// Exclusion patterns should always be treated as patterns, not exact files,
+		// to support gitignore-style semantics (e.g., !main.go should exclude all main.go files).
+		if !info.isExclude {
+			filePath := info.pattern
+			if !filepath.IsAbs(filePath) {
+				filePath = filepath.Join(m.workDir, filePath)
+			}
+			filePath = filepath.Clean(filePath)
 
-		if fstat, err := os.Stat(filePath); err == nil && !fstat.IsDir() {
-			if !info.isExclude {
+			if fstat, err := os.Stat(filePath); err == nil && !fstat.IsDir() {
 				if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
 					uniqueFiles[filePath] = true
 				} else {
@@ -1057,8 +1060,8 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 						uniqueFiles[filePath] = true
 					}
 				}
+				continue
 			}
-			continue
 		}
 
 		// If not an exact file, treat as a pattern
