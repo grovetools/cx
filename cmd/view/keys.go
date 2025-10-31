@@ -160,7 +160,7 @@ type treeViewKeyMap struct {
 }
 
 func (k treeViewKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, key.NewBinding(key.WithHelp("tab", "repos")), k.Quit}
+	return []key.Binding{k.Help, k.Quit}
 }
 
 func (k treeViewKeyMap) FullHelp() [][]key.Binding {
@@ -186,7 +186,7 @@ func (k treeViewKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "Toggle hot context")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Toggle cold context")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "Toggle exclude")),
-			key.NewBinding(key.WithKeys("tab", "A"), key.WithHelp("tab/A", "Repository view")),
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "Next Page")),
 			key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "Toggle pruning")),
 			key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "Toggle gitignored")),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "Refresh view")),
@@ -196,61 +196,6 @@ func (k treeViewKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
-type repoSelectKeyMap struct {
-	keymap.Base
-	FocusEcosystem key.Binding
-	ClearFocus     key.Binding
-	Hot            key.Binding
-	Cold           key.Binding
-	Exclude        key.Binding
-	ViewInTree     key.Binding
-}
-
-func (k repoSelectKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, key.NewBinding(key.WithHelp("tab", "tree")), k.Quit}
-}
-
-func (k repoSelectKeyMap) FullHelp() [][]key.Binding {
-	// Replicates the content from the old renderRepoHelp function
-	return [][]key.Binding{
-		{
-			key.NewBinding(key.WithHelp("", "Navigation:")),
-			key.NewBinding(key.WithKeys("up", "down", "j", "k"), key.WithHelp("↑/↓, j/k", "Move up/down")),
-			key.NewBinding(key.WithKeys("ctrl+u", "ctrl+d"), key.WithHelp("ctrl-u/d", "Half page up/down")),
-			key.NewBinding(key.WithKeys("g", "G"), key.WithHelp("g/G", "Go to top/bottom")),
-			key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "Filter repositories")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "Clear filter")),
-			key.NewBinding(key.WithHelp("", "Folding (vim-style):")),
-			key.NewBinding(key.WithKeys("z"), key.WithHelp("zo/zc", "Open/close fold")),
-			key.NewBinding(key.WithKeys("z"), key.WithHelp("zR/zM", "Open/close all")),
-			key.NewBinding(key.WithHelp("", "Context Actions:")),
-			key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "Toggle hot context")),
-			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Toggle cold context")),
-			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "Toggle exclude")),
-			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "Add/remove from tree")),
-		},
-		{
-			key.NewBinding(key.WithHelp("", "Repository Actions:")),
-			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "Refresh list")),
-			key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "Audit repository")),
-			key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "View audit report")),
-			key.NewBinding(key.WithHelp("", "View Control:")),
-			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "Switch to tree view")),
-			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "Quit")),
-			key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "Toggle this help")),
-		},
-	}
-}
-
 var (
 	treeKeys = treeViewKeyMap{Base: keymap.NewBase()}
-	repoKeys = repoSelectKeyMap{
-		Base:           keymap.NewBase(),
-		FocusEcosystem: key.NewBinding(key.WithKeys("@"), key.WithHelp("@", "focus ecosystem")),
-		ClearFocus:     key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("ctrl+g", "clear focus")),
-		Hot:            key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "toggle hot")),
-		Cold:           key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "toggle cold")),
-		Exclude:        key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "toggle exclude")),
-		ViewInTree:     key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "view in tree")),
-	}
 )

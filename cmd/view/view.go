@@ -42,7 +42,7 @@ func NewViewCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&startPage, "page", "p", "tree", "The page to open on startup (tree, repo, rules, stats, list)")
+	cmd.Flags().StringVarP(&startPage, "page", "p", "tree", "The page to open on startup (tree, rules, stats, list)")
 	return cmd
 }
 
@@ -61,11 +61,16 @@ type pagerModel struct {
 }
 
 func newPagerModel(startPage string) (*pagerModel, error) {
+	if startPage == "repo" {
+		fmt.Println("The 'repo' view is deprecated and has been removed.")
+		fmt.Println("Please use 'gmux sessionize' (or 'gmux sz') for a more powerful workspace view.")
+		return nil, fmt.Errorf("repo view deprecated")
+	}
+
 	state := &sharedState{loading: true}
 
 	pages := []Page{
 		NewTreePage(state),
-		NewRepoPage(state),
 		NewRulesPage(state),
 		NewStatsPage(state),
 		NewListPage(state),

@@ -94,6 +94,36 @@ func (m *Manager) LoadDefaultRulesContent() (content []byte, rulesPath string) {
 	return nil, rulesPath
 }
 
+// GetDefaultRuleName returns the name of the default rule set from grove.yml.
+// For example, if default_rules_path is ".cx/dev-no-tests.rules", it returns "dev-no-tests".
+// Returns empty string if no default is configured.
+func (m *Manager) GetDefaultRuleName() string {
+	// Load grove.yml to check for default rules
+	cfg, err := config.LoadFrom(m.workDir)
+	if err != nil || cfg == nil {
+		return ""
+	}
+
+	// Use custom extension approach
+	var contextConfig struct {
+		DefaultRulesPath string `yaml:"default_rules_path"`
+	}
+
+	if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
+		return ""
+	}
+
+	if contextConfig.DefaultRulesPath != "" {
+		// Extract just the filename without extension
+		base := filepath.Base(contextConfig.DefaultRulesPath)
+		// Remove .rules extension if present
+		name := strings.TrimSuffix(base, ".rules")
+		return name
+	}
+
+	return ""
+}
+
 // LoadRulesContent finds and reads the active rules file, falling back to grove.yml defaults.
 // It returns the content of the rules, the path of the file read (if any), and an error.
 func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
