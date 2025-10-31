@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -48,6 +49,8 @@ type listPage struct {
 	list        list.Model
 	width       int
 	height      int
+	keys        pagerKeyMap
+	lastKey     string // Track last key for gg handling
 }
 
 func NewListPage(state *sharedState) Page {
@@ -58,13 +61,14 @@ func NewListPage(state *sharedState) Page {
 	return &listPage{
 		sharedState: state,
 		list:        l,
+		keys:        pagerKeys,
 	}
 }
 
 func (p *listPage) Name() string { return "list" }
 
 func (p *listPage) Keys() interface{} {
-	return pagerKeys
+	return p.keys
 }
 
 func (p *listPage) Init() tea.Cmd { return nil }
@@ -103,6 +107,58 @@ func (p *listPage) SetSize(width, height int) {
 
 func (p *listPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// When filtering, pass keys to list for handling
+		if p.list.FilterState() == list.Filtering {
+			break // Let the default list update handle it
+		}
+
+		switch {
+		case key.Matches(msg, p.keys.GotoTop):
+			// Handle 'gg' - go to top
+			if p.lastKey == "g" {
+				p.list.Select(0)
+				p.lastKey = ""
+				return p, nil
+			}
+			p.lastKey = "g"
+			return p, nil
+		case key.Matches(msg, p.keys.GotoBottom):
+			// Handle 'G' - go to bottom
+			p.list.Select(len(p.list.Items()) - 1)
+			p.lastKey = ""
+			return p, nil
+		case key.Matches(msg, p.keys.HalfPageUp):
+			// Handle Ctrl-u - half page up
+			current := p.list.Index()
+			halfPage := p.list.Height() / 2
+			newIndex := current - halfPage
+			if newIndex < 0 {
+				newIndex = 0
+			}
+			p.list.Select(newIndex)
+			p.lastKey = ""
+			return p, nil
+		case key.Matches(msg, p.keys.HalfPageDown):
+			// Handle Ctrl-d - half page down
+			current := p.list.Index()
+			halfPage := p.list.Height() / 2
+			newIndex := current + halfPage
+			maxIndex := len(p.list.Items()) - 1
+			if newIndex > maxIndex {
+				newIndex = maxIndex
+			}
+			p.list.Select(newIndex)
+			p.lastKey = ""
+			return p, nil
+		default:
+			// Reset lastKey on any other key
+			p.lastKey = ""
+		}
+	}
+
 	p.list, cmd = p.list.Update(msg)
 	return p, cmd
 }

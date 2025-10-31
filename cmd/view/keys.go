@@ -8,10 +8,14 @@ import (
 // pagerKeyMap defines the key bindings for the main pager view.
 type pagerKeyMap struct {
 	keymap.Base
-	NextPage    key.Binding
-	PrevPage    key.Binding
-	Edit        key.Binding
-	SelectRules key.Binding
+	NextPage     key.Binding
+	PrevPage     key.Binding
+	Edit         key.Binding
+	SelectRules  key.Binding
+	GotoTop      key.Binding
+	GotoBottom   key.Binding
+	HalfPageUp   key.Binding
+	HalfPageDown key.Binding
 }
 
 // ShortHelp returns keybindings to be shown in the footer.
@@ -51,6 +55,22 @@ var pagerKeys = pagerKeyMap{
 	SelectRules: key.NewBinding(
 		key.WithKeys("s"),
 		key.WithHelp("s", "select rule set"),
+	),
+	GotoTop: key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("gg", "go to top"),
+	),
+	GotoBottom: key.NewBinding(
+		key.WithKeys("G"),
+		key.WithHelp("G", "go to bottom"),
+	),
+	HalfPageUp: key.NewBinding(
+		key.WithKeys("ctrl+u"),
+		key.WithHelp("ctrl-u", "half page up"),
+	),
+	HalfPageDown: key.NewBinding(
+		key.WithKeys("ctrl+d"),
+		key.WithHelp("ctrl-d", "half page down"),
 	),
 }
 
