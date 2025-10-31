@@ -1,19 +1,12 @@
-# Include all Go source files
 **/*.go
-
-# Main/build/config files
-main.go
 Makefile
 go.mod
 grove.yml
-!go.sum
 
 # Exclude test files
 !tests/**
-!test/**
 !**/*_test.go
 
-# Exclude docs
-!docs
-
-@a:grove-ecosystem:grove-core::dev-no-tests
+# Common co-repos
+# @a:grove-ecosystem:grove-core::dev-no-tests
+# @a:grove-ecosystem:grove-nvim/**/*.{lua,go,vim}
