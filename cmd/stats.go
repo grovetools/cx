@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -141,7 +142,27 @@ func outputPerLineStats(args []string) error {
 		return fmt.Errorf("failed to read rules file: %w", err)
 	}
 
-	mgr := context.NewManager(".")
+	// Convert to absolute path first to handle relative paths correctly
+	absRulesPath, err := filepath.Abs(rulesFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// Determine the project root for workDir
+	// Patterns in rules files are relative to the project root
+	// If the rules file is in .grove/, .cx/, or .cx.work/, use the parent directory as workDir
+	// Otherwise, use the current working directory
+	rulesDir := filepath.Dir(absRulesPath)
+	baseName := filepath.Base(rulesDir)
+	var workDir string
+	if baseName == ".grove" || baseName == ".cx" || baseName == ".cx.work" {
+		workDir = filepath.Dir(rulesDir)
+	} else {
+		// For rules files not in standard directories, use current working directory
+		workDir = "."
+	}
+
+	mgr := context.NewManager(workDir)
 	attribution, _, exclusions, filteredMatches, err := mgr.ResolveFilesWithAttribution(string(rulesContent))
 	if err != nil {
 		return fmt.Errorf("failed to analyze rules: %w", err)
