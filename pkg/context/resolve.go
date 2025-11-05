@@ -288,7 +288,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
+		// Find the ruleset file in both .cx/ and .cx.work/ directories
+		rulesFilePath, err := FindRulesetFile(projectPath, rulesetName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not find ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
+			continue
+		}
 
 		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
 		if err != nil {
@@ -354,7 +359,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
+		// Find the ruleset file in both .cx/ and .cx.work/ directories
+		rulesFilePath, err := FindRulesetFile(projectPath, rulesetName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not find ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
+			continue
+		}
 
 		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
 		if err != nil {

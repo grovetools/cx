@@ -138,8 +138,11 @@ func (m *Manager) resolvePatternsFromRulesetImport(importRule string) ([]string,
 		return nil, fmt.Errorf("could not resolve project alias '%s': %w", projectAlias, err)
 	}
 
-	// 3. Construct the path to the ruleset file
-	rulesFilePath := filepath.Join(projectPath, ".cx", rulesetName+".rules")
+	// 3. Find the ruleset file - check both .cx/ and .cx.work/
+	rulesFilePath, err := FindRulesetFile(projectPath, rulesetName)
+	if err != nil {
+		return nil, fmt.Errorf("could not find ruleset '%s' in project '%s': %w", rulesetName, projectAlias, err)
+	}
 
 	// 4. Expand all rules from that file
 	hotRules, coldRules, _, err := m.expandAllRules(rulesFilePath, make(map[string]bool), 0)
@@ -757,6 +760,25 @@ func (m *Manager) findGitRoot() string {
 	}
 
 	return "" // Not in a git repository
+}
+
+// FindRulesetFile searches for a ruleset file by name in both .cx/ and .cx.work/ directories.
+// It returns the absolute path to the file if found, or an error if not found.
+// This function checks .cx/ first, then .cx.work/ as a fallback.
+func FindRulesetFile(projectPath, rulesetName string) (string, error) {
+	// Check .cx/ directory first
+	rulesFilePath := filepath.Join(projectPath, RulesDir, rulesetName+RulesExt)
+	if _, err := os.Stat(rulesFilePath); err == nil {
+		return rulesFilePath, nil
+	}
+
+	// Try .cx.work/ as fallback
+	rulesFilePath = filepath.Join(projectPath, RulesWorkDir, rulesetName+RulesExt)
+	if _, err := os.Stat(rulesFilePath); err == nil {
+		return rulesFilePath, nil
+	}
+
+	return "", fmt.Errorf("ruleset '%s' not found in %s/ or %s/", rulesetName, RulesDir, RulesWorkDir)
 }
 
 // GetSkippedRules returns the list of rules that were skipped during the last parsing operation

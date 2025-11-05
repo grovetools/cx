@@ -75,17 +75,10 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			// Try to find the source file in .cx/ or .cx.work/
-			var sourcePath string
-			cxPath := filepath.Join(context.RulesDir, name+context.RulesExt)
-			cxWorkPath := filepath.Join(context.RulesWorkDir, name+context.RulesExt)
-
-			if _, err := os.Stat(cxPath); err == nil {
-				sourcePath = cxPath
-			} else if _, err := os.Stat(cxWorkPath); err == nil {
-				sourcePath = cxWorkPath
-			} else {
-				return fmt.Errorf("rule set '%s' not found in %s/ or %s/", name, context.RulesDir, context.RulesWorkDir)
+			// Find the source file in .cx/ or .cx.work/
+			sourcePath, err := context.FindRulesetFile(".", name)
+			if err != nil {
+				return err
 			}
 
 			// Read the source file
@@ -230,13 +223,8 @@ func newRulesListCmd() *cobra.Command {
 				prettyLog.InfoPretty("  No rule sets found.")
 			} else {
 				for _, name := range ruleNames {
-					// Check both directories for the rule
-					var path string
-					if _, err := os.Stat(filepath.Join(context.RulesDir, name+context.RulesExt)); err == nil {
-						path = filepath.Join(context.RulesDir, name+context.RulesExt)
-					} else if _, err := os.Stat(filepath.Join(context.RulesWorkDir, name+context.RulesExt)); err == nil {
-						path = filepath.Join(context.RulesWorkDir, name+context.RulesExt)
-					}
+					// Find the path for this ruleset (errors are ignored for display purposes)
+					path, _ := context.FindRulesetFile(".", name)
 
 					indicator := "  "
 					if path == activeSource {
@@ -265,10 +253,11 @@ func newRulesSetCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			sourcePath := filepath.Join(context.RulesDir, name+context.RulesExt)
 
-			if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-				return fmt.Errorf("rule set '%s' not found at %s", name, sourcePath)
+			// Find the ruleset file in .cx/ or .cx.work/
+			sourcePath, err := context.FindRulesetFile(".", name)
+			if err != nil {
+				return err
 			}
 
 			if err := state.Set(context.StateSourceKey, sourcePath); err != nil {
