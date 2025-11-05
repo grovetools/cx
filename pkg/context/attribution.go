@@ -155,7 +155,13 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 	// 6. For each included file, find all matching rules to determine attribution,
 	// superseded rules, and directive-filtered rules.
 	for _, file := range allFiles {
-		relPath, err := filepath.Rel(m.workDir, file)
+		// Get both absolute and relative paths for matching
+		absPath := file
+		if !filepath.IsAbs(file) {
+			absPath = filepath.Join(m.workDir, file)
+		}
+
+		relPath, err := filepath.Rel(m.workDir, absPath)
 		if err != nil {
 			relPath = file
 		}
@@ -175,7 +181,7 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			// For relative patterns, match against relative path
 			pathToMatch := relPath
 			if filepath.IsAbs(rule.Pattern) {
-				pathToMatch = filepath.ToSlash(file)
+				pathToMatch = filepath.ToSlash(absPath)
 			}
 
 			baseMatch := m.matchPattern(rule.Pattern, pathToMatch)
@@ -245,8 +251,13 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 				continue
 			}
 
-			// Get path relative to workDir for matching
-			relPath, err := filepath.Rel(m.workDir, file)
+			// Get both absolute and relative paths for matching
+			absPath := file
+			if !filepath.IsAbs(file) {
+				absPath = filepath.Join(m.workDir, file)
+			}
+
+			relPath, err := filepath.Rel(m.workDir, absPath)
 			if err != nil {
 				relPath = file
 			}
@@ -302,8 +313,13 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 	// 8. For each potential file, determine if it was excluded and by which rule
 	for _, file := range potentialFiles {
-		// Get path relative to workDir for matching
-		relPath, err := filepath.Rel(m.workDir, file)
+		// Get both absolute and relative paths for matching
+		absPath := file
+		if !filepath.IsAbs(file) {
+			absPath = filepath.Join(m.workDir, file)
+		}
+
+		relPath, err := filepath.Rel(m.workDir, absPath)
 		if err != nil {
 			relPath = file
 		}
@@ -325,7 +341,7 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			// For relative patterns, match against relative path
 			pathToMatch := relPath
 			if filepath.IsAbs(rule.Pattern) {
-				pathToMatch = filepath.ToSlash(file)
+				pathToMatch = filepath.ToSlash(absPath)
 			}
 
 			match := m.matchPattern(rule.Pattern, pathToMatch)
