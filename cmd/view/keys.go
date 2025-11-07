@@ -187,7 +187,6 @@ func (k treeViewKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Toggle cold context")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "Toggle exclude")),
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "Next Page")),
-			key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "Toggle pruning")),
 			key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "Toggle gitignored")),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "Refresh view")),
 			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "Quit")),

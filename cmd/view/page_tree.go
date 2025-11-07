@@ -18,12 +18,11 @@ type treePage struct {
 	sharedState *sharedState
 
 	// Tree view state
-	tree          *tree.FileNode
-	cursor        int
-	visibleNodes  []*nodeWithLevel
-	expandedPaths map[string]bool
-	scrollOffset  int
-	pruning       bool
+	tree           *tree.FileNode
+	cursor         int
+	visibleNodes   []*nodeWithLevel
+	expandedPaths  map[string]bool
+	scrollOffset   int
 	showGitIgnored bool
 
 	// Search state
@@ -72,7 +71,6 @@ func NewTreePage(state *sharedState) Page {
 	return &treePage{
 		sharedState:    state,
 		expandedPaths:  make(map[string]bool),
-		pruning:        false,
 		showGitIgnored: false,
 	}
 }
@@ -112,7 +110,7 @@ func (p *treePage) SetSize(width, height int) {
 func (p *treePage) loadTreeCmd() tea.Cmd {
 	return func() tea.Msg {
 		manager := context.NewManager("")
-		projectTree, err := tree.AnalyzeProjectTree(manager, p.pruning, p.showGitIgnored)
+		projectTree, err := tree.AnalyzeProjectTree(manager, p.showGitIgnored)
 		return treeLoadedMsg{tree: projectTree, err: err}
 	}
 }
@@ -448,15 +446,6 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			// Go to bottom
 			p.cursor = len(p.visibleNodes) - 1
 			p.ensureCursorVisible()
-		case "p":
-			// Toggle pruning mode
-			p.pruning = !p.pruning
-			if p.pruning {
-				p.statusMessage = "Pruning mode enabled - showing only directories with context files"
-			} else {
-				p.statusMessage = "Pruning mode disabled - showing all directories"
-			}
-			return p, p.loadTreeCmd()
 		case ".", "H":
 			// Toggle gitignored files visibility
 			p.showGitIgnored = !p.showGitIgnored
@@ -772,7 +761,7 @@ func (p *treePage) renderNode(index int) string {
 	relPath, _ := p.getRelativePath(node)
 	isDangerous, _ := p.isPathPotentiallyDangerous(relPath)
 	dangerSymbol := ""
-	if isDangerous && node.Status == tree.StatusOmittedNoMatch {
+	if isDangerous && node.Status == context.StatusOmittedNoMatch {
 		dangerSymbol = " ⚠️"
 	}
 
@@ -807,15 +796,15 @@ func (p *treePage) getIcon(node *tree.FileNode) string {
 
 func (p *treePage) getStatusSymbol(node *tree.FileNode) string {
 	switch node.Status {
-	case tree.StatusIncludedHot:
+	case context.StatusIncludedHot:
 		greenStyle := core_theme.DefaultTheme.Success // Green
 		return greenStyle.Render(" ✓")
-	case tree.StatusIncludedCold:
+	case context.StatusIncludedCold:
 		lightBlueStyle := core_theme.DefaultTheme.Accent // Light blue
 		return lightBlueStyle.Render(" ❄️")
-	case tree.StatusExcludedByRule:
+	case context.StatusExcludedByRule:
 		return " 🚫"
-	case tree.StatusIgnoredByGit:
+	case context.StatusIgnoredByGit:
 		return " 🙈" // Git ignored
 	default:
 		return ""
@@ -827,18 +816,18 @@ func (p *treePage) getStyle(node *tree.FileNode) lipgloss.Style {
 	// Base style based on status
 	var style lipgloss.Style
 	switch node.Status {
-	case tree.StatusIncludedHot:
+	case context.StatusIncludedHot:
 		style = theme.Success
-	case tree.StatusIncludedCold:
+	case context.StatusIncludedCold:
 		style = theme.Info
-	case tree.StatusExcludedByRule:
+	case context.StatusExcludedByRule:
 		style = theme.Error
-	case tree.StatusOmittedNoMatch:
+	case context.StatusOmittedNoMatch:
 		style = theme.Muted
-	case tree.StatusDirectory:
+	case context.StatusDirectory:
 		// Directories use bold for emphasis without explicit color
 		style = lipgloss.NewStyle().Bold(true)
-	case tree.StatusIgnoredByGit:
+	case context.StatusIgnoredByGit:
 		style = theme.Muted
 	default:
 		style = lipgloss.NewStyle()

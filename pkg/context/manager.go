@@ -961,3 +961,376 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 	// If not found in allowed roots, return error
 	return false, fmt.Sprintf("path '%s' is outside of any known or allowed workspace", path)
 }
+
+// ClassifyAllProjectFiles is the unified, deterministic classification engine that
+// resolves and classifies all files based on context rules. It returns a map of file
+// paths to their NodeStatus. This method ensures consistency across all views (tree, stats, list).
+func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeStatus, error) {
+	result := make(map[string]NodeStatus)
+
+	// Step 1: Get the definitive sets of hot and cold files using the existing stable methods
+	hotFiles, err := m.ResolveFilesFromRules()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve hot files: %w", err)
+	}
+
+	coldFiles, err := m.ResolveColdContextFiles()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve cold files: %w", err)
+	}
+
+	// Step 2: Load rules content for attribution
+	rulesContent, _, err := m.LoadRulesContent()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load rules content: %w", err)
+	}
+
+	// Get attribution to identify explicitly excluded files
+	_, _, exclusionResult, _, err := m.ResolveFilesWithAttribution(string(rulesContent))
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve attribution: %w", err)
+	}
+
+	// Step 3: Create maps for efficient lookup and convert relative paths to absolute
+	// Use filepath.EvalSymlinks to get the canonical path casing
+	hotFilesMap := make(map[string]bool)
+	for _, f := range hotFiles {
+		absPath := f
+		if !filepath.IsAbs(f) {
+			absPath = filepath.Join(m.workDir, f)
+		}
+		// Normalize the path to handle case-insensitive filesystems
+		if canonicalPath, err := filepath.EvalSymlinks(absPath); err == nil {
+			absPath = canonicalPath
+		}
+		hotFilesMap[absPath] = true
+	}
+
+	coldFilesMap := make(map[string]bool)
+	for _, f := range coldFiles {
+		absPath := f
+		if !filepath.IsAbs(f) {
+			absPath = filepath.Join(m.workDir, f)
+		}
+		// Normalize the path to handle case-insensitive filesystems
+		if canonicalPath, err := filepath.EvalSymlinks(absPath); err == nil {
+			absPath = canonicalPath
+		}
+		coldFilesMap[absPath] = true
+	}
+
+	// Extract excluded files from exclusionResult (which is a map[int][]string)
+	excludedFilesMap := make(map[string]bool)
+	for _, files := range exclusionResult {
+		for _, f := range files {
+			absPath := f
+			if !filepath.IsAbs(f) {
+				absPath = filepath.Join(m.workDir, f)
+			}
+			// Normalize the path to handle case-insensitive filesystems
+			if canonicalPath, err := filepath.EvalSymlinks(absPath); err == nil {
+				absPath = canonicalPath
+			}
+			excludedFilesMap[absPath] = true
+		}
+	}
+
+	// Step 4: Classify the resolved files (now all with absolute paths)
+	// Hot files (but not if they're also in cold - cold takes precedence)
+	for file := range hotFilesMap {
+		if !coldFilesMap[file] {
+			result[file] = StatusIncludedHot
+		}
+	}
+
+	// Cold files
+	for file := range coldFilesMap {
+		result[file] = StatusIncludedCold
+	}
+
+	// Excluded files
+	for file := range excludedFilesMap {
+		result[file] = StatusExcludedByRule
+	}
+
+	// Step 5: Extract root paths from the rules to know what directories to walk
+	// We need to walk these to find all files for the tree view
+	activeRulesFile := m.findActiveRulesFile()
+	if activeRulesFile == "" {
+		// If no rules file, check for defaults
+		_, defaultRulesFile := m.LoadDefaultRulesContent()
+		if _, err := os.Stat(defaultRulesFile); !os.IsNotExist(err) {
+			activeRulesFile = defaultRulesFile
+		} else {
+			// No active or default rules found - just return what we have
+			return result, nil
+		}
+	}
+
+	hotRules, coldRules, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand rules: %w", err)
+	}
+
+	// Extract patterns for root path discovery
+	var allPatterns []string
+	for _, rule := range hotRules {
+		pattern := rule.Pattern
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			allPatterns = append(allPatterns, "!"+pattern)
+		} else {
+			allPatterns = append(allPatterns, pattern)
+		}
+	}
+	for _, rule := range coldRules {
+		pattern := rule.Pattern
+		if rule.Directive != "" {
+			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
+		}
+		if rule.IsExclude {
+			allPatterns = append(allPatterns, "!"+pattern)
+		} else {
+			allPatterns = append(allPatterns, pattern)
+		}
+	}
+
+	// Pre-process patterns
+	allPatterns = m.preProcessPatterns(allPatterns)
+	rootPaths := m.extractRootPaths(allPatterns)
+
+	// Ensure working directory is in result
+	result[m.workDir] = StatusDirectory
+
+	// Step 6: Walk each root path to discover all files and directories
+	for _, rootPath := range rootPaths {
+		gitIgnoredFiles := make(map[string]bool)
+		if showGitIgnored {
+			gitIgnoredFiles, err = m.getGitIgnoredFiles(rootPath)
+			if err != nil {
+				// Non-fatal, continue without gitignore info
+				gitIgnoredFiles = make(map[string]bool)
+			}
+		}
+
+		// Ensure all parent directories up to workDir exist in result
+		if rootPath != m.workDir {
+			current := rootPath
+			for current != m.workDir && current != "/" && current != "." {
+				if _, exists := result[current]; !exists {
+					result[current] = StatusDirectory
+				}
+				parent := filepath.Dir(current)
+				if parent == current {
+					break
+				}
+				current = parent
+			}
+		}
+
+		// Walk the directory tree
+		err = filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// Skip the root itself
+			if path == rootPath {
+				return nil
+			}
+
+			// Skip .git and .grove directories BEFORE processing
+			if d.IsDir() && (d.Name() == ".git" || d.Name() == ".grove") {
+				return filepath.SkipDir
+			}
+
+			// Check if already classified
+			if _, exists := result[path]; exists {
+				return nil
+			}
+
+			// Classify based on what we know
+			if d.IsDir() {
+				if showGitIgnored && gitIgnoredFiles[path] {
+					result[path] = StatusIgnoredByGit
+				} else {
+					result[path] = StatusDirectory
+				}
+			} else {
+				// It's a file
+				if showGitIgnored && gitIgnoredFiles[path] {
+					result[path] = StatusIgnoredByGit
+				} else {
+					// Not in any of our resolved sets, so it's omitted
+					result[path] = StatusOmittedNoMatch
+				}
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to walk directory %s: %w", rootPath, err)
+		}
+	}
+
+	// Step 7: Ensure all parent directories of classified files exist in result
+	for path := range result {
+		if path == m.workDir {
+			continue
+		}
+
+		parent := filepath.Dir(path)
+		for parent != path && parent != "/" && parent != "." {
+			if _, exists := result[parent]; !exists {
+				result[parent] = StatusDirectory
+			}
+			path = parent
+			parent = filepath.Dir(path)
+		}
+	}
+
+	// Step 8: Filter tree nodes to remove empty directories
+	result = m.filterTreeNodes(result)
+
+	return result, nil
+}
+
+// filterTreeNodes filters the file tree to show all directories containing any non-git-ignored files
+func (m *Manager) filterTreeNodes(fileStatuses map[string]NodeStatus) map[string]NodeStatus {
+	// Build a map of directories to their children
+	dirChildren := make(map[string][]string)
+
+	// First pass: identify all parent-child relationships
+	for path, status := range fileStatuses {
+		if status == StatusIgnoredByGit {
+			continue // Skip ignored files
+		}
+
+		// Add this path to its parent's children
+		parent := filepath.Dir(path)
+		if parent != path { // Not the root
+			dirChildren[parent] = append(dirChildren[parent], path)
+		}
+	}
+
+	// Second pass: identify directories with included content
+	dirsWithContent := make(map[string]bool)
+
+	var markDirWithContent func(dirPath string)
+	markDirWithContent = func(dirPath string) {
+		if dirsWithContent[dirPath] {
+			return // Already marked
+		}
+		dirsWithContent[dirPath] = true
+
+		// Mark all parent directories as having content
+		parent := filepath.Dir(dirPath)
+		if parent != dirPath && parent != "/" && parent != "." {
+			markDirWithContent(parent)
+		}
+	}
+
+	// Mark directories that contain included files
+	for path, status := range fileStatuses {
+		// Any non-directory and non-git-ignored file counts as content
+		hasContent := status != StatusDirectory && status != StatusIgnoredByGit
+
+		// Also mark excluded directories themselves as having content so they show up
+		if status == StatusExcludedByRule {
+			hasContent = true
+			dirsWithContent[path] = true
+		}
+
+		if hasContent {
+			// This is a file with content - mark its parent directory
+			parent := filepath.Dir(path)
+			markDirWithContent(parent)
+		}
+	}
+
+	// Third pass: create the filtered result
+	filtered := make(map[string]NodeStatus)
+	for path, status := range fileStatuses {
+		if status == StatusDirectory || status == StatusExcludedByRule {
+			// Include directories that have content or are explicitly excluded
+			if dirsWithContent[path] || status == StatusExcludedByRule {
+				filtered[path] = status
+			}
+		} else if status != StatusIgnoredByGit {
+			// For files, check if their parent directory has content
+			parent := filepath.Dir(path)
+			if dirsWithContent[parent] {
+				// Include all non-ignored files whose parent directory has content
+				filtered[path] = status
+			}
+		}
+	}
+
+	return filtered
+}
+
+// extractRootPaths extracts all unique root paths from patterns
+func (m *Manager) extractRootPaths(patterns []string) []string {
+	rootsMap := make(map[string]bool)
+	rootsMap[m.workDir] = true // Always include working directory
+
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "!") {
+			pattern = strings.TrimPrefix(pattern, "!")
+		}
+
+		// Extract base path from pattern
+		if filepath.IsAbs(pattern) {
+			// For absolute paths, find the non-glob base
+			basePath := pattern
+			for i, part := range strings.Split(pattern, string(filepath.Separator)) {
+				if strings.ContainsAny(part, "*?[") {
+					basePath = strings.Join(strings.Split(pattern, string(filepath.Separator))[:i], string(filepath.Separator))
+					break
+				}
+			}
+
+			// If pattern is a file path (no glob), use its directory
+			if basePath == pattern && !strings.ContainsAny(pattern, "*?[") {
+				if stat, err := os.Stat(pattern); err == nil && !stat.IsDir() {
+					basePath = filepath.Dir(pattern)
+				}
+			}
+
+			if basePath != "" {
+				// Check if the path exists and is a directory before adding
+				if stat, err := os.Stat(basePath); err == nil && stat.IsDir() {
+					rootsMap[basePath] = true
+				}
+			}
+		} else if strings.HasPrefix(pattern, "../") {
+			// For relative external paths like ../grove-flow/**/*.go
+			parts := strings.Split(pattern, "/")
+			nonGlobParts := []string{}
+			for _, part := range parts {
+				if strings.ContainsAny(part, "*?[") {
+					break
+				}
+				nonGlobParts = append(nonGlobParts, part)
+			}
+			if len(nonGlobParts) > 0 {
+				relBase := strings.Join(nonGlobParts, "/")
+				absBase := filepath.Join(m.workDir, relBase)
+				absBase = filepath.Clean(absBase)
+				if stat, err := os.Stat(absBase); err == nil && stat.IsDir() {
+					rootsMap[absBase] = true
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	var roots []string
+	for root := range rootsMap {
+		roots = append(roots, root)
+	}
+	return roots
+}

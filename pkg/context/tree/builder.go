@@ -9,19 +9,6 @@ import (
 	"github.com/mattsolo1/grove-context/pkg/context"
 )
 
-// NodeStatus is an alias for context.NodeStatus
-type NodeStatus = context.NodeStatus
-
-// Re-export NodeStatus constants for convenience
-const (
-	StatusIncludedHot    = context.StatusIncludedHot
-	StatusIncludedCold   = context.StatusIncludedCold
-	StatusExcludedByRule = context.StatusExcludedByRule
-	StatusOmittedNoMatch = context.StatusOmittedNoMatch
-	StatusIgnoredByGit   = context.StatusIgnoredByGit
-	StatusDirectory      = context.StatusDirectory
-)
-
 // normalizePathKey returns a normalized version of the path for use as a map key
 // to handle case-insensitive filesystems. It doesn't change the actual path,
 // just provides a consistent key for deduplication.
@@ -34,7 +21,7 @@ func normalizePathKey(path string) string {
 type FileNode struct {
 	Path       string
 	Name       string
-	Status     NodeStatus
+	Status     context.NodeStatus
 	IsDir      bool
 	TokenCount int
 	Children   []*FileNode
@@ -42,38 +29,11 @@ type FileNode struct {
 
 // AnalyzeProjectTree walks the entire project and creates a tree structure showing
 // which files are included, excluded, or ignored based on context rules
-func AnalyzeProjectTree(m *context.Manager, prune bool, showGitIgnored bool) (*FileNode, error) {
-	// Use the centralized engine to get all file classifications
-	fileStatuses, err := m.ResolveAndClassifyAllFiles(prune)
+func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, error) {
+	// Use the new unified classification engine to get all file classifications
+	fileStatuses, err := m.ClassifyAllProjectFiles(showGitIgnored)
 	if err != nil {
 		return nil, err
-	}
-
-	// If showing gitignored files, we need to walk the entire tree to find them
-	if showGitIgnored {
-		gitIgnoredFiles, err := m.GetGitIgnoredFiles(m.GetWorkDir())
-		if err == nil {
-			// Walk the entire working directory to find all gitignored files
-			err = filepath.WalkDir(m.GetWorkDir(), func(path string, d os.DirEntry, err error) error {
-				if err != nil {
-					return nil // Continue walking even if we can't access a directory
-				}
-
-				// Skip .git directory
-				if d.IsDir() && d.Name() == ".git" {
-					return filepath.SkipDir
-				}
-
-				// If this file is gitignored and not already in our results, add it
-				if gitIgnoredFiles[path] {
-					if _, exists := fileStatuses[path]; !exists {
-						fileStatuses[path] = StatusIgnoredByGit
-					}
-				}
-
-				return nil
-			})
-		}
 	}
 
 	// Build FileNode map from the classifications
@@ -96,8 +56,8 @@ func AnalyzeProjectTree(m *context.Manager, prune bool, showGitIgnored bool) (*F
 	}
 
 	for path, status := range fileStatuses {
-		// Skip StatusIgnoredByGit unless explicitly requested
-		if status == StatusIgnoredByGit && !showGitIgnored {
+		// Skip context.StatusIgnoredByGit unless explicitly requested
+		if status == context.StatusIgnoredByGit && !showGitIgnored {
 			continue
 		}
 
@@ -116,22 +76,22 @@ func AnalyzeProjectTree(m *context.Manager, prune bool, showGitIgnored bool) (*F
 		// Check if this is an external file that is actually included (hot or cold context)
 		relPath, err := filepath.Rel(m.GetWorkDir(), path)
 		isExternal := err != nil || strings.HasPrefix(relPath, "..")
-		if isExternal && (status == StatusIncludedHot || status == StatusIncludedCold) {
+		if isExternal && (status == context.StatusIncludedHot || status == context.StatusIncludedCold) {
 			hasExternalFiles = true
 		}
 
 		// For directories outside workDir, only include them if they have included descendants
 		// We'll handle this filtering later, for now just create the node
-		isDir := status == StatusDirectory
+		isDir := status == context.StatusDirectory
 		// Check if excluded items are actually directories
-		if status == StatusExcludedByRule {
+		if status == context.StatusExcludedByRule {
 			if info, err := os.Stat(path); err == nil && info.IsDir() {
 				isDir = true
 			}
 		}
 		tokenCount := 0
 		// Calculate token count for included files
-		if !isDir && (status == StatusIncludedHot || status == StatusIncludedCold) {
+		if !isDir && (status == context.StatusIncludedHot || status == context.StatusIncludedCold) {
 			if info, err := os.Stat(path); err == nil {
 				// Estimate tokens as roughly 4 bytes per token
 				tokenCount = int(info.Size() / 4)
@@ -189,7 +149,7 @@ func buildTreeWithSyntheticRoot(workDir string, nodes map[string]*FileNode) *Fil
 	syntheticRoot := &FileNode{
 		Path:     "/",
 		Name:     "/",
-		Status:   StatusDirectory,
+		Status:   context.StatusDirectory,
 		IsDir:    true,
 		Children: []*FileNode{},
 	}
@@ -236,7 +196,7 @@ func buildTreeWithExternals(rootPath string, nodes map[string]*FileNode) *FileNo
 		root = &FileNode{
 			Path:     rootPath,
 			Name:     filepath.Base(rootPath),
-			Status:   StatusDirectory,
+			Status:   context.StatusDirectory,
 			IsDir:    true,
 			Children: []*FileNode{},
 		}
@@ -290,7 +250,7 @@ func ensureParentNodes(rootPath string, path string, nodes map[string]*FileNode)
 		nodes[parentKey] = &FileNode{
 			Path:     parentPath,
 			Name:     filepath.Base(parentPath),
-			Status:   StatusDirectory,
+			Status:   context.StatusDirectory,
 			IsDir:    true,
 			Children: []*FileNode{},
 		}
@@ -337,7 +297,7 @@ func calculateDirectoryTokenCounts(node *FileNode) int {
 
 // setDirectoryStatuses infers directory status from children
 func setDirectoryStatuses(node *FileNode) {
-	if !node.IsDir || node.Status == StatusExcludedByRule {
+	if !node.IsDir || node.Status == context.StatusExcludedByRule {
 		return
 	}
 
@@ -354,13 +314,13 @@ func setDirectoryStatuses(node *FileNode) {
 	hotCount, coldCount, excludedCount, omittedCount := 0, 0, 0, 0
 	for _, child := range node.Children {
 		switch child.Status {
-		case StatusIncludedHot:
+		case context.StatusIncludedHot:
 			hotCount++
-		case StatusIncludedCold:
+		case context.StatusIncludedCold:
 			coldCount++
-		case StatusExcludedByRule:
+		case context.StatusExcludedByRule:
 			excludedCount++
-		case StatusOmittedNoMatch:
+		case context.StatusOmittedNoMatch:
 			omittedCount++
 		}
 	}
@@ -368,12 +328,12 @@ func setDirectoryStatuses(node *FileNode) {
 	// Set directory status based on predominant child status
 	// Priority: Hot > Cold > Excluded > Omitted
 	if hotCount > 0 {
-		node.Status = StatusIncludedHot
+		node.Status = context.StatusIncludedHot
 	} else if coldCount > 0 {
-		node.Status = StatusIncludedCold
+		node.Status = context.StatusIncludedCold
 	} else if excludedCount > 0 {
-		node.Status = StatusExcludedByRule
+		node.Status = context.StatusExcludedByRule
 	} else if omittedCount > 0 {
-		node.Status = StatusOmittedNoMatch
+		node.Status = context.StatusOmittedNoMatch
 	}
 }
