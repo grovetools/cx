@@ -1022,11 +1022,21 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	allPatterns = m.preProcessPatterns(allPatterns)
 	rootPaths := m.extractRootPaths(allPatterns)
 
-	// Ensure working directory is in result
-	result[m.workDir] = StatusDirectory
+	// Ensure working directory is in result (canonicalized)
+	workDirCanonical := m.workDir
+	if wd, err := filepath.EvalSymlinks(m.workDir); err == nil {
+		workDirCanonical = wd
+	}
+	result[workDirCanonical] = StatusDirectory
 
 	// Step 6: Walk each root path to discover all files and directories
 	for _, rootPath := range rootPaths {
+		// Canonicalize the root path for consistent comparisons
+		rootPathCanonical := rootPath
+		if rp, err := filepath.EvalSymlinks(rootPath); err == nil {
+			rootPathCanonical = rp
+		}
+
 		gitIgnoredFiles := make(map[string]bool)
 		if showGitIgnored {
 			gitIgnoredFiles, err = m.getGitIgnoredFiles(rootPath)
@@ -1036,10 +1046,10 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 			}
 		}
 
-		// Ensure all parent directories up to workDir exist in result
-		if rootPath != m.workDir {
-			current := rootPath
-			for current != m.workDir && current != "/" && current != "." {
+		// Ensure all parent directories up to workDir exist in result (canonicalized)
+		if rootPathCanonical != workDirCanonical {
+			current := rootPathCanonical
+			for current != workDirCanonical && current != "/" && current != "." {
 				if _, exists := result[current]; !exists {
 					result[current] = StatusDirectory
 				}
@@ -1057,8 +1067,14 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 				return err
 			}
 
+			// Canonicalize the path to match how files were stored in result
+			canonicalPath := path
+			if cp, err := filepath.EvalSymlinks(path); err == nil {
+				canonicalPath = cp
+			}
+
 			// Skip the root itself
-			if path == rootPath {
+			if canonicalPath == rootPathCanonical {
 				return nil
 			}
 
@@ -1068,24 +1084,24 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 			}
 
 			// Check if already classified
-			if _, exists := result[path]; exists {
+			if _, exists := result[canonicalPath]; exists {
 				return nil
 			}
 
 			// Classify based on what we know
 			if d.IsDir() {
 				if showGitIgnored && gitIgnoredFiles[path] {
-					result[path] = StatusIgnoredByGit
+					result[canonicalPath] = StatusIgnoredByGit
 				} else {
-					result[path] = StatusDirectory
+					result[canonicalPath] = StatusDirectory
 				}
 			} else {
 				// It's a file
 				if showGitIgnored && gitIgnoredFiles[path] {
-					result[path] = StatusIgnoredByGit
+					result[canonicalPath] = StatusIgnoredByGit
 				} else {
 					// Not in any of our resolved sets, so it's omitted
-					result[path] = StatusOmittedNoMatch
+					result[canonicalPath] = StatusOmittedNoMatch
 				}
 			}
 

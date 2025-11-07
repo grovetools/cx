@@ -36,6 +36,14 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 		return nil, err
 	}
 
+	// Get canonical workDir for consistent path comparisons
+	// This is critical on macOS where /var is a symlink to /private/var
+	workDir := m.GetWorkDir()
+	workDirCanonical := workDir
+	if wd, err := filepath.EvalSymlinks(workDir); err == nil {
+		workDirCanonical = wd
+	}
+
 	// Build FileNode map from the classifications
 	// Use normalized paths as keys to handle case-insensitive filesystems
 	nodes := make(map[string]*FileNode)
@@ -43,12 +51,13 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 	hasExternalFiles := false
 	hasExternalViewPaths := false
 
-	// Check if any paths are from @view directives and are external
-	for path := range fileStatuses {
-		relPath, err := filepath.Rel(m.GetWorkDir(), path)
-		if err != nil || strings.HasPrefix(relPath, "..") {
-			// This is an external path, check if it's a directory (likely from @view)
-			if info, err := os.Stat(path); err == nil && info.IsDir() {
+	// Check if any included files (hot/cold) are actually external to workDir
+	// This is only true if we have @view directives pointing to external paths
+	for path, status := range fileStatuses {
+		if status == context.StatusIncludedHot || status == context.StatusIncludedCold {
+			relPath, err := filepath.Rel(workDirCanonical, path)
+			if err != nil || strings.HasPrefix(relPath, "..") {
+				// This is an included file outside workDir - must be from @view directive
 				hasExternalViewPaths = true
 				break
 			}
@@ -74,7 +83,7 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 		pathMapping[normalizedKey] = path
 
 		// Check if this is an external file that is actually included (hot or cold context)
-		relPath, err := filepath.Rel(m.GetWorkDir(), path)
+		relPath, err := filepath.Rel(workDirCanonical, path)
 		isExternal := err != nil || strings.HasPrefix(relPath, "..")
 		if isExternal && (status == context.StatusIncludedHot || status == context.StatusIncludedCold) {
 			hasExternalFiles = true
@@ -115,7 +124,7 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 	if !hasExternalFiles && !hasExternalViewPaths {
 		filteredNodes := make(map[string]*FileNode)
 		for nodeKey, node := range nodes {
-			relPath, err := filepath.Rel(m.GetWorkDir(), node.Path)
+			relPath, err := filepath.Rel(workDirCanonical, node.Path)
 			isExternal := err != nil || strings.HasPrefix(relPath, "..")
 			if !isExternal {
 				filteredNodes[nodeKey] = node
@@ -128,10 +137,10 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 	var root *FileNode
 	if hasExternalFiles || hasExternalViewPaths {
 		// Create a synthetic root to show CWD and external paths as siblings
-		root = buildTreeWithSyntheticRoot(m.GetWorkDir(), nodes)
+		root = buildTreeWithSyntheticRoot(workDirCanonical, nodes)
 	} else {
 		// No external files, use the working directory as root
-		root = buildTreeWithExternals(m.GetWorkDir(), nodes)
+		root = buildTreeWithExternals(workDirCanonical, nodes)
 	}
 
 	// Post-process the tree to infer directory statuses from their children
