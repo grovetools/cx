@@ -11,15 +11,16 @@ type pickerKeyMap struct {
 	keymap.Base
 	Select key.Binding
 	Load   key.Binding
+	Edit   key.Binding
 }
 
 func (k pickerKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Select, k.Load, k.Quit}
+	return []key.Binding{k.Select, k.Load, k.Edit, k.Quit}
 }
 
 func (k pickerKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Select, k.Load},
+		{k.Up, k.Down, k.Select, k.Load, k.Edit},
 		{k.Help, k.Quit},
 	}
 }
@@ -33,5 +34,9 @@ var defaultPickerKeyMap = pickerKeyMap{
 	Load: key.NewBinding(
 		key.WithKeys("l"),
 		key.WithHelp("l", "load to .grove/rules"),
+	),
+	Edit: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "edit"),
 	),
 }
