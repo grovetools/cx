@@ -52,38 +52,20 @@ func newPatternMatcher(patternInfos []patternInfo, workDir string) *patternMatch
 		}
 
 		if info.isExclude {
-			cleanPattern := filepath.ToSlash(pattern)
+			// Extract the last path component of the exclusion pattern.
+			p := info.pattern
+			// Treat `/**` and `/` as directory indicators before getting the base name.
+			p = strings.TrimSuffix(p, "/**")
+			p = strings.TrimSuffix(p, "/")
 
-			// Only add directory-specific patterns to dirExclusions
-			// A pattern is directory-specific if it ends with "/"
-			if strings.HasSuffix(cleanPattern, "/") {
-				dirName := strings.TrimSuffix(cleanPattern, "/")
-				if dirName != "" && !strings.Contains(dirName, "*") && !strings.Contains(dirName, "?") {
-					// Extract just the directory name for the optimization
-					parts := strings.Split(dirName, "/")
-					if len(parts) > 0 {
-						lastName := parts[len(parts)-1]
-						if lastName != "" {
-							matcher.dirExclusions[lastName] = true
-						}
-					}
-				}
-			} else if strings.Contains(cleanPattern, "**") {
-				// For ** patterns, only add to dirExclusions if the last component is a literal directory name
-				parts := strings.Split(cleanPattern, "/")
-				if len(parts) > 0 {
-					dirName := parts[len(parts)-1]
-					// Only add if it's a literal name (no wildcards) AND pattern structure suggests it's for directories
-					// For example: !**/node_modules would add "node_modules" since it's commonly a directory
-					// But !**/main.go should NOT be added since .go files are typically files, not directories
-					if dirName != "" && !strings.Contains(dirName, "*") && !strings.Contains(dirName, "?") && !strings.Contains(dirName, ".") {
-						matcher.dirExclusions[dirName] = true
-					}
-				}
+			// Get the basename of the remaining pattern.
+			base := filepath.Base(p)
+
+			// If the basename is a literal string (not a wildcard), add it to our fast-lookup map.
+			// This correctly handles `!build/`, `!tests/**`, `!**/node_modules`, etc.
+			if base != "." && base != "/" && !strings.ContainsAny(base, "*?") {
+				matcher.dirExclusions[base] = true
 			}
-			// Note: We deliberately do NOT add simple literal patterns like "main.go" to dirExclusions
-			// because they could match files OR directories, and the optimization only works for directories.
-			// Such patterns will be handled by the classify function for both files and directories.
 		}
 	}
 
@@ -1216,35 +1198,36 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher,
 				}
 			}
 
-			// Check if this directory should be excluded based on pre-processed exclusions
-			if dirExclusions[d.Name()] {
-				// This directory matches an exclusion pattern, check if it should be skipped
-				relPath, _ := filepath.Rel(rootPath, path)
-				relPath = filepath.ToSlash(relPath)
+			// Fast path: if the directory's name isn't a candidate for exclusion, continue walking.
+			if !dirExclusions[d.Name()] {
+				return nil
+			}
 
-				// Check all patterns to see if this directory is excluded
-				isExcluded := false
-				for _, info := range matcher.patternInfos {
-					if info.isExclude {
-						cleanPattern := info.pattern
-						cleanPattern = filepath.ToSlash(cleanPattern)
+			// Slow path: This directory *might* be excluded. Run the full "last match wins" logic to be sure.
+			relPathForDir, err := filepath.Rel(m.workDir, path)
+			if err != nil {
+				relPathForDir = path // Fallback
+			}
+			relPathForDir = filepath.ToSlash(relPathForDir)
 
-						// Check various exclusion pattern formats
-						if cleanPattern == d.Name() || // !bin matches bin directory
-							cleanPattern == relPath || // !path/to/bin matches specific path
-							(strings.Contains(cleanPattern, "**") && matchDoubleStarPattern(cleanPattern, relPath)) { // !**/bin matches any bin directory
-							isExcluded = true
-							break
-						}
-					}
-				}
+			var lastMatchWasExclusion *bool
+			// Check against ALL patterns to respect "last match wins" for this directory path.
+			for _, info := range matcher.patternInfos {
+				pattern := info.pattern
 
-				if isExcluded {
-					return filepath.SkipDir
+				// A pattern matches a directory if it matches the name or the name with a trailing slash.
+				if m.matchPattern(pattern, relPathForDir) || m.matchPattern(pattern, relPathForDir+"/") {
+					isExclude := info.isExclude
+					lastMatchWasExclusion = &isExclude
 				}
 			}
 
-			return nil // Continue walking into subdirectories.
+			// If the final matching pattern was an exclusion, prune the directory.
+			if lastMatchWasExclusion != nil && *lastMatchWasExclusion {
+				return filepath.SkipDir
+			}
+
+			return nil // Directory not excluded, continue walking.
 		}
 
 		// Get path relative to the walk root for pattern matching.

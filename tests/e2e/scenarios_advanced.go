@@ -755,3 +755,63 @@ context:
 		},
 	}
 }
+
+// DirectoryExclusionPerformanceScenario tests that directory exclusion is performant.
+func DirectoryExclusionPerformanceScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-directory-exclusion-performance",
+		Description: "Tests that excluding a directory with many files is performant.",
+		Tags:        []string{"cx", "rules", "performance", "exclusion"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup project with a large, excludable directory", func(ctx *harness.Context) error {
+				buildDir := filepath.Join(ctx.RootDir, "build", "assets", "js")
+				if err := os.MkdirAll(buildDir, 0755); err != nil {
+					return err
+				}
+				for i := 0; i < 1000; i++ {
+					fileName := fmt.Sprintf("bundle-%d.js", i)
+					if err := fs.WriteString(filepath.Join(buildDir, fileName), "// bundle content"); err != nil {
+						return err
+					}
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main"); err != nil {
+					return err
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules to exclude the large directory", func(ctx *harness.Context) error {
+				rules := `**/*.go
+!build/`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx list' and verify performance and correctness", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+				if !strings.Contains(output, "main.go") {
+					return fmt.Errorf("list output missing main.go")
+				}
+				if strings.Contains(output, "build/") {
+					return fmt.Errorf("list output should not contain files from build/ directory")
+				}
+
+				// Count lines in output. Should be 1 for main.go
+				lines := strings.Split(strings.TrimSpace(output), "\n")
+				if len(lines) != 1 {
+					return fmt.Errorf("expected 1 file in output, got %d. Output was:\n%s", len(lines), output)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
