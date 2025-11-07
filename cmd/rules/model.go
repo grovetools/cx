@@ -42,9 +42,11 @@ type rulesPickerModel struct {
 	saveMode         bool
 	saveInput        textinput.Model
 	saveToWork       bool
-	deletingIdx      int
-	deletingActive   bool
-	deletingComplete bool
+	deletingIdx         int
+	deletingActive      bool
+	deletingComplete    bool
+	deleteConfirmNeeded bool
+	deleteConfirmIdx    int
 }
 
 func newRulesPickerModel() *rulesPickerModel {

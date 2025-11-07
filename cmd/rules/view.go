@@ -67,6 +67,11 @@ func (m *rulesPickerModel) View() string {
 			}
 		}
 
+		// Show delete confirmation needed indicator
+		if m.deleteConfirmNeeded && i == m.deleteConfirmIdx {
+			name = theme.DefaultTheme.Error.Render("⚠ " + item.name + " (press 'd' again)")
+		}
+
 		// Show deleting indicator: X for the item being deleted
 		if m.deletingActive || m.deletingComplete {
 			if i == m.deletingIdx {

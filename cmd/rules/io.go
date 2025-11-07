@@ -257,13 +257,13 @@ func performSaveCmd(name string, toWork bool) tea.Cmd {
 	}
 }
 
-func performDeleteCmd(item ruleItem) tea.Cmd {
+func performDeleteCmd(item ruleItem, force bool) tea.Cmd {
 	return func() tea.Msg {
 		// Check if it's in the version-controlled directory
 		isVersionControlled := filepath.Dir(item.path) == context.RulesDir
 
-		if isVersionControlled {
-			return deleteCompleteMsg{err: fmt.Errorf("rule set '%s' is in %s/ and is likely version-controlled", item.name, context.RulesDir)}
+		if isVersionControlled && !force {
+			return deleteCompleteMsg{err: fmt.Errorf("rule set '%s' is in %s/ and is likely version-controlled. Press 'd' again to force delete", item.name, context.RulesDir)}
 		}
 
 		// Check if this is the currently active rule set

@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -136,12 +137,14 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 			m.deletingActive = false
+			m.deleteConfirmNeeded = false
 			m.statusMessage = ""
 			return m, nil
 		}
 		// Successfully deleted
 		m.deletingActive = false
 		m.deletingComplete = true
+		m.deleteConfirmNeeded = false
 
 		if m.deletingIdx >= 0 && m.deletingIdx < len(m.items) {
 			m.statusMessage = fmt.Sprintf("Deleted '%s'", m.items[m.deletingIdx].name)
@@ -260,14 +263,36 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, clearSaveCmd()
 				}
 
+				// Check if this is a version-controlled file
+				isVersionControlled := filepath.Dir(m.items[m.selectedIndex].path) == context.RulesDir
+
+				// If confirmation is needed and this is the same file, proceed with delete
+				if m.deleteConfirmNeeded && m.deleteConfirmIdx == m.selectedIndex {
+					m.deleteConfirmNeeded = false
+					m.deletingIdx = m.selectedIndex
+					m.deletingActive = true
+					return m, performDeleteCmd(m.items[m.selectedIndex], true) // force=true
+				}
+
+				// If version-controlled, require confirmation
+				if isVersionControlled {
+					m.deleteConfirmNeeded = true
+					m.deleteConfirmIdx = m.selectedIndex
+					m.statusMessage = fmt.Sprintf("'%s' is version-controlled. Press 'd' again to confirm deletion", m.items[m.selectedIndex].name)
+					return m, clearSaveCmd()
+				}
+
+				// Not version-controlled, delete immediately
 				m.deletingIdx = m.selectedIndex
 				m.deletingActive = true
-				return m, performDeleteCmd(m.items[m.selectedIndex])
+				return m, performDeleteCmd(m.items[m.selectedIndex], false)
 			}
 		case key.Matches(msg, m.keys.Up):
 			if m.selectedIndex > 0 {
 				m.selectedIndex--
 			}
+			// Clear delete confirmation when navigating away
+			m.deleteConfirmNeeded = false
 			if len(m.items) > 0 {
 				selectedItem := m.items[m.selectedIndex]
 				styledContent := styleRulesContent(selectedItem.content)
@@ -279,6 +304,8 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selectedIndex < len(m.items)-1 {
 				m.selectedIndex++
 			}
+			// Clear delete confirmation when navigating away
+			m.deleteConfirmNeeded = false
 			if len(m.items) > 0 {
 				selectedItem := m.items[m.selectedIndex]
 				styledContent := styleRulesContent(selectedItem.content)
