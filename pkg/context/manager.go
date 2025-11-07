@@ -238,7 +238,11 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 	gitRootPath := strings.TrimSpace(string(gitRootOutput))
 
 	// Normalize the cache key for case-insensitive filesystems
-	cacheKey := strings.ToLower(gitRootPath)
+	cacheKey, err := pathutil.NormalizeForLookup(gitRootPath)
+	if err != nil {
+		// If normalization fails, use original path
+		cacheKey = gitRootPath
+	}
 
 	// Check if we have a cached result for this repository
 	if cachedResult, found := m.gitIgnoredCache[cacheKey]; found {
@@ -281,12 +285,11 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 				// Store the full absolute path for consistent and easy lookup later.
 				absolutePath := filepath.Join(gitRootPath, relativePath)
 
-				// Resolve symlinks first, then lowercase for case-insensitive lookup
-				if evalPath, err := filepath.EvalSymlinks(absolutePath); err == nil {
-					absolutePath = evalPath
+				// Normalize path for case-insensitive filesystems
+				normalizedPath, err := pathutil.NormalizeForLookup(absolutePath)
+				if err == nil {
+					ignoredFiles[normalizedPath] = true
 				}
-				normalizedPath := strings.ToLower(absolutePath)
-				ignoredFiles[normalizedPath] = true
 			}
 		}
 	}
@@ -542,7 +545,7 @@ func (m *Manager) initAllowedRoots() {
 			for _, node := range allProjects {
 				if includedNames[node.Name] {
 					// Canonicalize workspace paths
-					canonicalPath, err := filepath.EvalSymlinks(node.Path)
+					canonicalPath, err := pathutil.NormalizeForLookup(node.Path)
 					if err != nil {
 						canonicalPath = node.Path
 					}
@@ -558,7 +561,7 @@ func (m *Manager) initAllowedRoots() {
 			for _, node := range allProjects {
 				if !excludedNames[node.Name] {
 					// Canonicalize workspace paths
-					canonicalPath, err := filepath.EvalSymlinks(node.Path)
+					canonicalPath, err := pathutil.NormalizeForLookup(node.Path)
 					if err != nil {
 						canonicalPath = node.Path
 					}
@@ -572,7 +575,7 @@ func (m *Manager) initAllowedRoots() {
 		if err == nil {
 			groveHome := filepath.Join(homeDir, ".grove")
 			// Canonicalize grove home path
-			canonicalGroveHome, err := filepath.EvalSymlinks(groveHome)
+			canonicalGroveHome, err := pathutil.NormalizeForLookup(groveHome)
 			if err != nil {
 				canonicalGroveHome = groveHome
 			}
@@ -588,7 +591,7 @@ func (m *Manager) initAllowedRoots() {
 						fmt.Fprintf(os.Stderr, "Warning: could not expand notebook '%s' root_dir '%s': %v\n", notebookName, notebook.RootDir, err)
 					} else {
 						// Canonicalize notebook root path
-						canonicalNotebookRoot, err := filepath.EvalSymlinks(notebookRootDir)
+						canonicalNotebookRoot, err := pathutil.NormalizeForLookup(notebookRootDir)
 						if err != nil {
 							canonicalNotebookRoot = notebookRootDir
 						}
@@ -624,11 +627,11 @@ func (m *Manager) initAllowedRoots() {
 				continue
 			}
 
-			// Resolve symlinks for canonical path
-			canonicalPath, err := filepath.EvalSymlinks(absPath)
+			// Resolve symlinks and normalize for canonical path
+			canonicalPath, err := pathutil.NormalizeForLookup(absPath)
 			if err != nil {
-				// Fallback to absolute path if symlink resolution fails
-				fmt.Fprintf(os.Stderr, "Warning: could not resolve symlinks for allowed_path '%s': %v\n", absPath, err)
+				// Fallback to absolute path if normalization fails
+				fmt.Fprintf(os.Stderr, "Warning: could not normalize allowed_path '%s': %v\n", absPath, err)
 				canonicalPath = absPath
 			}
 
@@ -820,10 +823,10 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 		return false, fmt.Sprintf("could not resolve absolute path for '%s': %v", path, err)
 	}
 
-	// Resolve symlinks to get the canonical path for comparison
-	canonicalPath, err := filepath.EvalSymlinks(absPath)
+	// Normalize path for case-insensitive filesystems and resolve symlinks
+	canonicalPath, err := pathutil.NormalizeForLookup(absPath)
 	if err != nil {
-		// If symlink resolution fails, fall back to the non-symlinked absolute path for the check.
+		// If normalization fails, fall back to the absolute path for the check.
 		// This might happen for paths that don't exist yet but are part of a pattern.
 		canonicalPath = absPath
 	}
@@ -854,13 +857,14 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 				}
 
 				// Canonicalize the workspace path for comparison
-				nodePath := node.Path
-				if evalPath, err := filepath.EvalSymlinks(node.Path); err == nil {
-					nodePath = evalPath
+				normalizedNodePath, err := pathutil.NormalizeForLookup(node.Path)
+				if err != nil {
+					continue // Skip if normalization fails
 				}
-				// Normalize for case-insensitive filesystems
-				normalizedNodePath := strings.ToLower(nodePath)
-				normalizedCanonicalPath := strings.ToLower(canonicalPath)
+				normalizedCanonicalPath, err := pathutil.NormalizeForLookup(canonicalPath)
+				if err != nil {
+					continue // Skip if normalization fails
+				}
 
 				// Check if the canonicalPath is equal to or within this excluded workspace
 				if normalizedCanonicalPath == normalizedNodePath ||
@@ -913,7 +917,7 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	}
 
 	// Step 3: Create maps for efficient lookup and convert relative paths to absolute
-	// Use filepath.EvalSymlinks to get the canonical path casing
+	// Normalize paths for case-insensitive filesystems and symlink resolution
 	hotFilesMap := make(map[string]bool)
 	for _, f := range hotFiles {
 		absPath := f
@@ -921,8 +925,8 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 			absPath = filepath.Join(m.workDir, f)
 		}
 		// Normalize the path to handle case-insensitive filesystems
-		if canonicalPath, err := filepath.EvalSymlinks(absPath); err == nil {
-			absPath = canonicalPath
+		if normalizedPath, err := pathutil.NormalizeForLookup(absPath); err == nil {
+			absPath = normalizedPath
 		}
 		hotFilesMap[absPath] = true
 	}
@@ -934,8 +938,8 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 			absPath = filepath.Join(m.workDir, f)
 		}
 		// Normalize the path to handle case-insensitive filesystems
-		if canonicalPath, err := filepath.EvalSymlinks(absPath); err == nil {
-			absPath = canonicalPath
+		if normalizedPath, err := pathutil.NormalizeForLookup(absPath); err == nil {
+			absPath = normalizedPath
 		}
 		coldFilesMap[absPath] = true
 	}
@@ -949,8 +953,8 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 				absPath = filepath.Join(m.workDir, f)
 			}
 			// Normalize the path to handle case-insensitive filesystems
-			if canonicalPath, err := filepath.EvalSymlinks(absPath); err == nil {
-				absPath = canonicalPath
+			if normalizedPath, err := pathutil.NormalizeForLookup(absPath); err == nil {
+				absPath = normalizedPath
 			}
 			excludedFilesMap[absPath] = true
 		}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/util/pathutil"
 )
 
 // patternInfo holds information about a pattern including any associated directive
@@ -398,8 +399,8 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			resolvedPath = filepath.Join(rulesDir, resolvedPath)
 		}
 
-		// First resolve the real path
-		realPath, err := filepath.EvalSymlinks(resolvedPath)
+		// First resolve the real path and normalize for case-insensitive filesystems
+		realPath, err := pathutil.NormalizeForLookup(resolvedPath)
 		if err != nil {
 			realPath = resolvedPath
 		}
@@ -488,8 +489,8 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			resolvedPath = filepath.Join(rulesDir, resolvedPath)
 		}
 
-		// First resolve the real path
-		realPath, err := filepath.EvalSymlinks(resolvedPath)
+		// First resolve the real path and normalize for case-insensitive filesystems
+		realPath, err := pathutil.NormalizeForLookup(resolvedPath)
 		if err != nil {
 			realPath = resolvedPath
 		}
@@ -1162,12 +1163,11 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher,
 
 		// First, check if the file or directory is ignored by git. This is the most efficient check.
 		// The `path` from WalkDir is absolute if the root is absolute, which it always will be.
-		// Resolve symlinks first, then lowercase for case-insensitive filesystems (macOS/Windows)
-		normalizedPath := path
-		if evalPath, err := filepath.EvalSymlinks(path); err == nil {
-			normalizedPath = evalPath
+		// Normalize for case-insensitive filesystems and symlink resolution
+		normalizedPath, err := pathutil.NormalizeForLookup(path)
+		if err != nil {
+			normalizedPath = path
 		}
-		normalizedPath = strings.ToLower(normalizedPath)
 
 		if gitIgnoredFiles[normalizedPath] {
 			// If we have explicit worktree patterns and this path is under .grove-worktrees,

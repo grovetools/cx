@@ -7,15 +7,21 @@ import (
 	"strings"
 
 	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/util/pathutil"
 )
 
 // normalizePathKey returns a normalized version of the path for use as a map key
 // to handle case-insensitive filesystems. It doesn't change the actual path,
 // just provides a consistent key for deduplication.
 func normalizePathKey(path string) string {
-	// Clean the path and convert to lowercase for consistent map keys
+	// Normalize the path for case-insensitive filesystems and symlink resolution
 	// This prevents duplicate entries on case-insensitive filesystems
-	return strings.ToLower(filepath.Clean(path))
+	normalizedPath, err := pathutil.NormalizeForLookup(path)
+	if err != nil {
+		// Fallback to cleaning the path if normalization fails
+		return filepath.Clean(path)
+	}
+	return normalizedPath
 }
 
 type FileNode struct {
