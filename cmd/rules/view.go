@@ -12,6 +12,12 @@ func (m *rulesPickerModel) View() string {
 	if m.quitting {
 		return ""
 	}
+
+	// Show full help if requested
+	if m.help.ShowAll {
+		return m.help.View()
+	}
+
 	if m.err != nil {
 		return fmt.Sprintf("Error loading rule sets: %v\n", m.err)
 	}
@@ -121,8 +127,8 @@ func (m *rulesPickerModel) View() string {
 		statusView = theme.DefaultTheme.Success.Render("✓ " + m.statusMessage)
 	}
 
-	// Render help
-	helpContent := m.help.View()
+	// Render minimal help footer
+	helpFooter := theme.DefaultTheme.Muted.Render("? • help • q/esc • quit")
 
 	// Final layout
 	parts := []string{header, "", tableView}
@@ -132,7 +138,7 @@ func (m *rulesPickerModel) View() string {
 		parts = append(parts, "", statusView)
 	}
 
-	parts = append(parts, "", previewView, helpContent)
+	parts = append(parts, "", previewView, "", helpFooter)
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

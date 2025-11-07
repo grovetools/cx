@@ -17,13 +17,13 @@ type pickerKeyMap struct {
 }
 
 func (k pickerKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Select, k.Load, k.Save, k.Edit, k.Delete, k.Quit}
+	return []key.Binding{k.Help, k.Quit}
 }
 
 func (k pickerKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Select, k.Load, k.Edit},
-		{k.Save, k.Delete, k.Help, k.Quit},
+		{k.Up, k.Down, k.Select, k.Load},
+		{k.Save, k.Edit, k.Delete, k.Help, k.Quit},
 	}
 }
 
