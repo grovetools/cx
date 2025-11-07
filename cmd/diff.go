@@ -9,9 +9,9 @@ import (
 
 func NewDiffCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "diff [snapshot|current]",
-		Short: "Compare contexts to understand changes",
-		Long:  `Compare the current context with a saved snapshot or another context to see added/removed files, token count changes, and size differences.`,
+		Use:   "diff [ruleset-name]",
+		Short: "Compare the current context with a named rule set",
+		Long:  `Compare the current context with a named rule set from .cx/ or .cx.work/ to see added/removed files, token count changes, and size differences.`,
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager("")

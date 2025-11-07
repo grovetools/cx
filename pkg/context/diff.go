@@ -27,8 +27,8 @@ type DiffResult struct {
 	CompareTotalSize   int64
 }
 
-// DiffContext compares the current context with a snapshot or another context
-func (m *Manager) DiffContext(snapshotName string) (*DiffResult, error) {
+// DiffContext compares the current context with a named rule set or another context
+func (m *Manager) DiffContext(rulesetName string) (*DiffResult, error) {
 	// Get current context files dynamically from rules
 	currentFiles, err := m.ResolveFilesFromRules()
 	if err != nil {
@@ -37,37 +37,25 @@ func (m *Manager) DiffContext(snapshotName string) (*DiffResult, error) {
 
 	var compareFiles []string
 
-	if snapshotName == "" || snapshotName == "empty" {
+	if rulesetName == "" || rulesetName == "empty" {
 		// Compare with empty context
 		compareFiles = []string{}
-	} else if snapshotName == "current" {
+	} else if rulesetName == "current" {
 		// Compare with self (no-op, but supported)
 		compareFiles = currentFiles
 	} else {
-		// Compare with snapshot
-		snapshotsDir := filepath.Join(m.workDir, SnapshotsDir)
-
-		// Try with .rules extension first
-		snapshotPath := filepath.Join(snapshotsDir, snapshotName+".rules")
-		if _, err := os.Stat(snapshotPath); err == nil {
-			// Resolve files from the snapshot rules
-			hotFiles, _, err := m.ResolveFilesFromCustomRulesFile(snapshotPath)
-			if err != nil {
-				return nil, fmt.Errorf("error resolving snapshot '%s': %w", snapshotName, err)
-			}
-			compareFiles = hotFiles
-		} else {
-			// Try without extension for backward compatibility
-			snapshotPath = filepath.Join(snapshotsDir, snapshotName)
-			if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
-				return nil, fmt.Errorf("snapshot '%s' not found", snapshotName)
-			}
-			// Old format - read file list directly
-			compareFiles, err = m.ReadFilesList(snapshotPath)
-			if err != nil {
-				return nil, fmt.Errorf("error reading snapshot '%s': %w", snapshotName, err)
-			}
+		// Compare with a named rule set
+		rulesetPath, err := FindRulesetFile(m.workDir, rulesetName)
+		if err != nil {
+			return nil, fmt.Errorf("could not find rule set '%s': %w", rulesetName, err)
 		}
+
+		// Resolve files from the rule set
+		hotFiles, _, err := m.ResolveFilesFromCustomRulesFile(rulesetPath)
+		if err != nil {
+			return nil, fmt.Errorf("error resolving rule set '%s': %w", rulesetName, err)
+		}
+		compareFiles = hotFiles
 	}
 
 	// Calculate diff

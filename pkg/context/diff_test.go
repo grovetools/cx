@@ -9,45 +9,39 @@ import (
 func TestManager_DiffContext(t *testing.T) {
 	// Create temporary directory
 	tempDir := t.TempDir()
+	originalWd, _ := os.Getwd()
 	os.Chdir(tempDir)
-	defer os.Chdir("..")
+	defer os.Chdir(originalWd)
 
 	mgr := NewManager(tempDir)
 
-	// Create .grove directory structure
-	os.MkdirAll(SnapshotsDir, 0755)
+	// Create .cx and .grove directories
+	os.MkdirAll(".cx", 0755)
+	os.MkdirAll(".grove", 0755)
 
 	// Create test files
-	os.WriteFile("file1.go", []byte("package main\n// Test file 1"), 0644)
-	os.WriteFile("file2.go", []byte("package main\n// Test file 2"), 0644)
-	os.WriteFile("file3.go", []byte("package main\n// Test file 3"), 0644)
+	os.WriteFile("fileA.txt", []byte("A"), 0644)
+	os.WriteFile("fileB.txt", []byte("B"), 0644)
+	os.WriteFile("fileC.txt", []byte("C"), 0644)
 
-	// Create current rules file
-	os.WriteFile(filepath.Join(GroveDir, "rules"), []byte("file1.go\nfile2.go\n"), 0644)
+	// Create current rules file (.grove/rules)
+	os.WriteFile(".grove/rules", []byte("fileB.txt\nfileC.txt\n"), 0644)
 
-	// Create a snapshot with different files
-	os.WriteFile(filepath.Join(SnapshotsDir, "test-snapshot"), []byte("file2.go\nfile3.go\n"), 0644)
+	// Create a named rule set to compare against (.cx/compare.rules)
+	os.WriteFile(".cx/compare.rules", []byte("fileA.txt\nfileB.txt\n"), 0644)
 
-	// Test diff
-	diff, err := mgr.DiffContext("test-snapshot")
+	// Test diff against the named rule set
+	diff, err := mgr.DiffContext("compare")
 	if err != nil {
 		t.Fatalf("Failed to diff context: %v", err)
 	}
 
 	// Check results
-	if len(diff.Added) != 1 || diff.Added[0].Path != "file1.go" {
-		t.Errorf("Expected file1.go to be added")
+	if len(diff.Added) != 1 || diff.Added[0].Path != filepath.Join(tempDir, "fileC.txt") {
+		t.Errorf("Expected fileC.txt to be added, got: %v", diff.Added)
 	}
 
-	if len(diff.Removed) != 1 || diff.Removed[0].Path != "file3.go" {
-		t.Errorf("Expected file3.go to be removed")
-	}
-
-	if len(diff.CurrentFiles) != 2 {
-		t.Errorf("Expected 2 current files, got %d", len(diff.CurrentFiles))
-	}
-
-	if len(diff.CompareFiles) != 2 {
-		t.Errorf("Expected 2 compare files, got %d", len(diff.CompareFiles))
+	if len(diff.Removed) != 1 || diff.Removed[0].Path != filepath.Join(tempDir, "fileA.txt") {
+		t.Errorf("Expected fileA.txt to be removed, got: %v", diff.Removed)
 	}
 }

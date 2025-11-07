@@ -31,6 +31,7 @@ func NewRulesCmd() *cobra.Command {
 	cmd.AddCommand(newRulesSelectCmd())
 	cmd.AddCommand(newRulesUnsetCmd())
 	cmd.AddCommand(newRulesLoadCmd())
+	cmd.AddCommand(newRulesRmCmd())
 
 	return cmd
 }
@@ -63,7 +64,7 @@ func newRulesUnsetCmd() *cobra.Command {
 func newRulesLoadCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "load <name>",
-		Short: "Copy a named rule set to .grove/rules as a working copy",
+		Short: "Copy a named set to .grove/rules as a modifiable working copy",
 		Long: `Copy a named rule set from .cx/ or .cx.work/ to .grove/rules.
 This creates a working copy that you can edit freely without affecting the original.
 The state is automatically unset so .grove/rules becomes active.
@@ -249,7 +250,9 @@ func newRulesListCmd() *cobra.Command {
 func newRulesSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <name>",
-		Short: "Set the active rule set",
+		Short: "Set a named rule set as active (read-only)",
+		Long: `Sets a named rule set from .cx/ or .cx.work/ as the active context source.
+This makes the context read-only from that file. To create a modifiable copy, use 'cx rules load'.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -277,10 +280,14 @@ func newRulesSetCmd() *cobra.Command {
 }
 
 func newRulesSaveCmd() *cobra.Command {
+	var work bool
 	cmd := &cobra.Command{
 		Use:   "save <name>",
-		Short: "Save the current active rules to a new named rule set",
-		Args:  cobra.ExactArgs(1),
+		Short: "Save active rules to a named set in .cx/ or .cx.work/",
+		Long: `Saves the currently active rules (from .grove/rules or another set) to a new named file.
+By default, saves to .cx/ for version-controlled rule sets.
+Use the --work flag to save to .cx.work/ for temporary, untracked sets.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
@@ -293,18 +300,72 @@ func newRulesSaveCmd() *cobra.Command {
 				return fmt.Errorf("no active rules found to save")
 			}
 
-			if err := os.MkdirAll(context.RulesDir, 0755); err != nil {
-				return fmt.Errorf("failed to create %s directory: %w", context.RulesDir, err)
+			destDir := context.RulesDir
+			if work {
+				destDir = context.RulesWorkDir
 			}
 
-			destPath := filepath.Join(context.RulesDir, name+context.RulesExt)
+			if err := os.MkdirAll(destDir, 0755); err != nil {
+				return fmt.Errorf("failed to create %s directory: %w", destDir, err)
+			}
+
+			destPath := filepath.Join(destDir, name+context.RulesExt)
 			if err := os.WriteFile(destPath, content, 0644); err != nil {
 				return fmt.Errorf("failed to save rule set: %w", err)
 			}
 
-			prettyLog.Success(fmt.Sprintf("Saved current rules as '%s'", name))
+			prettyLog.Success(fmt.Sprintf("Saved current rules as '%s' in %s/", name, destDir))
 			return nil
 		},
 	}
+	cmd.Flags().BoolVarP(&work, "work", "w", false, "Save to .cx.work/ for temporary, untracked rule sets")
+	return cmd
+}
+
+func newRulesRmCmd() *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "rm <name>",
+		Short: "Remove a named rule set",
+		Long: `Deletes a named rule set from .cx/ or .cx.work/.
+Rule sets in .cx/ are considered version-controlled and require the --force flag to delete.
+Rule sets in .cx.work/ can be deleted without force.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			// Find the ruleset file
+			rulesPath, err := context.FindRulesetFile(".", name)
+			if err != nil {
+				return err // Returns a helpful "not found" error
+			}
+
+			// Check if it's in the version-controlled directory
+			// Make sure we don't match .cx.work when checking for .cx
+			isVersionControlled := strings.Contains(rulesPath, context.RulesDir+string(filepath.Separator)) &&
+				!strings.Contains(rulesPath, context.RulesWorkDir)
+
+			if isVersionControlled && !force {
+				return fmt.Errorf("rule set '%s' is in %s/ and is likely version-controlled. Use --force to delete", name, context.RulesDir)
+			}
+
+			// Check if this is the currently active rule set
+			activeSource, _ := state.GetString(context.StateSourceKey)
+			if activeSource == rulesPath {
+				// Unset it first before deleting
+				if err := state.Delete(context.StateSourceKey); err != nil {
+					prettyLog.WarnPretty(fmt.Sprintf("Warning: could not unset active state for '%s' before deleting: %v", name, err))
+				}
+			}
+
+			if err := os.Remove(rulesPath); err != nil {
+				return fmt.Errorf("failed to remove rule set '%s': %w", name, err)
+			}
+
+			prettyLog.Success(fmt.Sprintf("Removed rule set '%s' from %s", name, rulesPath))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force delete a version-controlled rule set from .cx/")
 	return cmd
 }

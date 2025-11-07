@@ -19,6 +19,9 @@ func main() {
 		BasicContextGenerationScenario(),
 		MissingRulesScenario(),
 
+		// Rules Management Scenarios
+		EnhancedRulesWorkflowScenario(),
+
 		// Regression Scenarios
 		GitignoreStyleBasenameExclusionScenario(),
 
@@ -45,7 +48,6 @@ func main() {
 
 		// Advanced Scenarios
 		StatsAndValidateScenario(),
-		SnapshotWorkflowScenario(),
 		GitBasedContextScenario(),
 		ComplexPatternScenario(),
 		PlainDirectoryPatternScenario(),

@@ -22,7 +22,6 @@ const (
 	FilesListFile              = ".grove/context-files"
 	RulesFile                  = ".grovectx"
 	ActiveRulesFile            = ".grove/rules"
-	SnapshotsDir               = ".grove/context-snapshots"
 	CachedContextFilesListFile = ".grove/cached-context-files"
 	CachedContextFile          = ".grove/cached-context"
 	RulesDir                   = ".cx"
@@ -421,84 +420,6 @@ func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version str
 	}
 
 	return true, repoURL, version
-}
-
-// SaveSnapshot saves the current rules as a snapshot
-func (m *Manager) SaveSnapshot(name, description string) error {
-	// Ensure .grove directory and snapshots subdirectory exist
-	snapshotsDir := filepath.Join(m.workDir, SnapshotsDir)
-	if err := os.MkdirAll(snapshotsDir, 0755); err != nil {
-		return fmt.Errorf("error creating snapshots directory: %w", err)
-	}
-
-	// Read current rules file
-	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
-	if _, err := os.Stat(activeRulesPath); os.IsNotExist(err) {
-		// Try old .grovectx file
-		activeRulesPath = filepath.Join(m.workDir, RulesFile)
-		if _, err := os.Stat(activeRulesPath); os.IsNotExist(err) {
-			return fmt.Errorf("no rules file found. Create %s with patterns to include", ActiveRulesFile)
-		}
-	}
-
-	content, err := os.ReadFile(activeRulesPath)
-	if err != nil {
-		return fmt.Errorf("error reading rules file: %w", err)
-	}
-
-	// Save to snapshot with .rules extension
-	snapshotPath := filepath.Join(snapshotsDir, name+".rules")
-	if err := os.WriteFile(snapshotPath, content, 0644); err != nil {
-		return fmt.Errorf("error saving snapshot: %w", err)
-	}
-
-	// Save description if provided
-	if description != "" {
-		descPath := filepath.Join(snapshotsDir, name+".rules.desc")
-		if err := os.WriteFile(descPath, []byte(description), 0644); err != nil {
-			// Non-fatal error
-			fmt.Printf("Warning: could not save description: %v\n", err)
-		}
-	}
-
-	fmt.Printf("Saved rules snapshot to %s\n", snapshotPath)
-	return nil
-}
-
-// LoadSnapshot loads a snapshot into the current rules file
-func (m *Manager) LoadSnapshot(name string) error {
-	snapshotsDir := filepath.Join(m.workDir, SnapshotsDir)
-
-	// Try with .rules extension first
-	snapshotPath := filepath.Join(snapshotsDir, name+".rules")
-	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
-		// Try without extension for backward compatibility
-		snapshotPath = filepath.Join(snapshotsDir, name)
-		if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
-			return fmt.Errorf("snapshot '%s' not found", name)
-		}
-	}
-
-	// Read snapshot
-	content, err := os.ReadFile(snapshotPath)
-	if err != nil {
-		return fmt.Errorf("error reading snapshot: %w", err)
-	}
-
-	// Ensure .grove directory exists
-	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
-		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
-	}
-
-	// Write to active rules file
-	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
-	if err := os.WriteFile(activeRulesPath, content, 0644); err != nil {
-		return fmt.Errorf("error writing rules: %w", err)
-	}
-
-	fmt.Printf("Loaded rules snapshot from %s\n", snapshotPath)
-	return nil
 }
 
 // ShowContext outputs the context file content
