@@ -33,6 +33,30 @@ func clearSetCmd() tea.Cmd {
 	})
 }
 
+type saveCompleteMsg struct {
+	err error
+}
+
+type clearSaveMsg struct{}
+
+func clearSaveCmd() tea.Cmd {
+	return tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
+		return clearSaveMsg{}
+	})
+}
+
+type deleteCompleteMsg struct {
+	err error
+}
+
+type clearDeleteMsg struct{}
+
+func clearDeleteCmd() tea.Cmd {
+	return tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
+		return clearDeleteMsg{}
+	})
+}
+
 func (m *rulesPickerModel) Init() tea.Cmd {
 	return loadRulesCmd
 }
@@ -92,6 +116,45 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = ""
 		return m, nil
 
+	case saveCompleteMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.statusMessage = ""
+			return m, nil
+		}
+		// Successfully saved
+		m.statusMessage = fmt.Sprintf("Saved to %s", m.saveInput.Value()+".rules")
+
+		// Reload the rules to show the new file
+		return m, tea.Batch(clearSaveCmd(), loadRulesCmd)
+
+	case clearSaveMsg:
+		m.statusMessage = ""
+		return m, nil
+
+	case deleteCompleteMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.deletingActive = false
+			m.statusMessage = ""
+			return m, nil
+		}
+		// Successfully deleted
+		m.deletingActive = false
+		m.deletingComplete = true
+
+		if m.deletingIdx >= 0 && m.deletingIdx < len(m.items) {
+			m.statusMessage = fmt.Sprintf("Deleted '%s'", m.items[m.deletingIdx].name)
+		}
+
+		// Reload the rules to reflect deletion
+		return m, tea.Batch(clearDeleteCmd(), loadRulesCmd)
+
+	case clearDeleteMsg:
+		m.deletingComplete = false
+		m.statusMessage = ""
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.updatePreviewSize()
@@ -119,6 +182,30 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Handle save mode separately
+		if m.saveMode {
+			switch {
+			case key.Matches(msg, m.keys.Quit):
+				// Exit save mode
+				m.saveMode = false
+				m.saveInput.Reset()
+				return m, nil
+			case msg.Type == tea.KeyEnter:
+				// Perform save
+				name := m.saveInput.Value()
+				if name != "" {
+					m.saveMode = false
+					return m, performSaveCmd(name, m.saveToWork)
+				}
+				return m, nil
+			default:
+				// Update text input
+				var cmd tea.Cmd
+				m.saveInput, cmd = m.saveInput.Update(msg)
+				return m, cmd
+			}
+		}
+
 		if m.help.ShowAll {
 			m.help.Toggle()
 			return m, nil
@@ -157,6 +244,25 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Edit):
 			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
 				return m, editRuleCmd(m.items[m.selectedIndex])
+			}
+		case key.Matches(msg, m.keys.Save):
+			// Enter save mode
+			m.saveMode = true
+			m.saveToWork = false // TODO: add option to toggle this
+			m.saveInput.Reset()
+			m.saveInput.Focus()
+			return m, nil
+		case key.Matches(msg, m.keys.Delete):
+			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
+				// Can't delete .grove/rules
+				if m.items[m.selectedIndex].path == context.ActiveRulesFile {
+					m.statusMessage = "Cannot delete .grove/rules"
+					return m, clearSaveCmd()
+				}
+
+				m.deletingIdx = m.selectedIndex
+				m.deletingActive = true
+				return m, performDeleteCmd(m.items[m.selectedIndex])
 			}
 		case key.Matches(msg, m.keys.Up):
 			if m.selectedIndex > 0 {

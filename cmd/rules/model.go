@@ -3,6 +3,7 @@ package rules
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 )
@@ -38,13 +39,25 @@ type rulesPickerModel struct {
 	settingActive    bool
 	settingComplete  bool
 	statusMessage    string
+	saveMode         bool
+	saveInput        textinput.Model
+	saveToWork       bool
+	deletingIdx      int
+	deletingActive   bool
+	deletingComplete bool
 }
 
 func newRulesPickerModel() *rulesPickerModel {
+	ti := textinput.New()
+	ti.Placeholder = "ruleset-name"
+	ti.CharLimit = 50
+	ti.Width = 30
+
 	return &rulesPickerModel{
-		keys:    defaultPickerKeyMap,
-		help:    help.New(defaultPickerKeyMap),
-		preview: viewport.New(0, 0),
+		keys:      defaultPickerKeyMap,
+		help:      help.New(defaultPickerKeyMap),
+		preview:   viewport.New(0, 0),
+		saveInput: ti,
 	}
 }
 

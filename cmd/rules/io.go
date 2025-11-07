@@ -227,3 +227,56 @@ func editRuleCmd(item ruleItem) tea.Cmd {
 		return tea.Quit()
 	})
 }
+
+func performSaveCmd(name string, toWork bool) tea.Cmd {
+	return func() tea.Msg {
+		mgr := context.NewManager("")
+		content, _, err := mgr.LoadRulesContent()
+		if err != nil {
+			return saveCompleteMsg{err: fmt.Errorf("failed to load active rules: %w", err)}
+		}
+		if content == nil {
+			return saveCompleteMsg{err: fmt.Errorf("no active rules found")}
+		}
+
+		destDir := context.RulesDir
+		if toWork {
+			destDir = context.RulesWorkDir
+		}
+
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			return saveCompleteMsg{err: fmt.Errorf("failed to create %s directory: %w", destDir, err)}
+		}
+
+		destPath := filepath.Join(destDir, name+context.RulesExt)
+		if err := os.WriteFile(destPath, content, 0644); err != nil {
+			return saveCompleteMsg{err: fmt.Errorf("failed to save rule set: %w", err)}
+		}
+
+		return saveCompleteMsg{err: nil}
+	}
+}
+
+func performDeleteCmd(item ruleItem) tea.Cmd {
+	return func() tea.Msg {
+		// Check if it's in the version-controlled directory
+		isVersionControlled := filepath.Dir(item.path) == context.RulesDir
+
+		if isVersionControlled {
+			return deleteCompleteMsg{err: fmt.Errorf("rule set '%s' is in %s/ and is likely version-controlled", item.name, context.RulesDir)}
+		}
+
+		// Check if this is the currently active rule set
+		activeSource, _ := state.GetString(context.StateSourceKey)
+		if activeSource == item.path {
+			// Unset it first before deleting
+			_ = state.Delete(context.StateSourceKey)
+		}
+
+		if err := os.Remove(item.path); err != nil {
+			return deleteCompleteMsg{err: fmt.Errorf("failed to remove rule set: %w", err)}
+		}
+
+		return deleteCompleteMsg{err: nil}
+	}
+}

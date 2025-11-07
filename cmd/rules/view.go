@@ -19,6 +19,28 @@ func (m *rulesPickerModel) View() string {
 		return "No rule sets found."
 	}
 
+	// Save mode: show input prompt
+	if m.saveMode {
+		prompt := theme.DefaultTheme.Bold.Render("Save current rules as:")
+		destDir := ".cx/"
+		if m.saveToWork {
+			destDir = ".cx.work/"
+		}
+		hint := theme.DefaultTheme.Muted.Render(fmt.Sprintf("(will save to %s)", destDir))
+		cancel := theme.DefaultTheme.Muted.Render("Press q to cancel")
+
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			"",
+			prompt,
+			"",
+			m.saveInput.View(),
+			"",
+			hint,
+			cancel,
+		)
+	}
+
 	// Build table data
 	var rows [][]string
 	for i, item := range m.items {
@@ -42,6 +64,13 @@ func (m *rulesPickerModel) View() string {
 		if m.settingActive || m.settingComplete {
 			if i == m.settingIdx {
 				name = theme.DefaultTheme.Success.Render("★ " + item.name)
+			}
+		}
+
+		// Show deleting indicator: X for the item being deleted
+		if m.deletingActive || m.deletingComplete {
+			if i == m.deletingIdx {
+				name = theme.DefaultTheme.Error.Render("✗ " + item.name)
 			}
 		}
 
