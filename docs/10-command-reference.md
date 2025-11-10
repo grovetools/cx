@@ -210,29 +210,7 @@ Launches an interactive TUI to inspect context composition.
     # Start the interactive context viewer
     cx view
     ```
--   **Related Commands**: `cx stats`, `cx dashboard`
-
----
-
-### cx dashboard
-
-Displays a live-updating dashboard of context statistics.
-
--   **Usage**: `cx dashboard`
--   **Description**: Launches a terminal UI that displays real-time statistics for both hot and cold contexts. The dashboard automatically updates when files in the project are changed, created, or deleted.
--   **Arguments**: None
--   **Flags**:
-    -   `-H, --horizontal`: Display statistics side by side.
-    -   `-p, --plain`: Output plain text statistics without launching the TUI.
--   **Examples**:
-    ```bash
-    # Launch the live dashboard TUI
-    cx dashboard
-
-    # Print a one-time stats summary to the console
-    cx dashboard --plain
-    ```
--   **Related Commands**: `cx stats`, `cx view`
+-   **Related Commands**: `cx stats`
 
 ---
 
@@ -253,7 +231,7 @@ Provides a detailed analysis of the context composition.
     # Show the top 10 largest files in the context
     cx stats --top 10
     ```
--   **Related Commands**: `cx dashboard`, `cx list`
+-   **Related Commands**: `cx list`
 
 ---
 

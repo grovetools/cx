@@ -31,7 +31,6 @@ func main() {
 	)
 
 	// Add subcommands
-	rootCmd.AddCommand(cmd.NewDashboardCmd())
 	rootCmd.AddCommand(cmd.NewEditCmd())
 	rootCmd.AddCommand(cmd.NewResetCmd())
 	rootCmd.AddCommand(cmd.NewRulesCmd())

@@ -66,4 +66,4 @@ Document all keybindings:
 - Using preview pane effectively
 
 ## Context
-Focus on cx view as the primary TUI (Terminal User Interface) tool for understanding and modifying context. Emphasize the terminal-based interface and keyboard-driven interaction. Note that cx stats and cx dashboard are covered in other sections (Context Generation for stats, Experimental for dashboard).
+Focus on cx view as the primary TUI (Terminal User Interface) tool for understanding and modifying context. Emphasize the terminal-based interface and keyboard-driven interaction. Note that cx stats is covered in other sections (Context Generation for stats).

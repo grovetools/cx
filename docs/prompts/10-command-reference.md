@@ -22,7 +22,6 @@ Create detailed documentation for every `cx` command, organized into logical gro
 
 ### Interactive Tools
 - `cx view` - Interactive context browser
-- `cx dashboard` - Real-time context monitor
 - `cx stats` - Context statistics
 
 ### Repository Management
