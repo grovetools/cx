@@ -1,1 +1,7 @@
 *.go
+!tests
+
+@a:grove-ecosystem:grove-nvim::dev-no-tests
+@a:grove-ecosystem:grove-core::workspace-only
+@a:grove-ecosystem:grove-flow::dev-no-tests
+@a:grove-ecosystem:grove-gemini::dev-no-tests

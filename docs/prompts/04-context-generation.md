@@ -37,14 +37,25 @@ Create a comprehensive guide explaining the complete context generation pipeline
 5. **File Handling and Security**
    - Binary files excluded by default (images, executables, archives)
    - Text file detection and processing
-   - **⚠️ FILESYSTEM ACCESS WARNING**: Patterns can match ANY file on your filesystem
-   - Dangerous patterns to avoid (/**/*, ../../../**, ~/**)
+   - **Security boundaries**: grove-context only allows file inclusion from:
+     - Discovered Grove workspaces (projects found in configured search paths)
+     - Files within `~/.grove/` directory
+     - This prevents accidental inclusion of arbitrary system files
    - Always review `cx list` before sharing generated context
-   - Sensitive file protection best practices
+   - Best practices for sensitive file protection
 
 6. **Integration Points**
-   - Feeding context to LLM tools
-   - Using with grove-gemini/grove-openai
+   - **grove-gemini Integration**: Automatic context generation
+     - Seamless context inclusion in API requests
+     - No manual file management required
+   - **grove-flow Integration**: Per-job context management
+     - Automatic regeneration before oneshot/chat jobs
+     - Custom rules files per job
+     - Worktree-scoped context
+   - **grove-nvim Integration**: Real-time editing feedback
+     - Virtual text showing token counts
+     - Interactive rule preview
+   - Using with other LLM tools via generated files
    - API access to generated context
    - Streaming context for large outputs
 
@@ -52,6 +63,8 @@ Create a comprehensive guide explaining the complete context generation pipeline
 Show the complete flow:
 - Rules file → `cx list` output → .grove/context content
 - Using `cx stats` to analyze generated context
+- Integration example: grove-flow job using custom rules file
+- Integration example: grove-gemini automatic context generation
 - Debugging generation issues
 - Optimizing rules based on output
 
@@ -68,13 +81,11 @@ Document the exact .grove/context format:
 ```
 
 ## Security Best Practices
-- **ALWAYS** review `cx list` output before using context
-- **NEVER** use overly broad patterns without exclusions
-- **AVOID** patterns that traverse up directories (../)
-- Add sensitive directories to exclusion patterns
+- Review `cx list` output before sharing generated context
+- grove-context restricts file access to discovered workspaces and ~/.grove
+- Add sensitive directories to exclusion patterns (e.g., secrets/, .env files)
 - Keep .grove/context in .gitignore
-- Be aware that any readable file can be included
-- Consider using snapshots for safe, tested configurations
+- Use workspace discovery to manage which projects can be included
 
 ## General Best Practices
 - Validating generation with `cx list` before use

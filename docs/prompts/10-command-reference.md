@@ -21,11 +21,21 @@ Create detailed documentation for every `cx` command, organized into logical gro
 - `cx listsnapshots` - List saved snapshots
 
 ### Interactive Tools
-- `cx view` - Interactive context browser
-- `cx stats` - Context statistics
+- `cx view` - Multi-tab interactive TUI (TREE, RULES, STATS, LIST)
+  - TREE: Visual file hierarchy with token counts
+  - RULES: View/edit active rules file
+  - STATS: File type distribution and largest files
+  - LIST: Detailed file listing with exclusion
+  - Built-in rule set switching and context management
+- `cx stats` - Context statistics (command-line version)
 
 ### Repository Management
 - `cx repo` - Manage external repositories
+
+### Workspace Management
+- `cx workspace list` - List all discovered workspaces and their aliases
+- `cx workspace info` - Show detailed workspace information
+- `cx resolve` - Resolve an alias to its absolute path
 
 ### Validation & Maintenance
 - `cx validate` - Validate rules file

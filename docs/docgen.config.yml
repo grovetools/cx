@@ -9,20 +9,21 @@ settings:
   structured_output_file: pkg/docs/docs.json
   system_prompt: default
   model: gemini-2.5-pro
-  regeneration_mode: reference
+  regeneration_mode: scratch
+  # temperature: 0.5
 readme:
   generate_toc: true
   template: docs/README.md.tpl
   output: README.md
   source_section: overview
-  strip_lines: 2
+  strip_lines: 0
 sections:
   - name: overview
     order: 1
     output: 01-overview.md
     prompt: prompts/01-overview.md
     title: Overview
-    agg_strip_lines: 2
+    agg_strip_lines: 0
   - name: examples
     order: 2
     output: 02-examples.md
@@ -68,3 +69,13 @@ sections:
     output: 10-command-reference.md
     prompt: prompts/10-command-reference.md
     title: Command Reference
+  - name: editor-integration
+    order: 11
+    output: 11-editor-integration.md
+    prompt: prompts/11-editor-integration.md
+    title: Editor Integration
+  - name: ecosystem-integration
+    order: 12
+    output: 12-ecosystem-integration.md
+    prompt: prompts/12-ecosystem-integration.md
+    title: Ecosystem Integration
