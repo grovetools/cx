@@ -2,80 +2,200 @@
 
 ## Introduction
 
-`grove-context` (`cx`) is a CLI tool for assembling multi-repository context for LLMs. It supports a planning → execution workflow: define what files, repos, and content are relevant to a feature, generate an implementation plan with a large-context LLM (200k-2M+ tokens), then execute that plan with smaller, focused contexts.
+`grove-context` (`cx`) is a CLI tool for assembling multi-repository context for LLMs. It shifts context discovery from ad-hoc agent searching to upfront developer curation, enabling 100k-700k token contexts that produce comprehensive implementation plans. It supports a planning → execution workflow: define what files, repos, and content are relevant to a feature, send that context to a large-context LLM via API (e.g., `gemapi request` with Gemini 2M tokens) to generate an implementation plan, then execute that plan with smaller, focused contexts.
 
 The typical approach today is letting agents discover context on their own - either in "plan mode" or directly during implementation, where the agent greps and inspects the codebase from scratch each time. Many editors and CLI-based agents allow referencing context, but this is ad-hoc: context references scattered across chat history, not reproducible across runs, not shareable with team members. Agent-driven discovery is inefficient (wastes tokens searching), incomplete (misses context in other repos), and lacks architectural understanding that developers have.
 
-Grove-context inverts this model. The developer curates exactly what context the feature needs upfront. Think of it as defining a funnel: all code and repos are available, but you're specifying the precise scope where the LLM should focus. The key is including slightly more context than an agent would discover on its own - adjacent modules, related components, relevant documentation. This extra context improves plan quality measurably. Plans can include specific code snippets, architectural patterns, and implementation guidance. The approach is also faster: plans are generated quickly because the LLM has everything upfront (no iterative discovery), and implementation is faster because the plan is more complete (less back-and-forth to figure out what was missed). Plans generated from developer-curated context improve agent implementation success rates. When an agent receives a plan with the full picture (relevant files, architectural context, dependencies, tasks), it executes with fewer mistakes. Agents working without comprehensive plans miss details, leading to incomplete implementations and post-hoc cleanup. The cost per planning request is higher (you're routinely sending 100k+ tokens in single API requests), but total development cost is lower through better plans and fewer implementation iterations. Once you have the plan, execution happens with smaller, focused contexts (via `grove-flow`).
+The diagram below illustrates this iterative discovery problem:
 
-## Workflow
+**Traditional Agent-Only Approach:**
+```mermaid
+graph TD
+    A["Start Task"] --> B["Agent searches codebase<br/>grep, file inspection"]
+    B --> C["Limited context found<br/>~10-20k tokens"]
+    C --> D["Generate partial plan"]
+    D --> U1["User reviews plan"]
+    U1 --> U2["User manually points to<br/>missing files/context"]
+    U2 --> B
+    D --> E["Start implementation"]
+    E --> F{"Missing context?"}
+    F -->|"Yes"| U3["User corrects via chat"]
+    U3 --> B
+    F -->|"Continue"| G["Incomplete implementation"]
+    G --> H["Manual cleanup required"]
+
+    style A fill:#f0f0f0
+    style B fill:#ffe1e1
+    style C fill:#ffe1e1
+    style D fill:#fff3e1
+    style U1 fill:#e1e8ff
+    style U2 fill:#e1e8ff
+    style U3 fill:#e1e8ff
+    style E fill:#e1ffe1
+    style F fill:#f0f0f0
+    style G fill:#ffe1e1
+    style H fill:#ffe1e1
+```
+*Figure 1: Traditional agent-only approach with manual context discovery*
+
+Grove-context inverts this model by shifting context discovery from ad-hoc searching to upfront curation. The developer curates exactly what context the feature needs upfront. Think of it as defining a funnel: all code and repos are available, but you're specifying the precise scope where the LLM should focus. The key is including slightly more context than an agent would discover on its own - adjacent modules, related components, relevant documentation. This extra context improves plan quality measurably. You send this curated context in a single API request (e.g., `gemapi request "Create authentication module"`) where the LLM receives 100k-700k tokens of context in one shot. The LLM responds with comprehensive plans that include specific code snippets, architectural patterns, and implementation guidance. The approach is faster: plans are generated quickly because the LLM has everything upfront (no iterative discovery), and implementation is faster because the plan is more complete (less back-and-forth to figure out what was missed).
+
+The following diagram shows how Grove-context streamlines this workflow:
+
+**Grove-Context Large Context Approach:**
+```mermaid
+graph TD
+    A["Developer curates<br/>initial context"] --> B["grove-context generates<br/>100k-700k token XML file"]
+    B --> C["Upload XML file + prompt<br/>to Gemini API"]
+    C --> D["Review plan"]
+    D --> R{"Plan ready<br/>for agent?"}
+    R -->|"Refine: clarify, add context,<br/>increase detail"| A
+    R -->|"Ready"| E["CLI agent reads plan<br/>and executes tasks"]
+    E --> F{"Implementation<br/>complete?"}
+    F -->|"Tune/extend"| G["User chats with agent<br/>to refine work"]
+    G --> E
+    F -->|"Bug needs context"| H["New Gemini query<br/>with more context"]
+    H --> E
+    F -->|"Done"| I["Complete implementation"]
+
+    style A fill:#e1f5ff
+    style B fill:#e1f5ff
+    style C fill:#fff3e1
+    style D fill:#fff3e1
+    style R fill:#f0f0f0
+    style E fill:#e1ffe1
+    style F fill:#f0f0f0
+    style G fill:#e1e8ff
+    style H fill:#fff3e1
+    style I fill:#e1ffe1
+```
+*Figure 2: Grove-context approach with upfront context curation and feedback loops*
+
+Plans generated from developer-curated context improve agent implementation success rates. Think of it like room lighting: the large-context LLM API call (100k-700k tokens) illuminates the entire room at once, revealing how all the pieces fit together. The agent executing tasks works with a flashlight, focusing on specific areas as needed. Having both—the comprehensive view during planning and focused execution—leads to quality implementations. When an agent receives a plan with the full picture (relevant files, architectural context, dependencies, tasks), it executes with fewer mistakes. Agents working without comprehensive plans miss details, leading to incomplete implementations and post-hoc cleanup. For larger features, the comprehensive plan can be split into multiple jobs, each tackling a focused portion of the work. The cost per planning request is higher (you're routinely sending 100k+ tokens in single API requests like `gemapi request`), but total development cost is lower through better plans and fewer implementation iterations. Once you have the plan, any CLI agent can read and execute it.
+
+A common pattern is multi-turn planning: start with core context to scope foundational aspects, then iteratively refine in subsequent turns. Each turn serves to 1) correct, clarify, or expand the plan based on the LLM's output, 2) add more relevant context, and 3) increase the level of detail until the plan is concrete enough to hand off to an agent. This iterative refinement within a single conversation produces increasingly detailed, actionable plans. The context definitions are persistent (defined in `.grove/rules` files) and can be easily saved, loaded, and reset as needed, making this process reproducible and shareable.
+
+Context is defined in a `.grove/rules` file using gitignore-style patterns. Beyond basic glob patterns, special directives add powerful capabilities: `@a:` (alias) references pull in files from other repositories and worktrees that Grove knows about, `@grep:` searches file contents across repos, and `@find:` searches file paths—making it easy to gather relevant code from across many repositories. Each repository can define pre-curated rulesets for specific purposes (like `backend-only`, `frontend-only`, or `docs-only`), so you don't have to think about the minute details of context selection every time. For example, a feature in your API server can pull in frontend code (`@a:web-app/src/**/*.tsx`), shared libraries (`@a:common/types/**`), and pre-defined rulesets from documentation repos (`@a:docs-repo::api-reference`). These cross-repository capabilities strengthen the breadth of your planning context, ensuring the LLM sees the full picture across your entire codebase ecosystem.
+
+Consider a typical multi-project workspace structure that Grove can work across:
 
 ```
-┌─────────────────────┐
-│   Define Universe   │  .grove/rules with patterns, aliases, imports
-│                     │  (backend code, frontend, docs, related repos)
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Generate Context   │  grove-context assembles 100k+ token context
-│  (@a:alias → paths) │  spanning multiple repos and worktrees
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│   LLM Planning      │  Large context LLM gets full picture
-│  (Comprehensive)    │  Returns detailed, informed implementation plan
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│   Agent Execution   │  Agent-based tool (Claude Code, Codex, etc.)
-│                     │  carries out the plan
-└─────────────────────┘
+~/projects/
+├── api-server/           # Backend API (current working directory)
+│   ├── .grove/rules      # Rules file we're editing
+│   ├── src/
+│   └── grove.yml
+├── web-app/              # Frontend application
+│   ├── src/components/
+│   └── grove.yml
+├── shared-lib/           # Shared utilities
+│   ├── .cx/              # Pre-curated rulesets directory
+│   │   ├── backend-only.rules
+│   │   ├── frontend-only.rules
+│   │   └── full-stack.rules
+│   ├── types/
+│   └── grove.yml
+└── docs/                 # Documentation
+    └── api-reference/
 ```
 
-Context is defined in a `.grove/rules` file using gitignore-style patterns. These rules files support an architectural pattern of keeping repositories small and focused (which helps agent and LLM performance per repo) while composing comprehensive context across repos for planning. You can cross-reference repositories: a feature in your API server can include frontend code (`@a:web-app/src/**/*.tsx`), shared libraries (`@a:common/types/**`), and documentation. Pre-defined rule sets let you assemble contexts for different features (backend-only, full-stack, etc.). Repository locations are abstracted through workspace aliases - `@a:api-server` works for your team regardless of where developers cloned repos, eliminating hardcoded paths and enabling team-scale context management across microservices architectures. 
+From within `api-server/`, your `.grove/rules` file can reference code across all these repositories using workspace aliases. Grove discovers these projects automatically and makes them available through the `@a:` syntax.
 
-Example rules file demonstrating context selection syntax:
+**Basic patterns** use gitignore-style syntax for including and excluding files:
 
 ```groverules
-# Relevant code for current repository
-*.go                                                                      ~164.0k tokens (69 files) 
+# Include source files from current repository (api-server)
+src/**/*.go                                                               ~124.0k tokens (45 files)
 Makefile                                                                  ~1.6k tokens
 go.mod                                                                    ~869 tokens
-grove.yml                                                                 ~136 tokens
 
-# Exclude test files
-!tests                                                                    -43 files, -105.6k tokens
-!*_test.go                                                                -21 files, -38.3k tokens
-
-# Pull in ruleset from other repo
-@a:grove-ecosystem:grove-context::dev-no-tests                            ~97.1k tokens (54 files)
-
-# Directory in another repository
-@a:grove-ecosystem:grove-gemini/docs                                      ~25.4k tokens (11 files) 
-
-# Match all files across ecosystem of repos with "config" in filepath
-@a:grove-ecosystem @find: "config"                                        ~353.6k tokens (225 files) 
-
-# Match all files in `grove-core` repository it w/ "tui" in filepath
-@a:grove-ecosystem:grove-core @grep: "tui"                                ~21.7k tokens (15 files)
-
-# View allows selecting specific dirs/files in TUI/neovim
-@view:@a:grove-ecosystem:grove-core::dev-no-tests
-@a:grove-ecosystem:grove-core/config/types.go                             ~2.0k tokens
-@a:grove-ecosystem:grove-core/errors/types.go                             ~837 tokens
-@a:grove-ecosystem:grove-core/pkg/tmux/types.go                           ~63 tokens
-@a:grove-ecosystem:grove-core/pkg/workspace/types.go                      ~3.6k tokens
-@a:grove-ecosystem:grove-core/config/config.go                            ~3.9k tokens
-
-# Add a github repo to context
-@a:git:charmbracelet/bubbletea/**/*.go                                    [not_audited | ffa0502] 
-                                                                          ~65.3k tokens (76 files)
+# Exclude test files from context
+!**/*_test.go                                                             -21 files, -38.3k tokens
+!tests/                                                                   -12 files, -28.1k tokens
 ```
 
-A common pattern is multi-turn planning: start with core context to scope foundational aspects, then add more context in subsequent turns. For example, begin with the API layer to establish data flow, add frontend components once API contracts are clear, then pull in documentation for edge cases. This iterative refinement within a single conversation produces more refined plans. The context definitions are persistent (defined in `.grove/rules` files), so this process is reproducible and shareable.
+**Import pre-curated rulesets** from other repositories to avoid repeating common context patterns:
+
+```groverules
+# Import the "backend-only" ruleset from shared-lib
+@a:shared-lib::backend-only                                               ~45.2k tokens (32 files)
+```
+
+**Cross-repository references** pull in specific directories or files from other repos:
+
+```groverules
+# Include frontend components to understand API integration
+@a:web-app/src/components/**/*.tsx                                        ~67.4k tokens (38 files)
+
+# Pull in shared type definitions
+@a:shared-lib/types/**/*.ts                                               ~18.9k tokens (12 files)
+
+# Include API documentation
+@a:docs/api-reference/**/*.md                                             ~32.1k tokens (8 files)
+```
+
+**Search directives** find files across multiple repositories by path or content:
+
+```groverules
+# Find all config files across all projects
+@a:projects @find: "config"                                               ~89.3k tokens (52 files)
+
+# Search for authentication-related code across api-server and web-app
+@a:api-server @grep: "auth"                                               ~42.7k tokens (18 files)
+@a:web-app @grep: "auth"                                                  ~28.4k tokens (9 files)
+```
+
+**Interactive selection** lets you choose specific files from a ruleset via TUI or editor:
+
+```groverules
+# Open TUI to select files from shared-lib's backend ruleset
+@view:@a:shared-lib::backend-only
+@a:shared-lib/types/user.ts                                               ~2.3k tokens
+@a:shared-lib/utils/validator.ts                                          ~4.1k tokens
+```
+
+**External repositories** can be cloned and included from GitHub:
+
+```groverules
+# Include external HTTP router library for reference
+@a:git:gorilla/mux/**/*.go                                                [not_audited | abc1234]
+                                                                          ~28.5k tokens (18 files)
+```
+
+The generated context file (`.grove/context`) concatenates all matched files with XML structure:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<context>
+  <hot-context files="45" description="Files to be used for reference/background context">
+    <file path="src/api/server.go">
+package api
+
+func StartServer() {
+    // implementation
+}
+...
+    </file>
+    <file path="src/api/auth.go">
+package api
+
+func Authenticate(token string) error {
+    // authentication logic
+}
+...
+    </file>
+    <file path="shared-lib/types/user.ts">
+export interface User {
+    id: string;
+    name: string;
+}
+...
+    </file>
+  </hot-context>
+</context>
+```
+
+This structured format enables LLMs to efficiently process large codebases while maintaining clear file boundaries and metadata.
 
 Grove-context acts as the foundational context engine for this workflow across the Grove ecosystem.
 
