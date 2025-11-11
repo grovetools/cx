@@ -15,10 +15,14 @@ Create detailed documentation for every `cx` command, organized into logical gro
 - `cx from-git` - Generate context from git changes
 - `cx diff` - Show context differences
 
-### Snapshots
-- `cx save` - Save current context configuration
-- `cx load` - Load saved context configuration  
-- `cx listsnapshots` - List saved snapshots
+### Snapshots (Rule Sets)
+- `cx rules` - Interactive TUI for managing rule sets (no args opens selector)
+- `cx rules list` - List all available rule sets
+- `cx rules set <name>` - Set a rule set as active (read-only reference)
+- `cx rules load <name>` - Copy rule set to working file (editable)
+- `cx rules save <name>` - Save current rules as named set
+
+**Important**: Document the parent `cx rules` command first, then each subcommand. Explain the difference between `set` (read-only reference) and `load` (editable copy).
 
 ### Interactive Tools
 - `cx view` - Multi-tab interactive TUI (TREE, RULES, STATS, LIST)

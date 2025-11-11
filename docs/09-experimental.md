@@ -1,6 +1,15 @@
-# grove-context (cx)
+# Experimental Features
 
-A command-line tool for managing file-based context for LLM prompts.
+> ⚠️ **WARNING: EXPERIMENTAL FEATURES**
+> Features documented in this section are experimental and may:
+> - Change or be removed without notice in future versions
+> - Have incomplete error handling or edge case coverage
+> - Cause unexpected API costs (especially caching features)
+> - Lack comprehensive testing in production environments
+>
+> **Use in production at your own risk.** Monitor costs, behavior, and API usage closely.
+
+---
 
 ## Core Mechanism
 
@@ -111,11 +120,16 @@ The `@default:` directive inherits the default rule set from another project. It
 -   `cx rules load <name>`: Copy a named rule set to `.grove/rules` to use as a modifiable working copy.
 -   `cx rules save <name>`: Save the current `.grove/rules` content to a new named rule set.
 
-## Experimental Features
+## Experimental Feature Details
 
-### Hot/Cold Context Caching (⚠️ EXPERIMENTAL - USE WITH CAUTION)
+### Hot/Cold Context Caching
 
--   **WARNING**: This feature is experimental and can lead to high API costs if misconfigured.
+> ⚠️ **CACHING COST WARNING**
+> Improper cache configuration can result in **significant unexpected API costs**.
+> Cache regeneration can cost hundreds of dollars if misconfigured with short TTLs or frequent changes.
+> **Only use caching if you thoroughly understand LLM API pricing models and caching behavior.**
+
+This feature is experimental and can lead to high API costs if misconfigured.
 -   The cold context (files defined below `---`) can be cached by `grove-gemini` to reduce token costs on repeated requests.
 -   **Caching Directives**:
     -   `@enable-cache`: Opt-in to enable caching for this rules file.

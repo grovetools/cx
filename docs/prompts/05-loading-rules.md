@@ -124,3 +124,11 @@ Refactor the authentication module...
 - Creating and loading snapshots for different workflows
 - Template selection for new projects
 
+
+## Cross-References
+End the document with a "See Also" section linking to related documentation:
+- [Rules & Patterns](03-rules-and-patterns.md) - Syntax for creating and importing rule sets
+- [Context Generation](04-context-generation.md) - How rule sets generate context
+- [Context TUI](06-context-tui.md) - Visual interface for switching and managing rule sets
+- [Examples](02-examples.md) - Practical examples of rule set workflows
+- [Command Reference](10-command-reference.md) - Complete `cx rules` command documentation

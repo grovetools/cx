@@ -121,3 +121,13 @@ The LIST tab shows a flat, sortable list of every file included in the context.
 -   Use the **TREE** tab for a quick visual assessment. Included directories are marked with `✓` and show their total token contribution, such as `pkg ✓ (29.5k)`.
 -   Immediately spot directories that are excluded by rules, marked with `🚫`, such as `tests 🚫`.
 -   To understand why a directory is included or excluded, navigate to the **RULES** tab to review the patterns in effect.
+
+---
+
+## See Also
+
+- [Rules & Patterns](03-rules-and-patterns.md) - Understanding the rules displayed in the RULES tab
+- [Context Generation](04-context-generation.md) - How the TUI reflects generated context
+- [Loading Rules](05-loading-rules.md) - Switching rule sets from within the TUI
+- [Examples](02-examples.md) - Example workflows using `cx view`
+- [Command Reference](10-command-reference.md) - Complete `cx view` command documentation

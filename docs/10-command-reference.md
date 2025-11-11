@@ -163,6 +163,36 @@ Commands for managing named context configurations, referred to as rule sets or 
 
 ---
 
+### `cx rules`
+
+**Usage**: `cx rules [subcommand]`
+
+**Description**:
+Interactive TUI for managing named rule sets. When run without arguments, opens an interactive selector to choose from available rule sets in `.cx/` and `.cx.work/`.
+
+**Subcommands**:
+- `list`: List all available rule sets
+- `set <name>`: Set active rule set (read-only reference)
+- `load <name>`: Copy rule set to working file (editable)
+- `save <name>`: Save current rules as named set
+
+**Arguments**: None (when run without subcommand).
+
+**Flags**: See individual subcommands.
+
+**Examples**:
+```bash
+# Open interactive selector
+cx rules
+
+# Use specific subcommand
+cx rules set backend
+```
+
+**Related Commands**: `cx edit`, `cx view`
+
+---
+
 ### `cx rules list`
 
 **Usage**: `cx rules list [--for-project <alias>] [--json]`
@@ -208,7 +238,37 @@ cx rules save feature-x-api
 cx rules save my-temp-rules --work
 ```
 
-**Related Commands**: `cx rules load`
+**Related Commands**: `cx rules load`, `cx rules set`
+
+---
+
+### `cx rules set`
+
+**Usage**: `cx rules set <name> [--work]`
+
+**Description**:
+Sets a named rule set from `.cx/` or `.cx.work/` as the active context source. This creates a read-only reference to the named set, meaning the original set remains unchanged. To create an editable copy, use `cx rules load` instead.
+
+**Arguments**:
+- `name` (required): The name of the rule set to activate.
+
+**Flags**:
+- `--work`: Look for the rule set in `.cx.work/` instead of `.cx/`.
+
+**Examples**:
+```bash
+# Set backend rules as active
+cx rules set backend
+
+# Set a personal rule set from .cx.work/
+cx rules set my-feature --work
+
+# Switch between contexts for different tasks
+cx rules set frontend  # Work on UI
+cx rules set backend   # Work on API
+```
+
+**Related Commands**: `cx rules load`, `cx rules list`, `cx rules save`
 
 ---
 

@@ -92,3 +92,11 @@ Document the exact .grove/context format:
 - Monitoring context size with `cx stats`
 - Understanding binary file exclusion
 - Checking for unintended file inclusions
+
+## Cross-References
+End the document with a "See Also" section linking to related documentation:
+- [Rules & Patterns](03-rules-and-patterns.md) - Syntax and patterns for defining context
+- [Loading Rules](05-loading-rules.md) - Managing multiple rule sets
+- [Context TUI](06-context-tui.md) - Interactive visualization of generated context
+- [Command Reference](10-command-reference.md) - Commands for generating and inspecting context
+- [Editor Integration](11-editor-integration.md) - Real-time context feedback in your editor

@@ -100,3 +100,11 @@ Provide complete rules files for:
   - Switch to backend-only when working on APIs
   - Switch to docs-only when writing documentation
   - Use feature-specific rules for focused work (auth, billing, etc.)
+
+## Cross-References
+End the document with a "See Also" section linking to related documentation:
+- [Examples](02-examples.md) - Practical examples using these patterns, including troubleshooting
+- [Context Generation](04-context-generation.md) - How patterns are resolved into context files
+- [Loading Rules](05-loading-rules.md) - Managing and switching between multiple rule sets
+- [Context TUI](06-context-tui.md) - Visual exploration and editing of rules
+- [Command Reference](10-command-reference.md) - Complete reference for all `cx` commands

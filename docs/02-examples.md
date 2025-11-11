@@ -151,3 +151,104 @@ Grove Flow, the job orchestrator, uses `grove-context` to automatically prepare 
     *   `cx from-git --commits 1`: Includes all files changed in the last commit.
 
 5.  **Reset to defaults**: If your rules file becomes too complex, run `cx reset` to revert it to the default specified in your project's `grove.yml` or to a basic boilerplate.
+
+### Example 6: Debugging Context Issues
+
+When files aren't appearing in your context as expected, use these debugging strategies:
+
+1.  **Verify patterns with resolve**: Test individual patterns to see exactly what they match.
+    ```bash
+    # Test a specific pattern
+    cx resolve "src/**/*.go"
+
+    # Test an alias
+    cx resolve "@a:grove-core/pkg/**"
+    ```
+
+2.  **Check for exclusion conflicts**: Rules follow "last match wins" logic. A later exclusion can override an earlier inclusion.
+    ```bash
+    # .grove/rules - PROBLEM: Second rule excludes everything
+    src/**/*.go          # Includes all Go files in src/
+    !**/*.go             # Excludes ALL Go files everywhere
+
+    # SOLUTION: Be more specific with exclusions
+    src/**/*.go          # Include Go files in src/
+    !src/**/*_test.go    # Only exclude test files
+    ```
+
+3.  **Use the TUI for visual debugging**: The tree view quickly reveals what's included vs excluded.
+    ```bash
+    cx view
+    # Navigate to TREE tab
+    # Look for ✓ (included), 🚫 (excluded), or no marker (omitted)
+    # Check directory token counts to identify large contributors
+    ```
+
+4.  **Verify files aren't gitignored**: Files in `.gitignore` cannot be included in context.
+    ```bash
+    # Check if a file is gitignored
+    git check-ignore -v path/to/file
+
+    # If gitignored but tracked, it can be included
+    git ls-files path/to/file
+    ```
+
+5.  **Check workspace discovery**: Aliases only work for discovered workspaces.
+    ```bash
+    # List all discovered workspaces
+    cx workspace list
+
+    # If your project isn't listed, check grove.yml configuration
+    ```
+
+#### Common Pitfalls
+
+-   **Order matters**: Patterns are applied sequentially. The last matching rule determines inclusion/exclusion.
+    ```bash
+    # WRONG: Tests included because last rule matches
+    !**/*_test.go
+    **/*.go
+
+    # RIGHT: Tests excluded
+    **/*.go
+    !**/*_test.go
+    ```
+
+-   **Forgetting to exclude tests and vendor**: These can dramatically bloat context size and token usage.
+    ```bash
+    # Always exclude common large directories
+    !vendor/
+    !node_modules/
+    !**/*_test.go
+    !*.test.ts
+    ```
+
+-   **Missing ecosystem or worktree in alias**: Aliases must match discovered workspaces exactly.
+    ```bash
+    # If workspace is "grove-ecosystem:grove-core"
+    @a:grove-core                        # May match, but not guaranteed
+    @a:grove-ecosystem:grove-core        # Explicit, guaranteed match
+
+    # For worktrees
+    @a:grove-flow:my-feature-branch      # Correct
+    @a:grove-flow/path/**                # Won't find worktree files
+    ```
+
+-   **Relative paths breaking across environments**: Use aliases for portability.
+    ```bash
+    # FRAGILE: Breaks if repo location changes
+    ../api-server/src/**/*.go
+
+    # ROBUST: Works anywhere
+    @a:api-server/src/**/*.go
+    ```
+
+-   **Not using `cx stats` before API calls**: Always check context size to avoid unexpected costs.
+    ```bash
+    # Check before making LLM requests
+    cx stats
+
+    # Optimize if token count is too high
+    cx view  # Visual inspection
+    # Add exclusions for large, unnecessary files
+    ```

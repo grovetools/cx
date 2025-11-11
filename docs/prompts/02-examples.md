@@ -51,6 +51,19 @@ Create five practical examples that demonstrate Grove Context's capabilities, fr
 - Including external repositories with `cx repo audit` first
 - Resetting to defaults with `cx reset`
 
+### Example 6: Debugging Context Issues (NEW)
+- Using `cx resolve` to test individual patterns
+- Understanding "last match wins" rule conflicts
+- Using `cx view` TUI for visual debugging (✓, 🚫 markers)
+- Checking if files are gitignored with `git check-ignore`
+- Verifying workspace discovery with `cx workspace list`
+- **Common Pitfalls Section**:
+  - Pattern order matters (wrong order can exclude everything)
+  - Forgetting to exclude tests and vendor directories
+  - Missing ecosystem or worktree in aliases
+  - Relative paths breaking across environments (use aliases)
+  - Not checking context size with `cx stats` before API calls
+
 ## Output Format
 - Each example should have clear headings (e.g., "Example 1: Basic Context Generation")
 - Include both the commands and the context for why you'd use them

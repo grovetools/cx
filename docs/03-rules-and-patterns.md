@@ -187,3 +187,13 @@ config.yml
 -   **Use Descriptive Names**: Name your rule sets clearly (e.g., `api-only`, `refactor-auth-service`).
 -   **Import for Consistency**: Create a central project with standard rule sets (`go-defaults`, `ts-react-app`) and import them using `@a:project::ruleset` to enforce consistency.
 -   **Switch Contexts Frequently**: Use `cx rules` to switch between rule sets based on your current task. This keeps the context small and relevant, improving LLM accuracy and reducing cost.
+
+---
+
+## See Also
+
+- [Examples](02-examples.md) - Practical examples using these patterns, including troubleshooting
+- [Context Generation](04-context-generation.md) - How patterns are resolved into context files
+- [Loading Rules](05-loading-rules.md) - Managing and switching between multiple rule sets
+- [Context TUI](06-context-tui.md) - Visual exploration and editing of rules
+- [Command Reference](10-command-reference.md) - Complete reference for all `cx` commands

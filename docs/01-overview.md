@@ -75,7 +75,7 @@ Plans generated from developer-curated context improve agent implementation succ
 
 A common pattern is multi-turn planning: start with core context to scope foundational aspects, then iteratively refine in subsequent turns. Each turn serves to 1) correct, clarify, or expand the plan based on the LLM's output, 2) add more relevant context, and 3) increase the level of detail until the plan is concrete enough to hand off to an agent. This iterative refinement within a single conversation produces increasingly detailed, actionable plans. The context definitions are persistent (defined in `.grove/rules` files) and can be easily saved, loaded, and reset as needed, making this process reproducible and shareable.
 
-Context is defined in a `.grove/rules` file using gitignore-style patterns. Beyond basic glob patterns, special directives add powerful capabilities: `@a:` (alias) references pull in files from other repositories and worktrees that Grove knows about, `@grep:` searches file contents across repos, and `@find:` searches file paths—making it easy to gather relevant code from across many repositories. Each repository can define pre-curated rulesets for specific purposes (like `backend-only`, `frontend-only`, or `docs-only`), so you don't have to think about the minute details of context selection every time. For example, a feature in your API server can pull in frontend code (`@a:web-app/src/**/*.tsx`), shared libraries (`@a:common/types/**`), and pre-defined rulesets from documentation repos (`@a:docs-repo::api-reference`). These cross-repository capabilities strengthen the breadth of your planning context, ensuring the LLM sees the full picture across your entire codebase ecosystem.
+Context is defined in a `.grove/rules` file using gitignore-style patterns. Beyond basic glob patterns, special directives add powerful capabilities: `@a:` (alias) references pull in files from other repositories and worktrees that Grove knows about, `@grep:` searches file contents across repos, and `@find:` searches file paths—making it easy to gather relevant code from across many repositories. Each repository can define pre-curated rulesets for specific purposes (like `backend-only`, `frontend-only`, or `docs-only`) that provide general starting points. You typically begin with a preset ruleset, then tweak it for each feature—adding specific files, narrowing scope, or pulling in additional context as needed. For example, a feature in your API server can start with a backend ruleset, then add frontend components (`@a:web-app/src/components/**/*.tsx`), shared type definitions (`@a:shared-lib/types/**`), and relevant documentation (`@a:docs/api-reference/**`). These cross-repository capabilities strengthen the breadth of your planning context, ensuring the LLM sees the full picture across your entire codebase ecosystem.
 
 Consider a typical multi-project workspace structure that Grove can work across:
 
@@ -253,6 +253,22 @@ Grove-context acts as the foundational context engine for this workflow across t
 
 **Foundation:**
 -   **`grove-core`**: Provides the workspace discovery engine that powers `grove-context`'s alias resolution. Discovers projects, ecosystems, and worktrees across your filesystem, enabling `@a:project` syntax to work consistently for teams.
+
+## Tradeoffs & Considerations
+
+**Learning curve & onboarding**: The directive syntax (`@a:`, `@grep:`, `@find:`, `@view:`, imports) requires upfront effort to adopt. It requires understanding the Grove workspace structure, rules syntax, and which rulesets to use for different tasks. The TUI and editor integration help. For quick one-off tasks, agent discovery may be faster.
+
+**Maintenance & staleness**: As codebases evolve, `.grove/rules` files need updates when project structure changes significantly. The generated `.grove/context` file is a snapshot and will be overwritten unless saved. Pre-curated rulesets in `.cx/` and rule imports help reduce maintenance burden. 
+
+**Rule debugging**: When context is missing expected files or including wrong ones, troubleshooting can be non-obvious. In the `grove-neovim` plugin, virtual text displays token usage, how different rules interact, and pickers for showing which files are included in each rule.  The TUI helps visualize results, but iterating on complex rule files takes time. 
+
+**Context explosion & token limits**: Easy to over-include with broad directives—`@find:` and `@grep:` can match hundreds of files across repos. Bloated contexts can waste tokens on tangential code, reducing signal-to-noise ratio. No automatic guidance on what to exclude when you hit limits; requires manual triage of what's essential vs "nice to have."
+
+**External repo trust**: Including `@a:git:` repos requires either auditing code manually or trusting unaudited external dependencies in your LLM context. The audit workflow exists but adds friction to rapid iteration. Many repos contain context-polluting test files that need to be excluded. 
+
+**Cost model**: At 100k-700k tokens per planning request, costs are higher upfront compared to smaller agent contexts. The bet is that comprehensive planning reduces total development cost through fewer implementation iterations. This tradeoff favors complex, multi-repo features over simple single-file changes.
+
+**Context vs capability**: This approach assumes developers have better architectural understanding than agents can discover autonomously. As models improve at code understanding, this advantage may narrow. However, reproducibility, shareability, and determinism remain valuable even as agent capabilities advance.
 
 ## Installation
 

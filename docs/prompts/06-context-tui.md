@@ -143,3 +143,10 @@ Focus on `cx view` as the comprehensive TUI (Terminal User Interface) for contex
 - Visual indicators make included/excluded status immediately clear
 
 This replaces older single-view designs and provides a complete context management experience in the terminal.
+## Cross-References
+End the document with a "See Also" section linking to related documentation:
+- [Rules & Patterns](03-rules-and-patterns.md) - Understanding the rules displayed in the RULES tab
+- [Context Generation](04-context-generation.md) - How the TUI reflects generated context
+- [Loading Rules](05-loading-rules.md) - Switching rule sets from within the TUI
+- [Examples](02-examples.md) - Example workflows using `cx view`
+- [Command Reference](10-command-reference.md) - Complete `cx view` command documentation

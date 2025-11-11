@@ -92,3 +92,13 @@ The context generation pipeline is a core component used by several other Grove 
 -   **grove-gemini**: When making a request with `gemapi request`, context is automatically generated. Hot context files are passed as dynamic files, while cold context is managed via Gemini's caching API.
 -   **grove-flow**: Before executing `oneshot` or `chat` jobs, `grove-flow` regenerates the context to ensure it is current. Jobs can specify their own `rules_file` in their frontmatter for job-specific context. Context is scoped to the job's working directory or worktree.
 -   **grove-nvim**: The Neovim plugin provides real-time feedback while editing `.grove/rules` files. It displays virtual text next to each rule showing the number of files and tokens it contributes, and allows interactive preview of the files matched by a rule.
+
+---
+
+## See Also
+
+- [Rules & Patterns](03-rules-and-patterns.md) - Syntax and patterns for defining context
+- [Loading Rules](05-loading-rules.md) - Managing multiple rule sets
+- [Context TUI](06-context-tui.md) - Interactive visualization of generated context
+- [Command Reference](10-command-reference.md) - Commands for generating and inspecting context
+- [Editor Integration](11-editor-integration.md) - Real-time context feedback in your editor

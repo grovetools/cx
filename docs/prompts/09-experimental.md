@@ -2,12 +2,31 @@
 
 You are documenting experimental and advanced features of grove-context.
 
+## IMPORTANT: Start with Prominent Warning
+
+Begin the document with this warning block:
+
+> ⚠️ **WARNING: EXPERIMENTAL FEATURES**
+> Features documented in this section are experimental and may:
+> - Change or be removed without notice in future versions
+> - Have incomplete error handling or edge case coverage
+> - Cause unexpected API costs (especially caching features)
+> - Lack comprehensive testing in production environments
+>
+> **Use in production at your own risk.** Monitor costs, behavior, and API usage closely.
+
 ## Task
 Create a guide on experimental features that are still being refined or have specialized use cases.
 
 ## Topics to Cover
 
-1. **Hot/Cold Context Caching (⚠️ EXPERIMENTAL - USE WITH CAUTION)**
+1. **Hot/Cold Context Caching**
+   - Add a second prominent warning specifically for caching:
+   > ⚠️ **CACHING COST WARNING**
+   > Improper cache configuration can result in **significant unexpected API costs**.
+   > Cache regeneration can cost hundreds of dollars if misconfigured with short TTLs or frequent changes.
+   > **Only use caching if you thoroughly understand LLM API pricing models and caching behavior.**
+
    - **WARNING**: This feature is experimental and can lead to high API costs if misconfigured
    - Using `---` separator to split hot (changing) and cold (stable) context
    - Cold context can be cached by grove-gemini to reduce token costs
