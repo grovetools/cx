@@ -1,173 +1,153 @@
-# Practical Examples
+Here are five practical examples for using Grove Context (`cx`), following the provided documentation style guide.
 
-This document provides examples of using Grove Context (`cx`) in common development workflows.
+### Example 1: Quick Start - Pattern-Based Context
 
-## Example 1: Quick Start - Pattern-Based Context
+Grove Context (`cx`) generates a context file (`.grove/context`) by including files that match patterns defined in a rules file. By default, it reads rules from `.grove/rules`.
 
-This example covers the basic workflow for a new project: creating rules, generating context, and inspecting the results.
+1.  **Create a rules file**: Start by creating a `.grove/rules` file. You can do this manually or by running `cx edit`. In Neovim, the keybinding `<leader>fe` opens the active rules file.
 
-Assume a Go project with the following structure:
+    ```
+    # .grove/rules
+    
+    # Include all Go files
+    *.go
+    
+    # Exclude test files
+    !*_test.go
+    
+    # Include all Markdown files in the docs/ directory
+    docs/**/*.md
+    ```
 
-```
-my-go-app/
-├── main.go
-├── utils.go
-├── utils_test.go
-└── README.md
-```
+2.  **Verify the context**: Run `cx list` to see a list of absolute file paths included in the context.
 
-#### 1. Create a Rules File
+    ```bash
+    $ cx list
+    /path/to/project/main.go
+    /path/to/project/internal/server.go
+    /path/to/project/docs/guide.md
+    ```
 
-Create a `.grove/rules` file to define the context. This file will include all Go source files but exclude test files.
+3.  **Analyze context statistics**: Use `cx stats` to see a breakdown of the context by file type, token count, and size. This helps identify which files contribute most to the context size. In Neovim, statistics for each rule are displayed as virtual text next to the rule itself, updating in real-time as you edit.
 
-```bash
-# Create the directory
-mkdir -p .grove
+4.  **Explore visually with the TUI**: Run `cx view` to launch an interactive terminal interface.
+    *   **TREE**: A file explorer view showing which files are included (hot/cold), excluded, or omitted.
+    *   **RULES**: Displays the content of the active rules file. Press `e` to edit it.
+    *   **STATS**: A detailed breakdown of token and file counts by language.
+    *   **LIST**: A flat list of all included files, sortable by name or token count.
 
-# Create the rules file
-echo "**/*.go" > .grove/rules
-echo "!**/*_test.go" >> .grove/rules
-```
+The tool automatically excludes binary files, so there is no need to add patterns like `!*.bin` or `!*.png`.
 
-Your `.grove/rules` file now contains:
+### Example 2: Reusable Rule Sets for Context Switching
 
-```gitignore
-**/*.go
-!**/*_test.go
-```
+For projects with multiple components (e.g., backend, frontend, docs), you can create named rule sets in the `.cx/` directory to switch contexts quickly.
 
-#### 2. Edit Rules
+1.  **Create named rule sets**: Define different contexts in separate files within the `.cx/` directory.
 
-The `cx edit` command opens the rules file in the editor defined by the `$EDITOR` environment variable. This can be bound to a keyboard shortcut for frequent editing.
+    ```
+    # .cx/backend.rules
+    # Context for backend development
+    pkg/api/**/*.go
+    !pkg/api/**/*_test.go
+    cmd/server/*.go
+    ```
 
-```bash
-# Example for .zshrc or .bashrc
-bindkey -s '^x^c' 'cx edit\n'
-```
+    ```
+    # .cx/frontend.rules
+    # Context for frontend development
+    ui/src/**/*.ts
+    ui/src/**/*.tsx
+    ```
 
-#### 3. List the Context Files
+2.  **Switch between contexts**: Use `cx rules set <name>` to activate a rule set. The active set is stored in project state (`.grove/state`) and used by all subsequent `cx` commands.
 
-Run `cx list` to see which files are included based on the rules. `cx` filters out binary files and files ignored by Git.
+    ```bash
+    # Work on the backend
+    $ cx rules set backend
+    Active context rules set to 'backend'
+    
+    # Work on the frontend
+    $ cx rules set frontend
+    Active context rules set to 'frontend'
+    ```
 
-```bash
-cx list
-```
+3.  **Import rule sets**: You can import rule sets from other projects using the `@a:project::ruleset` syntax. This allows for composition of context from multiple sources.
 
-**Expected Output:**
+    ```
+    # .cx/full-stack.rules
+    
+    # Import the backend rules from the 'api-server' project
+    @a:api-server::backend
+    
+    # Also include local frontend files
+    ui/src/**/*.ts
+    ```
 
-```
-/path/to/my-go-app/main.go
-/path/to/my-go-app/utils.go
-```
+For temporary or personal rule sets that should not be committed to version control, use the `.cx.work/` directory instead of `.cx/`.
 
-The file `utils_test.go` is excluded by the `!**/*_test.go` pattern.
+### Example 3: Working with Aliases and Workspaces
 
-#### 4. Analyze Context Statistics
+Aliases are shortcuts that resolve to the absolute path of a Grove workspace (a project or ecosystem). This is useful in multi-repository setups.
 
-Use `cx stats` to get a summary of the context, including file counts, token estimates, and language breakdown.
+1.  **List available workspaces**: Run `cx workspace list` (or `grove ws list`) to see all discovered projects and their unique identifiers, which function as aliases.
 
-```bash
-cx stats
-```
+2.  **Use aliases in rules**: Reference projects directly without needing relative paths. Grove Context provides context-aware resolution, prioritizing sibling projects within the same ecosystem.
 
-The command outputs a summary of total files and tokens, a distribution of languages, and a list of the largest files by token count.
+    ```
+    # .grove/rules
+    
+    # Include the main package from the grove-nvim project
+    @a:grove-nvim/main.go
+    
+    # Include all Go files from the grove-core project within the grove-ecosystem
+    @a:grove-ecosystem:grove-core/**/*.go
+    
+    # Include files from a specific worktree of a project
+    @a:grove-flow:my-feature-branch/pkg/orchestration/*.go
+    ```
 
-## Example 2: Managing Projects with Multiple Components
+3.  **Preview alias matches**: In Neovim, place your cursor over a rule containing an alias and press `<leader>f?` to open a file picker showing all files matched by that rule. This allows for quick verification of complex patterns.
 
-`cx` can manage context for workspaces containing multiple projects. This example demonstrates features for such scenarios.
+### Example 4: Grove-Flow Integration
 
-Assume a workspace with a web frontend, a backend API, and a shared library:
+Grove Flow, the job orchestrator, uses `grove-context` to automatically prepare the context for each job it runs.
 
-```
-my-workspace/
-├── api/
-│   ├── main.go
-│   └── handlers/
-│       └── user.go
-├── frontend/
-│   ├── src/
-│   │   └── App.tsx
-│   └── package.json
-└── shared-lib/
-    ├── utils.go
-    └── README.md
-```
+1.  **Per-job context**: You can specify a custom rules file for a particular job in its frontmatter. This is useful for tasks that require a very specific subset of the codebase.
 
-#### 1. Switch Between Different Rule Sets
+    ```yaml
+    # 02-refactor-api.md
+    ---
+    id: refactor-api-job
+    title: "Refactor API"
+    type: agent
+    rules_file: .cx/backend.rules # This job will use the backend-only context
+    ---
+    Refactor the API endpoints in `pkg/api/` to use the new service layer.
+    ```
 
-Different tasks may require different contexts. You can maintain multiple rule files and switch between them using `cx set-rules`.
+2.  **Automatic context generation**: Before executing a job, `grove-flow` regenerates the context based on the active or job-specific rules. This ensures the LLM always has the most up-to-date view of the relevant files.
 
--   **`docs.rules`:** For generating documentation.
--   **`api-dev.rules`:** For working on the API, including the shared library.
+3.  **Interactive context creation**: If `grove-flow` runs a job in a worktree where no `.grove/rules` file exists, it will prompt you interactively to create one, edit it, or proceed without context. This prevents jobs from running with an empty context by mistake.
 
-```gitignore
-# docs.rules
-README.md
-shared-lib/README.md
-```
+### Example 5: Managing Complex Projects
 
-```gitignore
-# api-dev.rules
-api/**/*.go
-shared-lib/**/*.go
-!**/*_test.go
-```
+`cx` provides tools for understanding and refining context in large or unfamiliar codebases.
 
-Switch to the API development context:
+1.  **Load a base rule set**: Start by loading a shared rule set as your working copy with `cx rules load <name>`. This copies the file to `.grove/rules` so your changes don't affect the original.
 
-```bash
-cx set-rules api-dev.rules
-```
+2.  **Use the TUI for refinement**: Run `cx view` to analyze the context.
+    *   Navigate the **TREE** tab to see the file structure and identify directories with high token counts.
+    *   Switch to the **STATS** tab to see a breakdown by language and identify the largest files.
+    *   Open the **RULES** tab to see the active rules and press `e` to edit them directly.
+    *   Use the **LIST** tab to find a specific file and press `x` to add an exclusion rule for it.
+    *   Press `s` to open an interactive selector to switch to a different named rule set.
 
-This command copies the content of `api-dev.rules` into `.grove/rules`, making it the active configuration.
+3.  **Include local or external repositories**:
+    *   **Local**: Add relative paths to your rules file (e.g., `../shared-library/**`).
+    *   **External**: For third-party repositories, first run `cx repo audit <git-url>` to perform a security review. Once audited, you can add the Git URL directly to your rules file (e.g., `git@github.com:user/repo.git`), and `cx` will use the locally cloned, audited version.
 
-#### 2. Visually Browse and Modify Context
+4.  **Use Git for context**: Quickly generate context for a code review by using Git history.
+    *   `cx from-git --staged`: Includes all currently staged files.
+    *   `cx from-git --commits 1`: Includes all files changed in the last commit.
 
-The `cx view` command starts an interactive terminal interface to inspect and modify the context.
-
-```bash
-cx view
-```
-
-In the TUI, you can:
--   Navigate the file tree.
--   View status indicators for each file (hot, cold, excluded, omitted).
--   Modify the `.grove/rules` file by toggling a file's inclusion in hot (`h`), cold (`c`), or excluded (`x`) contexts.
--   Press `Tab` to switch to the repository management view.
-
-#### 3. Manage Repositories and Worktrees
-
-In the `cx view` TUI, pressing `Tab` shows a list of local workspaces, Git worktrees, and cloned external repositories. From this view, you can add an entire repository to your hot or cold context or run a security audit on an external repository.
-
-#### 4. Generate Context from Git History
-
-To generate context from recent changes, use `cx from-git`. This command overwrites `.grove/rules` with explicit paths to the changed files.
-
-```bash
-# Include all files staged for commit
-cx from-git --staged
-
-# Include all files changed on the current branch against 'main'
-cx from-git --branch main..HEAD
-```
-
-#### 5. Include External Repositories
-
-You can include files from other repositories by adding their Git URL to the rules file. `cx` will clone the repository locally. It is recommended to audit the repository first.
-
-```bash
-# 1. Audit the repository to check its contents.
-cx repo audit https://github.com/charmbracelet/lipgloss
-
-# 2. Add the URL to .grove/rules, optionally pinning to a version.
-echo "https://github.com/charmbracelet/lipgloss@v0.13.0" >> .grove/rules
-```
-
-#### 6. Reset to Defaults
-
-The `cx reset` command restores `.grove/rules` to a default state. If `context.default_rules_path` is defined in `grove.yml`, it will use that file; otherwise, it creates a boilerplate file.
-
-```bash
-# Reset .grove/rules to the project's default configuration.
-cx reset
-```
+5.  **Reset to defaults**: If your rules file becomes too complex, run `cx reset` to revert it to the default specified in your project's `grove.yml` or to a basic boilerplate.

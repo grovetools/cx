@@ -1,30 +1,46 @@
-# Grove Context
+# grove-context (cx)
 
-<img src="./images/grove-context-readme.svg" width="60%" />
+`grove-context` (`cx`) is a command-line tool for assembling file-based context for Large Language Models (LLMs). It is designed to support a **planning → execution** workflow, where a comprehensive set of files defining a feature's "universe" is used to generate detailed implementation plans from large-context LLMs.
 
-`grove-context` (`cx`) is a command-line tool that generates file-based context for Large Language Models (LLMs) from a set of user-defined patterns. It reads files matching these patterns and concatenates their content into a structured format.
+This approach embraces large context windows (200k-2M+ tokens) for high-level planning, rather than attempting to work around context limits with retrieval-based methods. It acts as the foundational context engine for the Grove ecosystem.
 
 <!-- placeholder for animated gif -->
 
-### Key Features
+## Key Features
 
-*   **Pattern-Based File Selection**: Reads include/exclude patterns from a `.grove/rules` file using a `.gitignore`-style syntax.
-*   **Context Generation**: Generates a concatenated context file with XML delimiters.
-*   **Rules Editing**: Opens the `.grove/rules` file in the default editor via the `cx edit` command.
-*   **Context Inspection**: Lists included files (`cx list`) and displays token/file counts and language distribution (`cx stats`).
-*   **Interactive TUI**: Provides a terminal interface (`cx view`) to browse the file tree, view file statuses, and modify rules.
-*   **Rule Management**: Switches the active rules by copying an external file (`cx set-rules`), restores a project-defined default (`cx reset`), or saves/loads named rule configurations (`cx save`/`load`).
-*   **Git Integration**: Generates a temporary rules file from Git history (`cx from-git`), such as files changed on a branch or staged for commit.
-*   **External Repository Management**: Includes files from external Git repositories specified by URL in the rules file and manages local clones via the `cx repo` command, which includes an audit workflow.
+-   **Declarative Context Definition:** Define the context "universe" using a `.grove/rules` file with gitignore-style patterns and directives. The tool handles the file resolution and assembly.
+
+-   **Workspace-Aware Aliasing:** Reference files across different projects, ecosystems, and worktrees using a consistent alias system (e.g., `@a:ecosystem:repo/path`). This is powered by `grove-core`'s workspace discovery.
+
+-   **Rule Set Management:** Create, manage, and switch between named rule sets for different tasks (e.g., `frontend-only`, `full-stack`, `audit`) using the `cx rules` command.
+
+-   **Interactive Visualization:** Explore context composition with an interactive TUI (`cx view`) that provides a tree view of your project, showing the status of each file (included, excluded, gitignored).
+
+-   **Token & Cost Analytics:** Analyze token count, file size, and language distribution *before* sending a request to a paid API using the `cx stats` command.
+
+-   **Security Boundaries:** Restricts file access to discovered workspaces and paths explicitly allowed in your `grove.yml` configuration, preventing accidental inclusion of sensitive system files.
+
+-   **Git Integration:** Generate context dynamically from git history, including staged files (`cx from-git --staged`), recent commits, or branch diffs.
+
+## How It Works
+
+`grove-context` follows a deterministic pipeline to resolve a final list of files:
+
+1.  **Load Rules:** It reads the active rules file (either `.grove/rules` or a named set from `.cx/` specified in state).
+2.  **Expand Directives:** It recursively expands import directives (`@default` for project defaults, `::` for ruleset imports).
+3.  **Resolve Aliases:** It resolves all workspace aliases (`@a:`) to their absolute file paths using `grove-core`'s discovery mechanism.
+4.  **Filter by Gitignore:** It walks the specified file trees, filtering out files and directories matched by `.gitignore` files.
+5.  **Apply Patterns:** It applies all inclusion and exclusion patterns using a "last match wins" logic, similar to `.gitignore`.
+6.  **Generate Context:** The final list of files is used to generate a single, concatenated context file (`.grove/context`), separating files into hot (dynamic) and cold (cacheable) sections.
 
 ## Ecosystem Integration
 
-`grove-context` is a foundational tool within the Grove ecosystem that provides context to other LLM-powered tools.
+`grove-context` serves as a foundational context engine that enables other tools in the Grove ecosystem.
 
-*   **`grove-gemini` and `grove-openai`**: The `grove llm request` command calls the `cx` binary to generate context before sending a request to an LLM provider. The hot/cold context separation allows `grove-gemini` to send a stable "cold" context for caching, which is useful for large contexts.
-*   **`grove-docgen`**: The documentation generator uses `cx` to gather a codebase's files before generating documentation.
-
-This allows different tools in the ecosystem to operate on a consistent and reproducible set of files defined by a single `.grove/rules` file.
+-   **`grove-core`**: Provides the workspace discovery and identification engine that powers `cx`'s multi-repository alias resolution system.
+-   **`grove-flow`**: Manages per-job context. A job in a `grove-flow` plan can specify a `rules_file` in its frontmatter, which `cx` uses to generate a focused context for that specific task.
+-   **`grove-gemini`**: The `gemapi request` command automatically uses `cx` to generate context from the active `.grove/rules` file, handling the separation of hot and cold context for efficient caching with the Gemini API.
+-   **`grove-nvim`**: Offers editor integration for `.grove/rules` files, providing real-time token counts as virtual text, file previews for rules, and commands to manage context directly from Neovim.
 
 ## Installation
 

@@ -1,130 +1,123 @@
-# Interactive Context TUI (`cx view`)
+# Context TUI (`cx view`)
 
-The `cx view` command starts a terminal user interface (TUI) for browsing a project's files and modifying context rules. It displays a file tree that shows the status of each file and directory relative to the patterns in the active `.grove/rules` file.
+The `cx view` command launches a tabbed terminal user interface (TUI) for inspecting and managing context. It provides several views to analyze which files are included based on the active rules, see token consumption, and interactively modify the context.
 
 ## Overview
 
-The TUI provides the following functions:
--   Navigate a file tree that shows file status relative to the context.
--   Modify the `.grove/rules` file by pressing keys to include or exclude files and directories.
--   View token counts, a summary of context statistics, and the content of the rules file.
--   Switch to a repository list to manage context for local workspaces and cloned repositories.
+The TUI is organized into four main tabs:
 
-## Interface Components
+-   **TREE**: A hierarchical file browser showing the project structure.
+-   **RULES**: A viewer for the active rules file.
+-   **STATS**: An analytics view of context composition by file type and size.
+-   **LIST**: A flat list of all files included in the context.
 
-The `cx view` interface is split into two primary views that can be toggled using the `Tab` key.
+The interface provides real-time token counts and visual indicators for file status, and allows for interactive rule editing and context switching.
 
-### File Tree View
+## Tab System
 
-This is the default view, organized into two main panels:
+### TREE Tab
 
-1.  **File Tree Pane (Left)**: Displays an expandable tree of the project and any external directories included in the rules. Each entry is color-coded and prefixed with a status indicator.
-2.  **Rules & Stats Panel (Right)**:
-    *   The top section shows the content of the active `.grove/rules` file.
-    *   The bottom section displays summary statistics for hot and cold contexts, including file and token counts.
+The TREE tab displays a hierarchical view of the project's file system.
 
-### Repository Management View
+-   **Navigation**: Directories can be expanded and collapsed using arrow keys.
+-   **Visual Indicators**:
+    -   `✓`: File or directory is included in the hot or cold context.
+    -   `🚫`: File or directory is explicitly excluded by a rule.
+    -   `(CWD)`: Marks the current working directory.
+-   **Token Counts**: Estimated token counts are shown inline for each directory and included file, allowing for quick identification of high-token areas.
 
-Pressing `Tab` switches to this view, which provides a list of all discovered repositories:
--   **Workspace Repos**: Local repositories found within the Grove ecosystem workspace.
--   **Worktrees**: Git worktrees associated with workspace repositories.
--   **Cloned Repositories**: External Git repositories managed by `cx repo`.
+### RULES Tab
 
-From this view, a repository's version and audit status can be seen, and the entire repository can be added to or removed from the context.
+The RULES tab displays the content of the active rules file.
 
-## File Status Indicators
+-   **Path Display**: Shows the path to the currently active rules file (e.g., `.grove/rules` or a named set from `.cx/`).
+-   **Content Viewer**: Displays the full content of the rules file with syntax highlighting for comments and directives.
+-   **Editing**: Pressing `e` opens the active rules file in your default editor (`$EDITOR`).
 
-Each file and directory in the TUI is prefixed with an icon to indicate its context status:
+### STATS Tab
 
-| Indicator | Status           | Description                                                               |
-| :-------- | :--------------- | :------------------------------------------------------------------------ |
-| `✓`       | **Hot Context**  | The file is included in the main context (`.grove/context`).              |
-| `❄️`      | **Cold Context** | The file is included in the cached context (`.grove/cached-context`).     |
-| `🚫`      | **Excluded**     | The file was matched by an exclusion rule (`!pattern`).                   |
-| `🙈`      | **Git Ignored**  | The file is ignored by `.gitignore` (and not in context).                 |
-| `(none)`  | **Omitted**      | The file does not match any inclusion patterns and is not in the context. |
-| `⚠️`      | **Risky Path**   | The path is outside the project and may be unsafe to add.               |
+The STATS tab provides an analytical breakdown of the context composition. It is split into two panels:
 
-## Navigation and Modification
+-   **File Type Distribution**: Lists file types (e.g., `.go`, `.md`) sorted by their total token contribution, showing percentages, token counts, and file counts for each.
+-   **Largest Files**: Lists the individual files that contribute the most tokens to the context.
 
-Interaction is keyboard-driven, with controls for navigation and rule modification.
+This view helps identify which file types or specific files are consuming the most context space.
 
--   **Navigation**: Use arrow keys or `j`/`k` to move the cursor. `g` and `G` jump to the top and bottom.
--   **Context Modification**: With the cursor on a file or directory, press a key to modify its inclusion status. Changes are saved directly to the `.grove/rules` file.
-    -   `h`: Toggle inclusion in **hot context**.
-    -   `c`: Toggle inclusion in **cold context**.
-    -   `x`: Toggle **exclusion**.
--   **View Control**:
-    -   `p`: Toggle pruning mode, which hides directories that do not contain any context files.
-    -   `H` or `.`: Toggle visibility of git-ignored files.
-    -   `/`: Search for files by name.
+### LIST Tab
 
-## Keyboard Shortcuts Reference
+The LIST tab shows a flat, sortable list of every file included in the context.
 
-### File Tree View
-| Key(s)            | Action                                     |
-| :---------------- | :----------------------------------------- |
-| `q`, `Ctrl+c`     | Quit the application                       |
-| `?`               | Toggle help screen                         |
-| `Tab`             | Switch to Repository Management View       |
-| `↑`/`k`           | Move cursor up                             |
-| `↓`/`j`           | Move cursor down                           |
-| `Enter`/`Space`   | Toggle directory expand/collapse           |
-| `g` / `G`         | Jump to top / bottom                       |
-| `Ctrl+d`/`Ctrl+u` | Scroll down / up half a page               |
-| `/`               | Start searching for a file                 |
-| `n` / `N`         | Go to next / previous search result        |
-| `h`               | Toggle item's inclusion in **hot context** |
-| `c`               | Toggle item's inclusion in **cold context**|
-| `x`               | Toggle item's **exclusion**                |
-| `p`               | Toggle pruning mode                        |
-| `H` / `.`         | Toggle visibility of git-ignored files     |
-| `r`               | Refresh the view                           |
-| `zo`/`zc`         | Open/close fold at cursor (Vim-style)      |
-| `zR`/`zM`         | Open/close all folds (Vim-style)           |
+-   **Detailed View**: Each entry displays the file's full path and individual token count.
+-   **Sorting**: The list can be sorted alphabetically or by token count.
+-   **Exclusion**: Individual files can be excluded from the context directly from this view by pressing `x`.
 
-### Repository Management View
-| Key(s)            | Action                                         |
-| :---------------- | :--------------------------------------------- |
-| `q`, `Ctrl+c`     | Quit the application                           |
-| `?`               | Toggle help screen                             |
-| `Tab`, `Esc`      | Switch back to File Tree View                  |
-| `↑`/`↓`/`j`/`k`   | Move cursor up/down                            |
-| `/`               | Filter repository list                         |
-| `zo`/`zc`         | Open/close fold at cursor (Vim-style)          |
-| `zR`/`zM`         | Open/close all folds (Vim-style)               |
-| `h`               | Toggle repository's inclusion in **hot context**|
-| `c`               | Toggle repository's inclusion in **cold context**|
-| `x`               | Toggle repository's **exclusion**              |
-| `a`               | Add/remove repository from tree view (`@view`) |
-| `A`               | Run security audit on the selected repository  |
-| `R`               | View audit report for the selected repository  |
-| `r`               | Refresh repository list                        |
+## Keyboard Shortcuts
 
-## Practical Example: Refining Context Interactively
+### Global Navigation
 
-This workflow shows how to use `cx view` to add a documentation directory to your cold context and exclude a specific file.
+-   `tab` / `shift+tab`: Switch between TREE, RULES, STATS, and LIST tabs.
+-   `↑`/`↓` or `j`/`k`: Navigate up/down within the current view's list or tree.
+-   `?`: Toggle the help display.
+-   `q` / `ctrl+c`: Quit the TUI.
 
-1.  **Launch the TUI**
-    ```bash
-    cx view
-    ```
+### TREE Tab
 
-2.  **Navigate to the `docs` Directory**
-    -   Use the `j` key or down arrow to move the cursor down to the `docs` directory entry.
+-   `→` or `l`: Expand the selected directory.
+-   `←` or `h`: Collapse the selected directory.
+-   `enter` or `space`: Toggle expand/collapse for the selected directory.
+-   `za`: Toggle fold at cursor.
+-   `zo`/`zc`: Open/close fold at cursor.
+-   `zR`/`zM`: Open/close all folds.
+-   `t`: Toggle sort order (alphabetical vs. token count).
 
-3.  **Expand the Directory**
-    -   Press `Enter`. The contents of the `docs` directory are now visible.
+### RULES Tab
 
-4.  **Add the Directory to Cold Context**
-    -   With the cursor on the `docs` directory, press `c`.
-    -   The directory and all its children will be marked with the `❄️` indicator.
+-   `e`: Edit the active rules file in `$EDITOR`.
 
-5.  **Exclude a Specific File**
-    -   Navigate down into the expanded `docs` directory to a file named `wip.md`.
-    -   With the cursor on `wip.md`, press `x`.
-    -   The file is now marked with the `🚫` indicator.
+### STATS Tab
 
-6.  **Quit and Inspect Changes**
-    -   Press `q` to exit.
-    -   The `.grove/rules` file is automatically updated with these changes. It will now contain an entry for `docs/**` in the cold section and an exclusion for `!docs/wip.md`.
+-   `s` or `←`/`→`: Switch focus between the "File Types" and "Largest Files" lists.
+
+### LIST Tab
+
+-   `x`: Exclude the selected file from the context.
+-   `t`: Toggle sort order (alphabetical vs. token count).
+
+### Context Management Actions
+
+-   `e` (Most Tabs): Edit the active rules file in `$EDITOR`.
+-   `s` (Most Tabs): Open a selector to switch to a different named rule set from `.cx/`.
+-   `r` (Most Tabs): Refresh the context and reload all views.
+
+## Workflow Examples
+
+### Example 1: Understanding Your Context
+
+1.  Run `cx view` to open the TUI.
+2.  Start in the **TREE** tab to see a hierarchical overview of included directories (marked with `✓`).
+3.  Press `tab` to navigate to the **STATS** tab. Review the "File Types" panel to see which languages or file types contribute most to the context size.
+4.  Press `tab` again to go to the **LIST** tab for a complete, flat list of every included file.
+5.  Finally, switch to the **RULES** tab to see the patterns in the active rules file that produced this context.
+
+### Example 2: Optimizing Context Size
+
+1.  Run `cx view` and navigate to the **STATS** tab.
+2.  Identify a file type that is consuming a high percentage of tokens (e.g., `.go` files at 98.5%).
+3.  Note the largest individual files in the "Largest Files" panel.
+4.  Switch to the **LIST** tab, navigate to a large, unnecessary file, and press `x` to exclude it. The file will be immediately removed from the list.
+5.  Alternatively, press `e` to open the rules file and add a broader exclusion pattern (e.g., `!**/*_test.go`).
+6.  After saving the rules file, press `r` in the TUI to refresh and see the updated statistics.
+
+### Example 3: Switching Contexts
+
+1.  Run `cx view`.
+2.  Press `s` to open the rule set selector, which lists all available sets from `.cx/` and `.cx.work/`.
+3.  Use the arrow keys to select a different rule set (e.g., "backend-only") and press `enter`.
+4.  The context regenerates, and all tabs update to reflect the new set of included files.
+5.  Verify the change in the **TREE** tab by confirming that only backend-related directories are now included.
+
+### Example 4: Visual Context Review
+
+-   Use the **TREE** tab for a quick visual assessment. Included directories are marked with `✓` and show their total token contribution, such as `pkg ✓ (29.5k)`.
+-   Immediately spot directories that are excluded by rules, marked with `🚫`, such as `tests 🚫`.
+-   To understand why a directory is included or excluded, navigate to the **RULES** tab to review the patterns in effect.

@@ -1,63 +1,25 @@
-# Git-Based Workflows
+# Grove Context Git Workflows
 
-`grove-context` can generate rules based on Git history. This is used to create temporary, task-specific contexts that focus on a set of changes within a repository.
+grove-context can generate context rules based on Git history. This mechanism uses `git` commands to identify relevant files and populates the active `.grove/rules` file with their paths, allowing for context generation that is scoped to specific changes.
 
-## The `cx from-git` Command
+## The `from-git` Command
 
-The `cx from-git` command queries the Git history and overwrites the `.grove/rules` file with explicit paths to files that match the specified criteria.
+The `cx from-git` command populates the active `.grove/rules` file with a list of files identified by various `git` commands. It overwrites the existing rules file with the generated file list.
 
-Because this command overwrites existing rules, it is common to save the primary rule set as a snapshot before use and restore it afterward.
+### Options
 
-```bash
-# Save the current pattern-based rules
-cx save my-dev-rules
+-   `--staged`: Includes files currently in the Git staging area. This corresponds to the output of `git diff --cached --name-only`.
+-   `--branch <range>`: Includes files that differ between two branches or commits. For example, `main..HEAD`. This uses `git diff --name-only <range>`.
+-   `--since <ref>`: Includes files modified since a specific date, tag, or commit hash. This uses `git log --since=<ref>`.
+-   `--commits <n>`: Includes files modified in the last `<n>` commits. This uses `git log -<n>`.
 
-# Generate a temporary context from staged files
-cx from-git --staged
+## Workflows and Use Cases
 
-# ... use the generated context ...
+The `from-git` command is designed for several common development scenarios.
 
-# Restore the original rules
-cx load my-dev-rules
-```
+### Branch Context (Feature Development)
 
-### Command Syntax and Options
-
-**Usage:**
-```bash
-cx from-git [flags]
-```
-
-**Flags:**
-
-| Flag        | Description                                                 | Example                        |
-|-------------|-------------------------------------------------------------|--------------------------------|
-| `--staged`  | Includes files that are currently staged for commit.        | `cx from-git --staged`         |
-| `--branch`  | Includes files changed between two branches or commits.     | `cx from-git --branch main..HEAD` |
-| `--commits` | Includes files changed in the last `N` commits.             | `cx from-git --commits 3`      |
-| `--since`   | Includes files changed since a specific date or commit hash. | `cx from-git --since "2 days ago"` |
-
-At least one flag must be specified.
-
-## Use Cases
-
-### 1. Preparing for a Commit
-
-To generate a context containing only files in the staging area, which can be used for writing a commit message or performing a final review.
-
-**Command:**
-```bash
-cx from-git --staged
-```
-
-**Mechanism:**
-This command executes `git diff --cached --name-only` and writes the resulting file paths to `.grove/rules`.
-
-### 2. Working on a Feature Branch
-
-To generate a context that includes every file changed on a feature branch relative to a base branch.
-
-**Scenario:** On a feature branch `feat/user-auth`, generate a context of all changes relative to `main`.
+When working on a feature branch, you can generate context containing only the files that have changed relative to the main branch.
 
 **Command:**
 ```bash
@@ -65,51 +27,65 @@ cx from-git --branch main..HEAD
 ```
 
 **Mechanism:**
-The command populates `.grove/rules` with the output of `git diff --name-only main..HEAD`, listing all files added, modified, or renamed on the current branch.
+1.  `git diff --name-only main..HEAD` is executed to list the files that have changed.
+2.  The active `.grove/rules` file is overwritten with this list of files.
+3.  Subsequent `cx generate` or `gemapi request` commands will use this file list as the context.
 
-### 3. Summarizing Recent Work
+### Commit Context (Bug Fixes & Analysis)
 
-To generate context from files modified in the last few commits.
-
-**Scenario:** Generate a context of all files affected by the last five commits.
+To analyze changes from recent commits, context can be generated from the last `n` commits.
 
 **Command:**
 ```bash
-cx from-git --commits 5
+# Generate context from the last 2 commits
+cx from-git --commits 2
 ```
 
 **Mechanism:**
-This command uses `git log` to find all unique files modified in the last five commits and writes their paths to `.grove/rules`.
+1.  `git log -2 --name-only --pretty=format:` is executed to list files modified in the last two commits.
+2.  The file list is deduplicated and written to `.grove/rules`.
 
-### 4. Code Review Workflows
+### Staged Files (Pre-Commit Review)
 
-To generate the exact context of a pull request's changes for review.
-
-**Scenario:** Reviewing a colleague's branch named `fix/api-bug`.
-
-**Commands:**
-```bash
-# Check out the branch
-git checkout fix/api-bug
-
-# Generate context for the changes relative to the main branch
-cx from-git --branch main..HEAD
-```
-
-**Outcome:**
-The `.grove/rules` file is populated with the specific files changed in the pull request, creating an isolated context for the review.
-
-### 5. Merge Conflict Resolution
-
-To build a context of incoming changes when a merge conflict occurs.
-
-**Scenario:** A `git pull` on the `main` branch results in a merge conflict with `origin/main`.
+Before committing, you can build a context consisting only of the files currently in the Git staging area. This is useful for reviewing changes or writing a commit message.
 
 **Command:**
 ```bash
-# Generate context of the remote changes being merged
-cx from-git --branch HEAD..origin/main
+# Stage some files
+git add path/to/file1.go path/to/file2.go
+
+# Generate context from staged files
+cx from-git --staged
 ```
 
-**Outcome:**
-This command provides the file paths of the remote changes. This context can be provided to an LLM, along with the conflicted file content, to assist in resolving the merge.
+**Mechanism:**
+1.  `git diff --cached --name-only` lists the staged files.
+2.  The output is written to `.grove/rules`.
+
+### Code Review Workflows
+
+A reviewer can generate context for a branch they are about to review.
+
+**Command:**
+```bash
+# After checking out the feature branch 'feature/new-api'
+cx from-git --branch main
+```
+
+**Mechanism:**
+1.  This compares the current branch (`feature/new-api`) against `main`.
+2.  The resulting file list populates `.grove/rules`, providing the reviewer with the exact context of the changes.
+
+### Merge Conflict Resolution
+
+When a merge conflict occurs, you can generate a context of the files that have changed on your current branch to help understand the scope of your changes relative to the merge base.
+
+**Command:**
+```bash
+# After a failed merge from 'main'
+cx from-git --branch main..HEAD
+```
+
+**Mechanism:**
+1.  This lists all files changed on your current branch that are not in `main`.
+2.  This file list can be used to provide an LLM with the relevant files for assistance in resolving the conflict.

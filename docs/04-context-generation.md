@@ -1,147 +1,94 @@
 # Context Generation Pipeline
 
-Grove Context (`cx`) transforms a set of rules into a structured, file-based context that can be provided to Large Language Models (LLMs). This document explains the pipeline from rules definition to the final output file.
+The `grove-context` tool, aliased as `cx`, provides a mechanism for generating a context file from a set of rules. This document describes the pipeline from rule definition to final output and its integration with other Grove tools.
 
-## Generation Pipeline Overview
+## 1. Generation Pipeline Overview
 
-The core function of `cx` is to execute a repeatable pipeline:
+The context generation process follows a clear transformation:
 
-1.  **Rules Definition**: File inclusion and exclusion is defined in a `.grove/rules` file using a `.gitignore`-style syntax.
-2.  **File Resolution**: `cx` reads the rules, walks the specified file paths, and resolves a final list of files. It filters out binary files and respects `.gitignore` patterns by default.
-3.  **Context Generation**: The content of the resolved files is concatenated into a single, structured XML file located at `.grove/context`.
+1.  **Rules File (`.grove/rules`)**: The process starts with a rules file containing patterns that specify which files to include or exclude. The active rules file can be `.grove/rules` or a named set from `.cx/` or `.cx.work/`.
+2.  **File List Resolution**: The tool resolves these patterns into a definitive list of file paths. This step respects `.gitignore` files, handles aliases (`@a:`), and resolves rule set imports (`::`).
+3.  **Context Output (`.grove/context`)**: The contents of the resolved files are concatenated into a single XML-formatted file, `.grove/context`, which is then used by LLM-based tools.
 
-This process is triggered either manually by running `cx generate` or automatically by other Grove tools like `grove-gemini` before making a request to an LLM.
+### Automatic and Manual Generation
 
-## Inspecting the File List with `cx list`
+-   **Automatic**: Tools like `grove-gemini` and `grove-flow` automatically trigger context generation before making an LLM request to ensure the context is up-to-date.
+-   **Manual**: You can manually trigger this process using the `cx generate` command. This is useful for inspecting the final output or when using the context file with external tools.
 
-Before generating the full context, `cx list` can be used to verify which files will be included in the **hot context**. This command resolves the patterns in the active rules file and prints a list of the resulting absolute file paths. It is used for debugging rules to ensure the correct files are being included.
+## 2. The `cx list` Command
 
-**Example:**
+The `cx list` command displays the absolute paths of all files included in the context based on the current rules. Its primary purpose is to allow verification of the context before it is used.
+
+**Example Usage:**
+
 ```bash
-# Given .grove/rules:
-# **/*.go
-# !**/*_test.go
-
+# List all files currently in the context
 cx list
 ```
 
-**Expected Output:**
-```
-/path/to/project/main.go
-/path/to/project/pkg/server/server.go
-```
+The command outputs a simple, newline-separated list of file paths, suitable for piping to other commands. For detailed metrics like token counts and file sizes, use the `cx stats` command.
 
-## The `.grove/context` Output File
+## 3. The .grove/context Output File
 
-The output of the generation process is the `.grove/context` file. This file contains the concatenated contents of all files from the hot context, wrapped in a structured XML format.
+The final output of the generation process is the `.grove/context` file. This file is not meant to be edited directly and should be added to `.gitignore`.
 
-**File Location**:
--   **Hot Context**: `.grove/context`
--   **Cold Context**: `.grove/cached-context`
+### Format Specification
 
-**Format Specification**:
-
-The generated context uses XML tags. Each file's content is enclosed in a `<file>` tag that includes a `path` attribute.
+The file uses a simple XML structure to wrap the content of each included file. This format provides clear delimiters and metadata for LLMs to parse.
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<context>
-  <hot-context files="2" description="...">
-    <file path="src/main.go">
-    // file content here
-    </file>
-    <file path="pkg/config.yaml">
-    # yaml content here
-    </file>
-  </hot-context>
-</context>
+<file path="src/main.go">
+// file content here
+</file>
+
+<file path="pkg/config.yaml">
+# yaml content here
+</file>
 ```
 
-The cold context file (`.grove/cached-context`) follows the same structure but uses a `<cold-context>` root tag.
+-   Each file's content is enclosed in a `<file>` tag.
+-   The `path` attribute contains the file path relative to the project root.
 
-## Analyzing Composition with `cx stats`
+## 4. Context Statistics with `cx stats`
 
-The `cx stats` command provides a detailed analysis of both the hot and cold contexts. The output includes:
+The `cx stats` command provides a detailed analysis of the context's composition, helping you monitor its size and complexity.
 
--   Total file count, estimated token count, and total size.
--   A breakdown of languages by file count and token percentage.
--   A list of the largest files by token count.
--   Token distribution statistics across all included files.
+**Features:**
 
-This command is used for managing context size and identifying which files contribute most to the token count.
+-   **Summary Metrics**: Total number of files, total token count, and total file size.
+-   **Language Distribution**: A breakdown of the context by programming language, showing token and file counts for each.
+-   **Largest Files**: A list of the largest files by token count, helping to identify major contributors to context size.
 
-## File Handling and Security
-
-### Automatic Binary File Exclusion
-
-By default, `cx` excludes binary files. The detection process is as follows:
-1.  Checks for common binary file extensions (e.g., `.exe`, `.png`, `.so`, `.zip`).
-2.  If the file has no extension, it inspects the file's first 512 bytes for binary signatures of common executable formats (ELF, Mach-O, PE).
-3.  As a fallback, it analyzes the file content for a high percentage of non-printable characters or null bytes.
-
-### Filesystem Access and Security Best Practices
-
-**⚠️ WARNING: FILESYSTEM ACCESS**
-
-The patterns in `.grove/rules` can match any readable file on your filesystem, including sensitive files outside your project directory if broad or parent-relative patterns (`../`) are used.
-
--   **ALWAYS** review the output of `cx list` before using the generated context, especially after modifying rules.
--   **NEVER** use overly broad, unqualified patterns like `/**/*` or `~/**`.
--   **AVOID** patterns that traverse excessively up the directory tree (e.g., `../../../../**`).
--   **EXPLICITLY EXCLUDE** sensitive files or directories (e.g., `!config/secrets.yml`, `!~/.ssh/**`).
--   **ADD** `.grove/` to your project's `.gitignore` file to prevent committing generated context files.
-
-## Integration Points
-
-`grove-context` is used by other tools in the Grove ecosystem:
--   **`grove-gemini` / `grove-openai`**: The `grove llm request` command uses `cx` to gather context. `grove-gemini` uses the hot/cold context separation to interact with Gemini's caching API.
--   **`grove-docgen`**: The documentation generator uses `cx` to build an understanding of a codebase before generating documentation.
-
-## Complete Workflow Example
-
-This example demonstrates the flow from rules to final output.
-
-**1. Project Structure and Rules:**
-
--   `main.go`
--   `README.md`
--   `.grove/rules`:
-    ```gitignore
-    *.go
-    *.md
-    ```
-
-**2. Verify with `cx list`:**
+**Example Usage:**
 
 ```bash
-cx list
+# Show statistics for the current context
+cx stats
 ```
 
-```
-/path/to/project/main.go
-/path/to/project/README.md
-```
+## 5. File Handling and Security
 
-**3. Generate the context:**
+`grove-context` includes mechanisms to handle different file types and enforce security boundaries to prevent accidental inclusion of unintended files.
 
-```bash
-cx generate
-```
+-   **Binary File Exclusion**: Binary files (e.g., images, executables, archives) are detected and excluded by default to keep the context focused on text-based content.
+-   **Security Boundaries**: The tool restricts file inclusion to specific, allowed root directories. By default, these are:
+    1.  Discovered Grove workspaces (projects, ecosystems, and their worktrees).
+    2.  The `~/.grove/` directory.
+    3.  Notebook root directories defined in `grove.yml`.
+    4.  Paths explicitly defined in `context.allowed_paths` in `grove.yml`.
 
-**4. Inspect the output (`.grove/context`):**
+    This boundary prevents rules like `../**/*` from including arbitrary files from the filesystem (e.g., `/etc/passwd`). Any attempt to include a file outside these boundaries is ignored, and a warning is printed.
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<context>
-  <hot-context files="2" description="...">
-    <file path="main.go">
-    package main
-    // ...
-    </file>
-    <file path="README.md">
-    # My Project
-    // ...
-    </file>
-  </hot-context>
-</context>
-```
+### Best Practices for Security
+
+-   Always review the output of `cx list` before using the generated context, especially before sharing it.
+-   Add sensitive files and directories (e.g., `secrets/`, `.env*`) to your exclusion patterns in `.grove/rules`.
+-   Keep the generated `.grove/context` file in your project's `.gitignore`.
+
+## 6. Integration Points
+
+The context generation pipeline is a core component used by several other Grove tools.
+
+-   **grove-gemini**: When making a request with `gemapi request`, context is automatically generated. Hot context files are passed as dynamic files, while cold context is managed via Gemini's caching API.
+-   **grove-flow**: Before executing `oneshot` or `chat` jobs, `grove-flow` regenerates the context to ensure it is current. Jobs can specify their own `rules_file` in their frontmatter for job-specific context. Context is scoped to the job's working directory or worktree.
+-   **grove-nvim**: The Neovim plugin provides real-time feedback while editing `.grove/rules` files. It displays virtual text next to each rule showing the number of files and tokens it contributes, and allows interactive preview of the files matched by a rule.

@@ -1,97 +1,127 @@
-# Loading and Managing Rules
+# Managing Context with Rule Sets
 
-This document describes three mechanisms for managing the `.grove/rules` file: setting rules from an external file, resetting to a default state, and using named snapshots.
+The `grove-context` tool (`cx`) provides mechanisms for managing different context configurations through named rule sets. This allows users to switch between different views of a codebase depending on the task.
 
-## Setting Rules from an External File (`cx set-rules`)
+## Reusable Rule Sets
 
-The `cx set-rules <path>` command copies the content of a specified file into `.grove/rules`, making it the active configuration for all subsequent `cx` commands. This is used for maintaining separate, task-specific rule sets.
+The primary mechanism for managing context is through rule set files stored in dedicated directories within a project.
 
-#### Use Case: Switching Between Rule Sets
+-   **`.cx/`**: This directory is for version-controlled, shared rule sets. Files in this directory are intended to be committed to Git and shared across a team.
+-   **`.cx.work/`**: This directory is for local, temporary, or experimental rule sets. It is conventionally added to `.gitignore`.
 
-A project may have different rule files for different tasks, such as one for API development and another for documentation generation.
+This separation allows for different context configurations for different tasks. For example, a project might have rule sets for:
 
-**`api-dev.rules`:**
-```gitignore
-# Rules for API development
-**/*.go
+-   Backend development (`.cx/backend.rules`)
+-   Frontend development (`.cx/frontend.rules`)
+-   Documentation generation (`.cx/docs.rules`)
+-   Analyzing a specific feature (`.cx.work/feature-x.rules`)
+
+### Example: Creating Specialized Rule Sets
+
+```bash
+# Create a rule set for backend development
+cat > .cx/backend-only.rules << 'EOF'
+# Backend API code
+src/api/**/*.go
+src/services/**/*.go
+src/models/**/*.go
+
+# Exclude tests
 !**/*_test.go
-!docs/**
-```
+EOF
 
-**`docs-gen.rules`:**
-```gitignore
-# Rules for documentation generation
-*.md
+# Create a rule set for frontend development
+cat > .cx/frontend-only.rules << 'EOF'
+# Frontend UI code
+src/ui/**/*.tsx
+src/components/**/*.tsx
+src/styles/**/*.css
+EOF
+
+# Create a rule set for documentation
+cat > .cx/docs-only.rules << 'EOF'
 docs/**/*.md
-cmd/**/*.go
+README.md
+*.md
+EOF
 ```
 
-To switch to the API development context:
+## Managing Active Rule Sets
+
+The context used by `cx` commands is determined by the active rule set. This can be switched to fit the current task.
+
+### Switching the Active Rule Set (`cx rules set`)
+
+The `cx rules set <name>` command sets the active context to a named rule set from `.cx/` or `.cx.work/`. This creates a read-only link to the specified file.
+
 ```bash
-cx set-rules api-dev.rules
+# Switch between the rule sets created above
+cx rules set backend-only
+cx rules set frontend-only
+cx rules set docs-only
 ```
-This command overwrites `.grove/rules` with the content of `api-dev.rules`. To switch to the documentation context:
+
+### Creating a Modifiable Working Copy (`cx rules load`)
+
+The `cx rules load <name>` command copies a named rule set to `.grove/rules`. This creates a local, modifiable working copy. Any changes made to `.grove/rules` will not affect the original named rule set. This is useful for starting from a template and customizing it for a specific task.
+
+### Viewing Rule Sets (`cx rules list`)
+
+The `cx rules list` command (or simply `cx rules`) displays all available rule sets in `.cx/` and `.cx.work/` and indicates which one is currently active.
+
+## Integration with Other Tools
+
+Other Grove tools can be configured to use specific rule sets for their operations, allowing for task-specific context.
+
+### Grove Flow Integration
+
+In `grove-flow`, a job can specify its own context by using the `rules_file` field in its frontmatter. This directs the job executor to use that specific rule set instead of the globally active one.
+
+```markdown
+---
+id: job-backend-refactor
+title: Refactor authentication
+type: oneshot
+rules_file: .cx/auth-only.rules
+worktree: auth-refactor
+---
+
+Refactor the authentication module...
+```
+
+## Importing Rule Sets Across Projects
+
+Rules can be imported from other projects using an alias syntax. This allows for the creation of shared, centralized rule definitions.
+
+The syntax is `@a:project-alias::ruleset-name`, where `project-alias` is the identifier of another Grove workspace and `ruleset-name` is the name of the rule set file (without the `.rules` extension) in that project's `.cx/` directory.
+
+### Example: Importing Rules
+
 ```bash
-cx set-rules docs-gen.rules
+# In api-server/.grove/rules
+
+# Import a set of standard backend patterns from a template project
+@a:project-template::backend-patterns
+
+# Include this project's specific patterns
+src/**/*.go
+!vendor/**
+
+# Import a shared list of common library dependencies
+@a:shared-libs::dependencies
 ```
 
 ## Resetting to Project Defaults (`cx reset`)
 
-The `cx reset` command restores the `.grove/rules` file to a default state, overwriting any current rules. This is used to clear temporary changes (e.g., from `cx from-git`) or to revert to a known configuration.
+The `cx reset` command overwrites the local `.grove/rules` file with a project-defined default. This is useful for returning to a known-good configuration.
 
-The command functions in one of two ways:
+-   The default rule set is specified by the `context.default_rules_path` field in the project's `grove.yml`.
+-   If no default is configured, `cx reset` creates a boilerplate file that includes all non-gitignored files.
+-   The command asks for confirmation before overwriting an existing `.grove/rules` file.
 
-1.  **Project-Defined Default**: If a `default_rules_path` is specified in `grove.yml`, `cx reset` copies the content of that file to `.grove/rules`.
-2.  **Boilerplate Default**: If no default is configured, `cx reset` creates a basic `.grove/rules` file that includes all files (`*`) and contains commented-out examples.
+### Example: Team Workflow with Shared and Local Rules
 
-#### Example: Configuring and Using a Project Default
-
-A default rules file can be defined in `grove.yml`:
-```yaml
-# grove.yml
-name: my-project
-description: A sample project.
-context:
-  default_rules_path: .grove/default.rules
-```
-With this configuration, `cx reset` will restore `.grove/rules` from `.grove/default.rules`.
-
-```bash
-# Overwrite the current rules with the project's default configuration.
-# This will prompt for confirmation.
-cx reset
-
-# Reset without a confirmation prompt.
-cx reset --force
-```
-
-## Using Snapshots for Rule Configurations
-
-Snapshots are named versions of a `.grove/rules` file that can be saved, listed, and loaded. They are stored in the `.grove/context-snapshots/` directory.
-
-#### The Snapshot Workflow
-
-1.  **Save a Configuration (`cx save`)**: Saves the current `.grove/rules` file as a named snapshot.
-    ```bash
-    # Save the current rules with a name and an optional description.
-    cx save feature-x-api --desc "Context for developing the new user API"
-    ```
-
-2.  **List Available Snapshots (`cx list-snapshots`)**: Displays all saved snapshots.
-    ```bash
-    cx list-snapshots
-    ```
-    **Example Output:**
-    ```
-    Available snapshots:
-
-    NAME                 DATE         FILES  TOKENS   SIZE      DESCRIPTION
-    --------------------------------------------------------------------------------
-    feature-x-api        2025-09-26   15     ~2.1k    8.4 KB    Context for developing the new user API
-    ```
-
-3.  **Load a Snapshot (`cx load`)**: Restores a previously saved configuration.
-    ```bash
-    # This overwrites .grove/rules with the content from the snapshot.
-    cx load feature-x-api
-    ```
+1.  A team defines standard rule sets (e.g., `backend`, `frontend`) in the `.cx/` directory, which is committed to the repository.
+2.  Developers can switch between these standard contexts using `cx rules set backend`.
+3.  An individual developer can create a temporary, experimental rule set in `.cx.work/my-feature.rules`, which is ignored by Git.
+4.  Projects can import team-wide standards from a central repository (e.g., `@a:standards-repo::backend-best`) to ensure consistency.
