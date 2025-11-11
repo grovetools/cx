@@ -201,6 +201,13 @@ func ParseRulesLine(line string) ParsedLine {
 func parseRulesetImport(line string) map[string]string {
 	parts := make(map[string]string)
 
+	// Identify and store the directive
+	directive := "@a:"
+	if strings.HasPrefix(line, "@alias:") {
+		directive = "@alias:"
+	}
+	parts["directive"] = directive
+
 	// Remove @alias: or @a: prefix
 	line = strings.TrimPrefix(line, "@alias:")
 	line = strings.TrimPrefix(line, "@a:")
@@ -209,6 +216,7 @@ func parseRulesetImport(line string) map[string]string {
 	// Split by ::
 	if idx := strings.Index(line, "::"); idx != -1 {
 		parts["alias"] = strings.TrimSpace(line[:idx])
+		parts["delimiter"] = "::"
 		parts["ruleset"] = strings.TrimSpace(line[idx+2:])
 	}
 
@@ -219,20 +227,35 @@ func parseRulesetImport(line string) map[string]string {
 func parseAliasPattern(line string) map[string]string {
 	parts := make(map[string]string)
 
+	// Identify and store the directive
+	directive := "@a:"
+	if strings.HasPrefix(line, "@alias:") {
+		directive = "@alias:"
+	}
+	parts["directive"] = directive
+
 	// Remove @alias: or @a: prefix
 	line = strings.TrimPrefix(line, "@alias:")
 	line = strings.TrimPrefix(line, "@a:")
 	line = strings.TrimSpace(line)
 
-	// Extract workspace (part before /)
-	if idx := strings.Index(line, "/"); idx != -1 {
-		parts["workspace"] = line[:idx]
-		parts["path"] = line[idx+1:]
-	} else {
-		parts["workspace"] = line
+	// Separate alias from path
+	pathIdx := strings.Index(line, "/")
+	aliasPart := line
+	if pathIdx != -1 {
+		aliasPart = line[:pathIdx]
+		parts["path"] = line[pathIdx:]
 	}
 
-	parts["full"] = line
+	// Split alias into components (up to 3 components: ecosystem:repo:worktree)
+	aliasComponents := strings.Split(aliasPart, ":")
+	for i, comp := range aliasComponents {
+		if i < 3 && comp != "" { // Max 3 components
+			parts["component"+string(rune('1'+i))] = comp
+		}
+	}
+
+	parts["full_alias"] = aliasPart
 
 	return parts
 }

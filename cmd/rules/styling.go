@@ -18,40 +18,97 @@ func styleRulesContent(content string) string {
 
 	for i, line := range lines {
 		parsed := context.ParseRulesLine(line)
-		styledLines[i] = styleLineByType(line, parsed.Type)
+		styledLines[i] = styleLineByType(line, parsed)
 	}
 
 	return strings.Join(styledLines, "\n")
 }
 
 // styleLineByType applies appropriate styling based on line type
-func styleLineByType(line string, lineType context.LineType) string {
-	switch lineType {
+func styleLineByType(line string, parsed context.ParsedLine) string {
+	theme := core_theme.DefaultTheme
+
+	switch parsed.Type {
 	case context.LineTypeComment:
 		// Comments are muted
-		return core_theme.DefaultTheme.Muted.Render(line)
+		return theme.Muted.Render(line)
 
 	case context.LineTypeSeparator:
 		// Separator (---) is bold/statement
-		return core_theme.DefaultTheme.Bold.Render(line)
+		return theme.Bold.Render(line)
 
 	case context.LineTypeExclude:
 		// Exclusion patterns (!) are highlighted as error/red
-		return core_theme.DefaultTheme.Error.Render(line)
+		return theme.Error.Render(line)
 
 	case context.LineTypeGitURL:
 		// Git URLs are styled as info/cyan
-		return core_theme.DefaultTheme.Info.Render(line)
+		return theme.Info.Render(line)
 
-	case context.LineTypeRulesetImport, context.LineTypeAliasPattern:
-		// Ruleset imports and aliases are highlighted (orange/yellow)
-		return core_theme.DefaultTheme.Highlight.Render(line)
+	case context.LineTypeAliasPattern:
+		// Aliases with component-level styling
+		var styledParts []string
+
+		// Directive (@a: or @alias:)
+		if val, ok := parsed.Parts["directive"]; ok {
+			styledParts = append(styledParts, theme.Accent.Render(val))
+		}
+
+		// Component 1 (ecosystem)
+		if val, ok := parsed.Parts["component1"]; ok {
+			styledParts = append(styledParts, theme.Accent.Render(val))
+		}
+
+		// Component 2 (repo)
+		if val, ok := parsed.Parts["component2"]; ok {
+			styledParts = append(styledParts, theme.Muted.Render(":"))
+			styledParts = append(styledParts, theme.Info.Render(val))
+		}
+
+		// Component 3 (worktree)
+		if val, ok := parsed.Parts["component3"]; ok {
+			styledParts = append(styledParts, theme.Muted.Render(":"))
+			styledParts = append(styledParts, theme.Warning.Render(val))
+		}
+
+		// Path
+		if val, ok := parsed.Parts["path"]; ok {
+			styledParts = append(styledParts, val)
+		}
+
+		return strings.Join(styledParts, "")
+
+	case context.LineTypeRulesetImport:
+		// Ruleset imports with component-level styling
+		var styledParts []string
+
+		// Directive (@a: or @alias:)
+		if val, ok := parsed.Parts["directive"]; ok {
+			styledParts = append(styledParts, theme.Accent.Render(val))
+		}
+
+		// Alias
+		if val, ok := parsed.Parts["alias"]; ok {
+			styledParts = append(styledParts, theme.Accent.Render(val))
+		}
+
+		// Delimiter (::)
+		if val, ok := parsed.Parts["delimiter"]; ok {
+			styledParts = append(styledParts, theme.Muted.Render(val))
+		}
+
+		// Ruleset name
+		if val, ok := parsed.Parts["ruleset"]; ok {
+			styledParts = append(styledParts, theme.Success.Render(val))
+		}
+
+		return strings.Join(styledParts, "")
 
 	case context.LineTypeViewDirective, context.LineTypeCmdDirective,
 		context.LineTypeFindDirective, context.LineTypeGrepDirective,
 		context.LineTypeOtherDirective:
 		// Directives are accented (violet)
-		return core_theme.DefaultTheme.Accent.Render(line)
+		return theme.Accent.Render(line)
 
 	case context.LineTypePattern:
 		// Regular patterns - normal style
