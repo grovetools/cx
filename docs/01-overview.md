@@ -8,12 +8,7 @@ The typical approach today is letting agents discover context on their own - eit
 
 Grove-context inverts this model. The developer curates exactly what context the feature needs upfront. Think of it as defining a funnel: all code and repos are available, but you're specifying the precise scope where the LLM should focus. The key is including slightly more context than an agent would discover on its own - adjacent modules, related components, relevant documentation. This extra context improves plan quality measurably. Plans can include specific code snippets, architectural patterns, and implementation guidance. The approach is also faster: plans are generated quickly because the LLM has everything upfront (no iterative discovery), and implementation is faster because the plan is more complete (less back-and-forth to figure out what was missed). Plans generated from developer-curated context improve agent implementation success rates. When an agent receives a plan with the full picture (relevant files, architectural context, dependencies, tasks), it executes with fewer mistakes. Agents working without comprehensive plans miss details, leading to incomplete implementations and post-hoc cleanup. The cost per planning request is higher (you're routinely sending 100k+ tokens in single API requests), but total development cost is lower through better plans and fewer implementation iterations. Once you have the plan, execution happens with smaller, focused contexts (via `grove-flow`).
 
-Context is defined in a `.grove/rules` file using gitignore-style patterns. These rules files support an architectural pattern of keeping repositories small and focused (which helps agent and LLM performance per repo) while composing comprehensive context across repos for planning. You can cross-reference repositories: a feature in your API server can include frontend code (`@a:web-app/src/**/*.tsx`), shared libraries (`@a:common/types/**`), and documentation. Pre-defined rule sets let you assemble contexts for different features (backend-only, full-stack, etc.). Repository locations are abstracted through workspace aliases - `@a:api-server` works for your team regardless of where developers cloned repos, eliminating hardcoded paths and enabling team-scale context management across microservices architectures.
-
-
-A common pattern is multi-turn planning: start with core context to scope foundational aspects, then add more context in subsequent turns. For example, begin with the API layer to establish data flow, add frontend components once API contracts are clear, then pull in documentation for edge cases. This iterative refinement within a single conversation produces more refined plans. The context definitions are persistent (defined in `.grove/rules` files), so this process is reproducible and shareable.
-
-Grove-context acts as the foundational context engine for this workflow across the Grove ecosystem.
+## Workflow
 
 ```
 ┌─────────────────────┐
@@ -39,6 +34,51 @@ Grove-context acts as the foundational context engine for this workflow across t
 │                     │  carries out the plan
 └─────────────────────┘
 ```
+
+Context is defined in a `.grove/rules` file using gitignore-style patterns. These rules files support an architectural pattern of keeping repositories small and focused (which helps agent and LLM performance per repo) while composing comprehensive context across repos for planning. You can cross-reference repositories: a feature in your API server can include frontend code (`@a:web-app/src/**/*.tsx`), shared libraries (`@a:common/types/**`), and documentation. Pre-defined rule sets let you assemble contexts for different features (backend-only, full-stack, etc.). Repository locations are abstracted through workspace aliases - `@a:api-server` works for your team regardless of where developers cloned repos, eliminating hardcoded paths and enabling team-scale context management across microservices architectures. 
+
+Example rules file demonstrating context selection syntax:
+
+```groverules
+# Relevant code for current repository
+*.go                                                                      ~164.0k tokens (69 files) 
+Makefile                                                                  ~1.6k tokens
+go.mod                                                                    ~869 tokens
+grove.yml                                                                 ~136 tokens
+
+# Exclude test files
+!tests                                                                    -43 files, -105.6k tokens
+!*_test.go                                                                -21 files, -38.3k tokens
+
+# Pull in ruleset from other repo
+@a:grove-ecosystem:grove-context::dev-no-tests                            ~97.1k tokens (54 files)
+
+# Directory in another repository
+@a:grove-ecosystem:grove-gemini/docs                                      ~25.4k tokens (11 files) 
+
+# Match all files across ecosystem of repos with "config" in filepath
+@a:grove-ecosystem @find: "config"                                        ~353.6k tokens (225 files) 
+
+# Match all files in `grove-core` repository it w/ "tui" in filepath
+@a:grove-ecosystem:grove-core @grep: "tui"                                ~21.7k tokens (15 files)
+
+# View allows selecting specific dirs/files in TUI/neovim
+@view:@a:grove-ecosystem:grove-core::dev-no-tests
+@a:grove-ecosystem:grove-core/config/types.go                             ~2.0k tokens
+@a:grove-ecosystem:grove-core/errors/types.go                             ~837 tokens
+@a:grove-ecosystem:grove-core/pkg/tmux/types.go                           ~63 tokens
+@a:grove-ecosystem:grove-core/pkg/workspace/types.go                      ~3.6k tokens
+@a:grove-ecosystem:grove-core/config/config.go                            ~3.9k tokens
+
+# Add a github repo to context
+@a:git:charmbracelet/bubbletea/**/*.go                                    [not_audited | ffa0502] 
+                                                                          ~65.3k tokens (76 files)
+```
+
+A common pattern is multi-turn planning: start with core context to scope foundational aspects, then add more context in subsequent turns. For example, begin with the API layer to establish data flow, add frontend components once API contracts are clear, then pull in documentation for edge cases. This iterative refinement within a single conversation produces more refined plans. The context definitions are persistent (defined in `.grove/rules` files), so this process is reproducible and shareable.
+
+Grove-context acts as the foundational context engine for this workflow across the Grove ecosystem.
+
 
 <!-- placeholder for animated gif -->
 
