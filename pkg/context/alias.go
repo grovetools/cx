@@ -237,7 +237,7 @@ func (r *AliasResolver) ResolveLine(line string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("could not load grove config to resolve notebook alias: %w", err)
 		}
-		if cfg == nil || len(cfg.Notebooks) == 0 {
+		if cfg == nil || cfg.Notebooks == nil || cfg.Notebooks.Definitions == nil || len(cfg.Notebooks.Definitions) == 0 {
 			return "", fmt.Errorf("no 'notebooks' are configured in grove.yml; cannot resolve alias '%s'", line)
 		}
 
@@ -245,15 +245,19 @@ func (r *AliasResolver) ResolveLine(line string) (string, error) {
 		parts := strings.SplitN(notebookAlias, ":", 2)
 
 		// Determine if the alias includes a notebook name or implies "default".
-		if len(parts) > 1 && cfg.Notebooks[parts[0]] != nil {
+		if len(parts) > 1 && cfg.Notebooks.Definitions[parts[0]] != nil {
 			notebookName = parts[0]
 			relativePath = parts[1]
 		} else {
+			// Use default notebook from rules, or fall back to "default"
 			notebookName = "default"
+			if cfg.Notebooks.Rules != nil && cfg.Notebooks.Rules.Default != "" {
+				notebookName = cfg.Notebooks.Rules.Default
+			}
 			relativePath = notebookAlias
 		}
 
-		notebook, exists := cfg.Notebooks[notebookName]
+		notebook, exists := cfg.Notebooks.Definitions[notebookName]
 		if !exists {
 			return "", fmt.Errorf("notebook '%s' not found in configuration; cannot resolve alias '%s'", notebookName, line)
 		}

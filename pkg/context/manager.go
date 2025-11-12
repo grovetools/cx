@@ -583,8 +583,8 @@ func (m *Manager) initAllowedRoots() {
 		}
 
 		// Also add notebook root directories to allowed paths
-		if mergedCfg != nil && mergedCfg.Notebooks != nil {
-			for notebookName, notebook := range mergedCfg.Notebooks {
+		if mergedCfg != nil && mergedCfg.Notebooks != nil && mergedCfg.Notebooks.Definitions != nil {
+			for notebookName, notebook := range mergedCfg.Notebooks.Definitions {
 				if notebook.RootDir != "" {
 					notebookRootDir, err := pathutil.Expand(notebook.RootDir)
 					if err != nil {
