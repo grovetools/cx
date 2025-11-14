@@ -32,6 +32,7 @@ func NewRulesCmd() *cobra.Command {
 	cmd.AddCommand(newRulesUnsetCmd())
 	cmd.AddCommand(newRulesLoadCmd())
 	cmd.AddCommand(newRulesRmCmd())
+	cmd.AddCommand(newRulesPrintPathCmd())
 
 	return cmd
 }
@@ -368,4 +369,21 @@ Rule sets in .cx.work/ can be deleted without force.`,
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force delete a version-controlled rule set from .cx/")
 	return cmd
+}
+
+func newRulesPrintPathCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "print-path",
+		Short: "Print the absolute path to the active rules file",
+		Long:  `Prints the absolute path to the currently active rules file. Useful for scripting and integration with external tools.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mgr := context.NewManager("")
+			rulesPath, err := mgr.EnsureAndGetRulesPath()
+			if err != nil {
+				return fmt.Errorf("failed to get rules path: %w", err)
+			}
+			fmt.Println(rulesPath)
+			return nil
+		},
+	}
 }
