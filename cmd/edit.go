@@ -10,18 +10,29 @@ import (
 )
 
 func NewEditCmd() *cobra.Command {
+	var printPath bool
 	cmd := &cobra.Command{
 		Use:   "edit",
-		Short: "Open the rules file in your editor",
-		Long:  `Opens .grove/rules in your system's default editor (specified by $EDITOR environment variable).`,
+		Short: "Open the rules file in your editor or print its path",
+		Long:  `Opens .grove/rules in your system's default editor (specified by $EDITOR environment variable), or prints the path if --print-path is used.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			mgr := context.NewManager("")
+
+			if printPath {
+				rulesPath, err := mgr.EnsureAndGetRulesPath()
+				if err != nil {
+					return fmt.Errorf("failed to get rules path: %w", err)
+				}
+				fmt.Println(rulesPath)
+				return nil
+			}
+
 			// On Windows, if no EDITOR is set, 'vim' won't work.
 			// Set a sensible default if EDITOR is not set.
 			if os.Getenv("EDITOR") == "" && runtime.GOOS == "windows" {
 				os.Setenv("EDITOR", "notepad")
 			}
 
-			mgr := context.NewManager("")
 			editorCmd, err := mgr.EditRulesCmd()
 			if err != nil {
 				return fmt.Errorf("failed to prepare editor command: %w", err)
@@ -34,6 +45,8 @@ func NewEditCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&printPath, "print-path", false, "Print the absolute path to the rules file instead of opening it")
 
 	return cmd
 }
