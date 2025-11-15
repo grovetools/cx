@@ -38,6 +38,9 @@ type treePage struct {
 
 	// Confirmation state
 	pendingConfirm *confirmActionMsg
+
+	// Cursor restoration state
+	pathToRestore string
 }
 
 // --- Messages ---
@@ -215,6 +218,11 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.autoExpandToContent(p.tree)
 		}
 		p.updateVisibleNodes()
+
+		if p.pathToRestore != "" {
+			p.restoreCursorPosition()
+			p.pathToRestore = "" // Reset for the next action
+		}
 		return p, nil
 
 	case ruleChangeResultMsg:
@@ -370,6 +378,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 					break
 				}
 				node := p.visibleNodes[p.cursor].node
+				p.pathToRestore = node.Path // Store the current item's path
 				relPath, err := p.getRelativePath(node)
 				if err != nil {
 					p.statusMessage = fmt.Sprintf("Error: %v", err)
@@ -391,6 +400,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				break
 			}
 			node := p.visibleNodes[p.cursor].node
+			p.pathToRestore = node.Path // Store the current item's path
 			relPath, err := p.getRelativePath(node)
 			if err != nil {
 				p.statusMessage = fmt.Sprintf("Error: %v", err)
@@ -419,6 +429,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				break
 			}
 			node := p.visibleNodes[p.cursor].node
+			p.pathToRestore = node.Path // Store the current item's path
 			relPath, err := p.getRelativePath(node)
 			if err != nil {
 				p.statusMessage = fmt.Sprintf("Error: %v", err)
@@ -784,6 +795,41 @@ func (p *treePage) renderNode(index int) string {
 	// Combine all parts
 	line := fmt.Sprintf("%s%s%s%s %s%s%s%s", cursor, indent, expandIndicator, icon, name, statusSymbol, dangerSymbol, tokenStr)
 	return style.Render(line)
+}
+
+// restoreCursorPosition finds the new index for the cursor after a refresh.
+// It first tries to find an exact match for the previously selected path.
+// If not found, it walks up the directory tree to find the closest visible parent.
+func (p *treePage) restoreCursorPosition() {
+	if p.pathToRestore == "" || len(p.visibleNodes) == 0 {
+		return
+	}
+
+	// 1. Try to find an exact match.
+	for i, vn := range p.visibleNodes {
+		if vn.node.Path == p.pathToRestore {
+			p.cursor = i
+			p.ensureCursorVisible()
+			return
+		}
+	}
+
+	// 2. If not found, walk up the path to find the nearest visible parent.
+	parentPath := filepath.Dir(p.pathToRestore)
+	for {
+		for i, vn := range p.visibleNodes {
+			if vn.node.Path == parentPath {
+				p.cursor = i
+				p.ensureCursorVisible()
+				return
+			}
+		}
+		newParent := filepath.Dir(parentPath)
+		if newParent == parentPath || newParent == "." || newParent == "/" {
+			break // Reached the filesystem root.
+		}
+		parentPath = newParent
+	}
 }
 
 func (p *treePage) getIcon(node *tree.FileNode) string {
