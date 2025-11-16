@@ -2,11 +2,13 @@ package view
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattsolo1/grove-core/config"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-context/pkg/context/tree"
@@ -39,6 +41,9 @@ type treePage struct {
 	// Confirmation state
 	pendingConfirm *confirmActionMsg
 
+	// Ruleset selection state
+	rulesetSelector *rulesetSelectorState
+
 	// Cursor restoration state
 	pathToRestore string
 }
@@ -66,6 +71,15 @@ type ruleChangeResultMsg struct {
 	err           error
 	successMsg    string
 	refreshNeeded bool
+}
+
+type rulesetSelectorState struct {
+	node      *tree.FileNode
+	action    string // "hot", "cold", "exclude"
+	rulesets  []string
+	cursor    int
+	wsPath    string // workspace path where rulesets were found
+	alias     string // the alias prefix (e.g., "grove-ecosystem:grove-core")
 }
 
 // --- Constructor ---
@@ -101,6 +115,7 @@ func (p *treePage) Blur() {
 	p.searchQuery = ""
 	p.searchResults = nil
 	p.pendingConfirm = nil
+	p.rulesetSelector = nil
 }
 
 func (p *treePage) SetSize(width, height int) {
@@ -202,6 +217,96 @@ func (p *treePage) toggleRuleCmd(path, targetType string, isDirectory bool) tea.
 	}
 }
 
+func (p *treePage) getAliasForRule(node *tree.FileNode) (string, bool) {
+	if p.sharedState.projectProvider == nil {
+		return "", false
+	}
+
+	// Find the workspace node containing the file/dir.
+	wsNode := p.sharedState.projectProvider.FindByPath(node.Path)
+	if wsNode == nil || wsNode.RootEcosystemPath == "" || wsNode.IsEcosystem() {
+		return "", false // Not part of a known ecosystem or is an ecosystem itself.
+	}
+
+	// Get the root ecosystem to build the alias prefix.
+	rootEcoNode := p.sharedState.projectProvider.FindByPath(wsNode.RootEcosystemPath)
+	if rootEcoNode == nil {
+		return "", false
+	}
+	rootEcoName := rootEcoNode.Name
+
+	var alias string
+
+	// Case 1: Sub-project inside an ecosystem worktree (e.g., root-eco:eco-worktree:project)
+	if wsNode.ParentEcosystemPath != "" && wsNode.ParentEcosystemPath != wsNode.RootEcosystemPath {
+		ecoWorktreeNode := p.sharedState.projectProvider.FindByPath(wsNode.ParentEcosystemPath)
+		if ecoWorktreeNode != nil {
+			alias = fmt.Sprintf("%s:%s:%s", rootEcoName, ecoWorktreeNode.Name, wsNode.Name)
+		}
+	} else if wsNode.IsWorktree() && wsNode.ParentProjectPath != "" {
+		// Case 2: Worktree of a sub-project in the root ecosystem (e.g., root-eco:project:worktree)
+		parentProjNode := p.sharedState.projectProvider.FindByPath(wsNode.ParentProjectPath)
+		if parentProjNode != nil {
+			alias = fmt.Sprintf("%s:%s:%s", rootEcoName, parentProjNode.Name, wsNode.Name)
+		}
+	} else if wsNode.Name != rootEcoName {
+		// Case 3: Simple sub-project in the root ecosystem (e.g., root-eco:project)
+		// Only create alias if the project name is different from the ecosystem name
+		alias = fmt.Sprintf("%s:%s", rootEcoName, wsNode.Name)
+	}
+
+	if alias == "" {
+		return "", false
+	}
+
+	// Calculate the file's path relative to the workspace's root
+	relPath, err := filepath.Rel(wsNode.Path, node.Path)
+	if err != nil {
+		return "", false
+	}
+
+	var fullRule strings.Builder
+	fullRule.WriteString("@a:")
+	fullRule.WriteString(alias)
+
+	// If adding the entire workspace (relPath == "."), try to use the default ruleset
+	if relPath == "." && node.IsDir {
+		// Try to load the workspace's grove.yml to get the default ruleset
+		if cfg, err := config.LoadFrom(wsNode.Path); err == nil && cfg != nil {
+			var contextConfig struct {
+				DefaultRulesPath string `yaml:"default_rules_path"`
+			}
+			if err := cfg.UnmarshalExtension("context", &contextConfig); err == nil && contextConfig.DefaultRulesPath != "" {
+				// Extract just the filename without extension
+				base := filepath.Base(contextConfig.DefaultRulesPath)
+				// Remove .rules extension if present
+				rulesetName := strings.TrimSuffix(base, ".rules")
+				fullRule.WriteString("::")
+				fullRule.WriteString(rulesetName)
+				return fullRule.String(), true
+			}
+		}
+		// Fallback to /** if no default ruleset found
+		fullRule.WriteString("/**")
+		return fullRule.String(), true
+	}
+
+	// For specific files or subdirectories, add the path
+	if relPath != "." {
+		fullRule.WriteString("/")
+		fullRule.WriteString(filepath.ToSlash(relPath))
+	}
+
+	// If the node being added is a directory, append `/**` to include its contents recursively.
+	if node.IsDir {
+		if !strings.HasSuffix(fullRule.String(), "/**") {
+			fullRule.WriteString("/**")
+		}
+	}
+
+	return fullRule.String(), true
+}
+
 // --- Update ---
 
 func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
@@ -238,7 +343,58 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		return p, nil
 
 	case tea.KeyMsg:
-		// Handle confirmation prompts first
+		// Handle ruleset selector first
+		if p.rulesetSelector != nil {
+			switch msg.String() {
+			case "up", "k":
+				if p.rulesetSelector.cursor > 0 {
+					p.rulesetSelector.cursor--
+				}
+				return p, nil
+			case "down", "j":
+				if p.rulesetSelector.cursor < len(p.rulesetSelector.rulesets)-1 {
+					p.rulesetSelector.cursor++
+				}
+				return p, nil
+			case "enter":
+				// User selected a ruleset
+				if len(p.rulesetSelector.rulesets) == 0 {
+					// No rulesets available, use /** instead
+					rule := fmt.Sprintf("@a:%s/**", p.rulesetSelector.alias)
+					action := p.rulesetSelector.action
+					node := p.rulesetSelector.node
+					p.rulesetSelector = nil
+					p.statusMessage = fmt.Sprintf("Adding %s...", rule)
+					return p, p.handleRuleAction(rule, action, node.IsDir)
+				}
+				// Get selected ruleset
+				selectedRuleset := p.rulesetSelector.rulesets[p.rulesetSelector.cursor]
+				rule := fmt.Sprintf("@a:%s::%s", p.rulesetSelector.alias, selectedRuleset)
+				action := p.rulesetSelector.action
+				node := p.rulesetSelector.node
+				p.rulesetSelector = nil
+				p.statusMessage = fmt.Sprintf("Adding %s...", rule)
+				return p, p.handleRuleAction(rule, action, node.IsDir)
+			case "/":
+				// User chose to use /** instead
+				rule := fmt.Sprintf("@a:%s/**", p.rulesetSelector.alias)
+				action := p.rulesetSelector.action
+				node := p.rulesetSelector.node
+				p.rulesetSelector = nil
+				p.statusMessage = fmt.Sprintf("Adding %s...", rule)
+				return p, p.handleRuleAction(rule, action, node.IsDir)
+			case "esc":
+				// User cancelled
+				p.rulesetSelector = nil
+				p.statusMessage = "Action cancelled"
+				return p, nil
+			default:
+				// Ignore other keys during selection
+				return p, nil
+			}
+		}
+
+		// Handle confirmation prompts
 		if p.pendingConfirm != nil {
 			switch msg.String() {
 			case "y", "Y":
@@ -379,7 +535,13 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				}
 				node := p.visibleNodes[p.cursor].node
 				p.pathToRestore = node.Path // Store the current item's path
-				relPath, err := p.getRelativePath(node)
+
+				// Check if we should show ruleset selector for workspace roots
+				if p.tryShowRulesetSelector(node, "cold") {
+					return p, nil
+				}
+
+				rule, err := p.getRulePath(node)
 				if err != nil {
 					p.statusMessage = fmt.Sprintf("Error: %v", err)
 					break
@@ -392,7 +554,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 					itemType = "file"
 				}
 				p.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
-				return p, p.handleRuleAction(relPath, "cold", node.IsDir)
+				return p, p.handleRuleAction(rule, "cold", node.IsDir)
 			}
 		case "h":
 			// Toggle hot context
@@ -401,7 +563,13 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 			node := p.visibleNodes[p.cursor].node
 			p.pathToRestore = node.Path // Store the current item's path
-			relPath, err := p.getRelativePath(node)
+
+			// Check if we should show ruleset selector for workspace roots
+			if p.tryShowRulesetSelector(node, "hot") {
+				return p, nil
+			}
+
+			rule, err := p.getRulePath(node)
 			if err != nil {
 				p.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
@@ -413,7 +581,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				itemType = "file"
 			}
 			p.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
-			return p, p.handleRuleAction(relPath, "hot", node.IsDir)
+			return p, p.handleRuleAction(rule, "hot", node.IsDir)
 		case "a":
 			if p.lastKey == "z" {
 				// za - toggle fold at cursor (vim-style)
@@ -430,7 +598,13 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 			node := p.visibleNodes[p.cursor].node
 			p.pathToRestore = node.Path // Store the current item's path
-			relPath, err := p.getRelativePath(node)
+
+			// Check if we should show ruleset selector for workspace roots
+			if p.tryShowRulesetSelector(node, "exclude") {
+				return p, nil
+			}
+
+			rule, err := p.getRulePath(node)
 			if err != nil {
 				p.statusMessage = fmt.Sprintf("Error: %v", err)
 				break
@@ -443,7 +617,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				itemType = "file"
 			}
 			p.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
-			return p, p.handleRuleAction(relPath, "exclude", node.IsDir)
+			return p, p.handleRuleAction(rule, "exclude", node.IsDir)
 		case "g":
 			if p.lastKey == "g" {
 				// gg - go to top
@@ -550,6 +724,11 @@ func (p *treePage) View() string {
 	if p.pendingConfirm != nil {
 		confirmStyle := core_theme.DefaultTheme.Warning
 		content += "\n" + confirmStyle.Render(fmt.Sprintf("⚠️  %s - Press 'y' to confirm, 'n' to cancel", p.pendingConfirm.warning))
+	}
+
+	// Show ruleset selector overlay if active
+	if p.rulesetSelector != nil {
+		content = p.renderRulesetSelector(content)
 	}
 
 	return content
@@ -769,7 +948,7 @@ func (p *treePage) renderNode(index int) string {
 	statusSymbol := p.getStatusSymbol(node)
 
 	// Check if this path would be dangerous if added
-	relPath, _ := p.getRelativePath(node)
+	relPath, _ := p.getFilePathRule(node)
 	isDangerous, _ := p.isPathPotentiallyDangerous(relPath)
 	dangerSymbol := ""
 	if isDangerous && node.Status == context.StatusOmittedNoMatch {
@@ -887,7 +1066,9 @@ func (p *treePage) getStyle(node *tree.FileNode) lipgloss.Style {
 	return style
 }
 
-func (p *treePage) getRelativePath(node *tree.FileNode) (string, error) {
+// getFilePathRule generates a context rule using a relative or absolute file path.
+// This is the fallback when an alias cannot be generated.
+func (p *treePage) getFilePathRule(node *tree.FileNode) (string, error) {
 	manager := context.NewManager("")
 	workDir := manager.GetWorkDir()
 
@@ -914,6 +1095,15 @@ func (p *treePage) getRelativePath(node *tree.FileNode) (string, error) {
 	}
 
 	return basePath, nil
+}
+
+// getRulePath generates the most appropriate context rule for a file or directory.
+// It prefers generating an alias-based rule and falls back to a file path-based rule.
+func (p *treePage) getRulePath(node *tree.FileNode) (string, error) {
+	if alias, ok := p.getAliasForRule(node); ok {
+		return alias, nil
+	}
+	return p.getFilePathRule(node)
 }
 
 func (p *treePage) isPathPotentiallyDangerous(path string) (bool, string) {
@@ -954,4 +1144,145 @@ func (p *treePage) handleRuleAction(relPath string, action string, isDir bool) t
 
 	// Path is safe, proceed directly
 	return p.toggleRuleCmd(relPath, action, isDir)
+}
+
+// tryShowRulesetSelector checks if we should show the ruleset selector for this node.
+// Returns true if selector was shown, false if normal action should proceed.
+func (p *treePage) tryShowRulesetSelector(node *tree.FileNode, action string) bool {
+	// Only show selector for workspace roots
+	if p.sharedState.projectProvider == nil {
+		return false
+	}
+
+	wsNode := p.sharedState.projectProvider.FindByPath(node.Path)
+	if wsNode == nil || wsNode.RootEcosystemPath == "" || wsNode.IsEcosystem() {
+		return false
+	}
+
+	// Check if this is the workspace root
+	relPath, err := filepath.Rel(wsNode.Path, node.Path)
+	if err != nil || relPath != "." {
+		return false // Not the workspace root
+	}
+
+	// Get the alias for this workspace
+	rootEcoNode := p.sharedState.projectProvider.FindByPath(wsNode.RootEcosystemPath)
+	if rootEcoNode == nil {
+		return false
+	}
+	rootEcoName := rootEcoNode.Name
+
+	var alias string
+	if wsNode.ParentEcosystemPath != "" && wsNode.ParentEcosystemPath != wsNode.RootEcosystemPath {
+		ecoWorktreeNode := p.sharedState.projectProvider.FindByPath(wsNode.ParentEcosystemPath)
+		if ecoWorktreeNode != nil {
+			alias = fmt.Sprintf("%s:%s:%s", rootEcoName, ecoWorktreeNode.Name, wsNode.Name)
+		}
+	} else if wsNode.IsWorktree() && wsNode.ParentProjectPath != "" {
+		parentProjNode := p.sharedState.projectProvider.FindByPath(wsNode.ParentProjectPath)
+		if parentProjNode != nil {
+			alias = fmt.Sprintf("%s:%s:%s", rootEcoName, parentProjNode.Name, wsNode.Name)
+		}
+	} else if wsNode.Name != rootEcoName {
+		alias = fmt.Sprintf("%s:%s", rootEcoName, wsNode.Name)
+	}
+
+	if alias == "" {
+		return false
+	}
+
+	// Discover available rulesets
+	rulesets := p.discoverRulesets(wsNode.Path)
+
+	// Show the selector
+	p.rulesetSelector = &rulesetSelectorState{
+		node:     node,
+		action:   action,
+		rulesets: rulesets,
+		cursor:   0,
+		wsPath:   wsNode.Path,
+		alias:    alias,
+	}
+
+	p.statusMessage = "Select a ruleset..."
+	return true
+}
+
+// discoverRulesets finds all available .rules files in .cx/ and .grove/ directories
+func (p *treePage) discoverRulesets(wsPath string) []string {
+	var rulesets []string
+
+	// Check both .cx/ and .grove/ directories
+	for _, dir := range []string{".cx", ".grove"} {
+		rulesDir := filepath.Join(wsPath, dir)
+		entries, err := os.ReadDir(rulesDir)
+		if err != nil {
+			continue
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".rules") {
+				// Extract ruleset name (remove .rules extension)
+				name := strings.TrimSuffix(entry.Name(), ".rules")
+				rulesets = append(rulesets, name)
+			}
+		}
+	}
+
+	return rulesets
+}
+
+// renderRulesetSelector renders the ruleset selection popup to the right of the tree
+func (p *treePage) renderRulesetSelector(content string) string {
+	if p.rulesetSelector == nil {
+		return content
+	}
+
+	theme := core_theme.DefaultTheme
+
+	// Build the popup content
+	var popup strings.Builder
+
+	title := fmt.Sprintf("Select Ruleset for @a:%s", p.rulesetSelector.alias)
+	popup.WriteString(theme.Bold.Render(title) + "\n\n")
+
+	if len(p.rulesetSelector.rulesets) == 0 {
+		popup.WriteString(theme.Muted.Render("No rulesets found.") + "\n")
+		popup.WriteString(theme.Muted.Render("Using /** instead.") + "\n\n")
+		popup.WriteString(theme.Muted.Render("Press any key to continue..."))
+	} else {
+		for i, ruleset := range p.rulesetSelector.rulesets {
+			cursor := "  "
+			if i == p.rulesetSelector.cursor {
+				cursor = "> "
+			}
+
+			line := fmt.Sprintf("%s%s", cursor, ruleset)
+			if i == p.rulesetSelector.cursor {
+				popup.WriteString(theme.Highlight.Render(line) + "\n")
+			} else {
+				popup.WriteString(line + "\n")
+			}
+		}
+
+		popup.WriteString("\n")
+		popup.WriteString(theme.Muted.Render("↑/↓ Navigate") + "\n")
+		popup.WriteString(theme.Muted.Render("Enter Select") + "\n")
+		popup.WriteString(theme.Muted.Render("/ Use /**") + "\n")
+		popup.WriteString(theme.Muted.Render("Esc Cancel"))
+	}
+
+	// Create a box around the popup
+	popupContent := popup.String()
+	popupStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(45).
+		Height(p.height - 4) // Match the tree height
+
+	renderedPopup := popupStyle.Render(popupContent)
+
+	// Join the tree content and popup side-by-side
+	return lipgloss.JoinHorizontal(lipgloss.Top, content, "  ", renderedPopup)
 }
