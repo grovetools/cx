@@ -483,7 +483,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.ensureCursorVisible()
 		case "ctrl+d":
 			// Scroll down half a page
-			viewportHeight := p.height - 4
+			viewportHeight := p.height
 			if viewportHeight < 1 {
 				viewportHeight = 1
 			}
@@ -494,7 +494,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.ensureCursorVisible()
 		case "ctrl+u":
 			// Scroll up half a page
-			viewportHeight := p.height - 4
+			viewportHeight := p.height
 			if viewportHeight < 1 {
 				viewportHeight = 1
 			}
@@ -687,8 +687,8 @@ func (p *treePage) View() string {
 
 	var b strings.Builder
 
-	// Calculate viewport height
-	viewportHeight := p.height - 4 // Room for header/footer
+	// Calculate viewport height. p.height is the available space from the pager.
+	viewportHeight := p.height
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
@@ -768,7 +768,7 @@ func (p *treePage) collectVisibleNodes(node *tree.FileNode, level int) {
 }
 
 func (p *treePage) ensureCursorVisible() {
-	viewportHeight := p.height - 4
+	viewportHeight := p.height
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}

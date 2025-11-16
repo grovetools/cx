@@ -295,8 +295,8 @@ func (p *listPage) Blur() {}
 func (p *listPage) SetSize(width, height int) {
 	p.width = width
 	p.height = height
-	p.list.SetWidth(width)
-	p.list.SetHeight(height - 5)
+	// The pager passes us the available space after accounting for chrome and padding
+	p.list.SetSize(width, height)
 }
 
 func (p *listPage) Update(msg tea.Msg) (Page, tea.Cmd) {
@@ -421,10 +421,8 @@ func (p *listPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 }
 
 func (p *listPage) View() string {
-	return lipgloss.NewStyle().
-		Width(p.width).
-		Height(p.height - 5).
-		Render(p.list.View())
+	// The pager handles padding; this page just returns the rendered list.
+	return p.list.View()
 }
 
 // excludeFileCmd creates a command to exclude the selected file from context

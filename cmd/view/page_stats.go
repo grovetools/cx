@@ -362,9 +362,13 @@ func (p *statsPage) Blur() {
 func (p *statsPage) SetSize(width, height int) {
 	p.width = width
 	p.height = height
-	listHeight := (height - 10) / 2
-	p.langList.SetSize(width-2, listHeight)
-	p.fileList.SetSize(width-2, listHeight)
+	// The pager passes us the available space. We need to account for:
+	// - The focused list's border (2 chars width)
+	// - This page's internal help footer (1 line height)
+	listWidth := width - 2
+	listHeight := (height - 1) / 2
+	p.langList.SetSize(listWidth, listHeight)
+	p.fileList.SetSize(listWidth, listHeight)
 }
 
 func (p *statsPage) Update(msg tea.Msg) (Page, tea.Cmd) {

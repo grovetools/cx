@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-context/pkg/context"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 )
@@ -184,9 +183,9 @@ func styleLineByType(line string, parsed context.ParsedLine) string {
 func (p *rulesPage) SetSize(width, height int) {
 	p.width = width
 	p.height = height
-	// Subtract header/footer height, left padding, and top padding from viewport
-	p.viewport.Width = width - 2  // Account for left padding
-	p.viewport.Height = height - 6 // Account for header/footer and top padding
+	// The pager passes us the available space after accounting for chrome and padding
+	p.viewport.Width = width
+	p.viewport.Height = height
 }
 
 func (p *rulesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
@@ -196,10 +195,7 @@ func (p *rulesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 }
 
 func (p *rulesPage) View() string {
-	return lipgloss.NewStyle().
-		Width(p.width).
-		Height(p.height - 5). // Reserve space for pager header and footer
-		PaddingLeft(2).
-		PaddingTop(1).
-		Render(p.viewport.View())
+	// The pager now handles all padding and layout. This page just needs to return
+	// the rendered content of its viewport.
+	return p.viewport.View()
 }

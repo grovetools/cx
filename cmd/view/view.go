@@ -106,8 +106,12 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Calculate available height for the page container
+		// Subtract: pager chrome (4 lines) + top/bottom padding (2 lines) = 6 lines total
+		pageHeight := m.height - 6
 		for _, p := range m.pages {
-			p.SetSize(m.width, m.height)
+			// Pass the full width and the calculated available height to each page.
+			p.SetSize(m.width, pageHeight)
 		}
 
 	case tea.KeyMsg:
@@ -197,12 +201,17 @@ func (m *pagerModel) View() string {
 	header := m.renderTabs()
 
 	// Page content
-	content := m.pages[m.activePage].View()
+	pageContent := m.pages[m.activePage].View()
 
 	// Footer
 	footer := m.help.View(m.keys)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content, footer)
+	// Join all components
+	fullContent := lipgloss.JoinVertical(lipgloss.Left, header, pageContent, footer)
+
+	// Apply padding to the entire view
+	containerStyle := lipgloss.NewStyle().Padding(1, 2)
+	return containerStyle.Render(fullContent)
 }
 
 func (m *pagerModel) nextPage() {
@@ -234,11 +243,37 @@ func (m *pagerModel) renderTabs() string {
 		UnderlineSpaces(false).
 		Underline(false)
 
+	// First tab styles with no left padding to align with content
+	inactiveFirstTab := lipgloss.NewStyle().
+		Foreground(theme.Colors.MutedText).
+		PaddingRight(2).
+		UnderlineSpaces(false).
+		Underline(false)
+
+	activeFirstTab := lipgloss.NewStyle().
+		Foreground(theme.Colors.Green).
+		Bold(true).
+		PaddingRight(2).
+		UnderlineSpaces(false).
+		Underline(false)
+
 	var tabs []string
 	for i, p := range m.pages {
-		style := inactiveTab
-		if i == m.activePage {
-			style = activeTab
+		var style lipgloss.Style
+		if i == 0 {
+			// First tab: no left padding
+			if i == m.activePage {
+				style = activeFirstTab
+			} else {
+				style = inactiveFirstTab
+			}
+		} else {
+			// Other tabs: normal padding
+			if i == m.activePage {
+				style = activeTab
+			} else {
+				style = inactiveTab
+			}
 		}
 		tabs = append(tabs, style.Render(strings.ToUpper(p.Name())))
 	}
