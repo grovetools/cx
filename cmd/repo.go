@@ -22,6 +22,7 @@ func NewRepoCmd() *cobra.Command {
 		Long:  `Commands for managing Git repositories that are cloned and used in grove context.`,
 	}
 
+	repoCmd.AddCommand(newRepoAddCmd())
 	repoCmd.AddCommand(newRepoListCmd())
 	repoCmd.AddCommand(newRepoSyncCmd())
 	repoCmd.AddCommand(newRepoAuditCmd())
@@ -215,6 +216,63 @@ func newRepoAuditCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&statusFlag, "status", "", "Update audit status without running the full audit")
 
+	return cmd
+}
+
+func newRepoAddCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "add <url>[@version]",
+		Short: "Add and clone a new repository to be tracked",
+		Long: `Clones a new Git repository, adds it to the manifest, and makes it available for context.
+You can pin the repository to a specific version (branch, tag, or commit hash) by appending @version.
+If no version is specified, it will use the repository's default branch.
+GitHub repositories can be specified using the shorthand 'owner/repo'.`,
+		Example: `  cx repo add my-org/my-repo
+  cx repo add https://github.com/my-org/my-repo@v1.2.3
+  cx repo add git@github.com:my-org/my-repo.git@main`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repoStr := args[0]
+
+			// Use context manager to parse the git rule
+			mgr := context.NewManager("")
+			isGitURL, repoURL, version := mgr.ParseGitRule(repoStr)
+
+			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
+			if !isGitURL {
+				if !strings.HasPrefix(repoStr, "https://") && !strings.HasPrefix(repoStr, "git@") && strings.Count(repoStr, "/") == 1 {
+					isGitURL, repoURL, version = mgr.ParseGitRule("https://github.com/" + repoStr)
+				}
+			}
+
+			if !isGitURL {
+				return fmt.Errorf("invalid repository URL or shorthand format: %s", repoStr)
+			}
+
+			// Instantiate repo manager
+			manager, err := repo.NewManager()
+			if err != nil {
+				return fmt.Errorf("failed to create repository manager: %w", err)
+			}
+
+			versionDisplay := "default branch"
+			if version != "" {
+				versionDisplay = version
+			}
+			prettyLog.InfoPretty(fmt.Sprintf("Adding repository %s and pinning to %s...", repoURL, versionDisplay))
+
+			localPath, commit, err := manager.Ensure(repoURL, version)
+			if err != nil {
+				return fmt.Errorf("failed to add repository: %w", err)
+			}
+
+			prettyLog.Success(fmt.Sprintf("Successfully added repository: %s", repoURL))
+			prettyLog.InfoPretty(fmt.Sprintf("  -> Cloned to: %s", localPath))
+			prettyLog.InfoPretty(fmt.Sprintf("  -> Resolved to commit: %s", commit[:7]))
+
+			return nil
+		},
+	}
 	return cmd
 }
 
