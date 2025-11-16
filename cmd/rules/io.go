@@ -75,6 +75,29 @@ func loadRulesCmd() tea.Msg {
 		return rulesLoadedMsg{err: err}
 	}
 
+	// New: Load plan rules
+	mgr := context.NewManager("")
+	planRules, err := mgr.ListPlanRules()
+	if err != nil {
+		// Non-fatal error, just log to stderr for debugging
+		fmt.Fprintf(os.Stderr, "Warning: could not load plan-specific rules: %v\n", err)
+	} else {
+		for _, rule := range planRules {
+			content, readErr := os.ReadFile(rule.Path)
+			if readErr != nil {
+				content = []byte(theme.DefaultTheme.Error.Render(fmt.Sprintf("Error reading file: %v", readErr)))
+			}
+			items = append(items, ruleItem{
+				name:        rule.Name,
+				path:        rule.Path,
+				active:      rule.Path == activeSource,
+				content:     string(content),
+				planContext: fmt.Sprintf("plan:%s (ws:%s)", rule.PlanName, rule.WorkspaceName),
+				isPlanRule:  true,
+			})
+		}
+	}
+
 	return rulesLoadedMsg{items: items, err: nil}
 }
 

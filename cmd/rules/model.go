@@ -9,10 +9,12 @@ import (
 )
 
 type ruleItem struct {
-	name    string
-	path    string
-	active  bool
-	content string
+	name        string
+	path        string
+	active      bool
+	content     string
+	planContext string // e.g., "plan:my-plan (ws:my-ws)"
+	isPlanRule  bool   // New flag
 }
 
 func (r *ruleItem) getContentLineCount() int {

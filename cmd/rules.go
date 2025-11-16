@@ -64,23 +64,35 @@ func newRulesUnsetCmd() *cobra.Command {
 
 func newRulesLoadCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "load <name>",
+		Use:   "load <name-or-path>",
 		Short: "Copy a named set to .grove/rules as a modifiable working copy",
 		Long: `Copy a named rule set from .cx/ or .cx.work/ to .grove/rules.
 This creates a working copy that you can edit freely without affecting the original.
 The state is automatically unset so .grove/rules becomes active.
 
+You can also provide a direct file path to a rules file (including plan-specific rules).
+
 Examples:
   cx rules load default          # Copy .cx/default.rules to .grove/rules
-  cx rules load dev-no-tests     # Copy from either .cx/ or .cx.work/`,
+  cx rules load dev-no-tests     # Copy from either .cx/ or .cx.work/
+  cx rules load /path/to/plan/rules/file.rules  # Copy from absolute path`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+			nameOrPath := args[0]
+			var sourcePath string
 
-			// Find the source file in .cx/ or .cx.work/
-			sourcePath, err := context.FindRulesetFile(".", name)
-			if err != nil {
-				return err
+			// First, try to find as a named ruleset.
+			path, err := context.FindRulesetFile(".", nameOrPath)
+			if err == nil {
+				sourcePath = path
+			} else {
+				// If not found, check if the argument is a valid file path.
+				if _, statErr := os.Stat(nameOrPath); statErr == nil {
+					sourcePath, _ = filepath.Abs(nameOrPath)
+				} else {
+					// Not a named rule and not a file path.
+					return fmt.Errorf("ruleset or file not found: %s", nameOrPath)
+				}
 			}
 
 			// Read the source file
@@ -105,7 +117,7 @@ Examples:
 				prettyLog.WarnPretty(fmt.Sprintf("Warning: could not unset active rule set in state: %v", err))
 			}
 
-			prettyLog.Success(fmt.Sprintf("Loaded '%s' into .grove/rules as working copy", name))
+			prettyLog.Success(fmt.Sprintf("Loaded '%s' into .grove/rules as working copy", nameOrPath))
 			prettyLog.InfoPretty(fmt.Sprintf("Source: %s", sourcePath))
 			prettyLog.InfoPretty("You can now edit .grove/rules freely without affecting the original.")
 			return nil
@@ -210,6 +222,14 @@ func newRulesListCmd() *cobra.Command {
 				return err
 			}
 
+			// New: Collect plan rules
+			mgr := context.NewManager("")
+			planRules, err := mgr.ListPlanRules()
+			if err != nil {
+				// Non-fatal, just warn
+				prettyLog.WarnPretty(fmt.Sprintf("Warning: could not list plan rules: %v", err))
+			}
+
 			// Combine all rules
 			var ruleNames []string
 			ruleNames = append(ruleNames, cxRules...)
@@ -221,7 +241,7 @@ func newRulesListCmd() *cobra.Command {
 
 			// Human-readable output
 			prettyLog.InfoPretty("Available Rule Sets:")
-			if len(ruleNames) == 0 {
+			if len(ruleNames) == 0 && len(planRules) == 0 {
 				prettyLog.InfoPretty("  No rule sets found.")
 			} else {
 				for _, name := range ruleNames {
@@ -233,6 +253,20 @@ func newRulesListCmd() *cobra.Command {
 						indicator = "✓ "
 					}
 					prettyLog.InfoPretty(fmt.Sprintf("%s%s", indicator, name))
+				}
+
+				// New: Display plan rules
+				if len(planRules) > 0 {
+					prettyLog.Blank()
+					prettyLog.InfoPretty("Plan-Specific Rules:")
+					for _, rule := range planRules {
+						indicator := "  "
+						if rule.Path == activeSource {
+							indicator = "✓ "
+						}
+						sourceInfo := fmt.Sprintf("plan:%s (ws:%s)", rule.PlanName, rule.WorkspaceName)
+						prettyLog.InfoPretty(fmt.Sprintf("%s%s (%s)", indicator, rule.Name, sourceInfo))
+					}
 				}
 			}
 
@@ -250,18 +284,29 @@ func newRulesListCmd() *cobra.Command {
 
 func newRulesSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "set <name>",
+		Use:   "set <name-or-path>",
 		Short: "Set a named rule set as active (read-only)",
 		Long: `Sets a named rule set from .cx/ or .cx.work/ as the active context source.
-This makes the context read-only from that file. To create a modifiable copy, use 'cx rules load'.`,
+This makes the context read-only from that file. To create a modifiable copy, use 'cx rules load'.
+
+You can also provide a direct file path to a rules file (including plan-specific rules).`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+			nameOrPath := args[0]
+			var sourcePath string
 
-			// Find the ruleset file in .cx/ or .cx.work/
-			sourcePath, err := context.FindRulesetFile(".", name)
-			if err != nil {
-				return err
+			// First, try to find as a named ruleset.
+			path, err := context.FindRulesetFile(".", nameOrPath)
+			if err == nil {
+				sourcePath = path
+			} else {
+				// If not found, check if the argument is a valid file path.
+				if _, statErr := os.Stat(nameOrPath); statErr == nil {
+					sourcePath, _ = filepath.Abs(nameOrPath)
+				} else {
+					// Not a named rule and not a file path.
+					return fmt.Errorf("ruleset or file not found: %s", nameOrPath)
+				}
 			}
 
 			if err := state.Set(context.StateSourceKey, sourcePath); err != nil {
@@ -270,10 +315,10 @@ This makes the context read-only from that file. To create a modifiable copy, us
 
 			// Warn user if a .grove/rules file exists, as it will now be ignored.
 			if _, err := os.Stat(context.ActiveRulesFile); err == nil {
-				prettyLog.WarnPretty(fmt.Sprintf("Warning: %s exists but will be ignored while '%s' is active.", context.ActiveRulesFile, name))
+				prettyLog.WarnPretty(fmt.Sprintf("Warning: %s exists but will be ignored while active source is set.", context.ActiveRulesFile))
 			}
 
-			prettyLog.Success(fmt.Sprintf("Active context rules set to '%s'", name))
+			prettyLog.Success(fmt.Sprintf("Active context rules set to: %s", sourcePath))
 			return nil
 		},
 	}

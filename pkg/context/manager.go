@@ -3,6 +3,7 @@ package context
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,8 +12,10 @@ import (
 	"sync"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/state"
 	"github.com/mattsolo1/grove-core/util/pathutil"
+	"github.com/sirupsen/logrus"
 )
 
 // Constants for context file paths
@@ -40,6 +43,14 @@ type ContextConfig struct {
 	// AllowedPaths is a list of additional paths that can be included in context,
 	// regardless of workspace boundaries. Paths can be absolute or use ~/ for home directory.
 	AllowedPaths []string `yaml:"allowed_paths,omitempty"`
+}
+
+// PlanRule holds information about a rules file discovered within a grove-flow plan.
+type PlanRule struct {
+	Name          string // e.g., "01-chat.md.rules"
+	Path          string // Absolute path to the file
+	PlanName      string
+	WorkspaceName string
 }
 
 // Manager handles context operations
@@ -74,6 +85,65 @@ func NewManager(workDir string) *Manager {
 // GetWorkDir returns the current working directory
 func (m *Manager) GetWorkDir() string {
 	return m.workDir
+}
+
+// ListPlanRules discovers and returns all rules files from grove-flow plans across all workspaces.
+func (m *Manager) ListPlanRules() ([]PlanRule, error) {
+	// 1. Load the default grove-core configuration to find notebook and plan locations.
+	//    Try to load from the working directory first (to pick up workspace-specific config),
+	//    then fall back to LoadDefault
+	cfg, err := config.LoadFrom(m.workDir)
+	if err != nil {
+		// Try LoadDefault as fallback
+		cfg, err = config.LoadDefault()
+		if err != nil {
+			// If config loading fails entirely, we can still try to scan with an empty config
+			// The NotebookLocator might have sensible defaults
+			cfg = &config.Config{}
+		}
+	}
+
+	// 2. Use grove-core's discovery service to find all projects and workspaces.
+	logger := logrus.New()
+	logger.SetOutput(io.Discard) // Suppress logs to keep CLI output clean.
+	discoveryService := workspace.NewDiscoveryService(logger)
+	discoveryResult, err := discoveryService.DiscoverAll()
+	if err != nil {
+		// If discovery fails, we can't find workspaces, so return empty
+		return nil, nil
+	}
+	provider := workspace.NewProvider(discoveryResult)
+
+	// 3. Use the NotebookLocator to find all plan directories.
+	locator := workspace.NewNotebookLocator(cfg)
+	planDirs, err := locator.ScanForAllPlans(provider)
+	if err != nil {
+		// If scanning fails, return empty (non-fatal)
+		return nil, nil
+	}
+
+	var planRules []PlanRule
+	// 4. Iterate through each plan directory to find rule files.
+	for _, planDir := range planDirs {
+		rulesSubDir := filepath.Join(planDir.Path, "rules")
+		entries, err := os.ReadDir(rulesSubDir)
+		if err != nil {
+			continue // Skip if 'rules/' subdir doesn't exist.
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".rules") {
+				planRules = append(planRules, PlanRule{
+					Name:          entry.Name(),
+					Path:          filepath.Join(rulesSubDir, entry.Name()),
+					PlanName:      filepath.Base(planDir.Path),
+					WorkspaceName: planDir.Owner.Name,
+				})
+			}
+		}
+	}
+
+	return planRules, nil
 }
 
 // getAliasResolver lazily initializes and returns the AliasResolver.

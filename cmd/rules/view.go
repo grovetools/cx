@@ -85,10 +85,15 @@ func (m *rulesPickerModel) View() string {
 			}
 		}
 
+		source := item.path
+		if item.isPlanRule {
+			source = item.planContext
+		}
+
 		rows = append(rows, []string{
 			status,
 			name,
-			item.path,
+			source,
 		})
 	}
 
@@ -97,7 +102,7 @@ func (m *rulesPickerModel) View() string {
 
 	// Render table
 	tableView := table.SelectableTableWithOptions(
-		[]string{"", "Name", "Path"},
+		[]string{"", "Name", "Source"},
 		rows,
 		m.selectedIndex,
 		table.SelectableTableOptions{
