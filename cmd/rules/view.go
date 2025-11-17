@@ -52,7 +52,7 @@ func (m *rulesPickerModel) View() string {
 	for i, item := range m.items {
 		status := " "
 		if item.active {
-			status = "✓"
+			status = theme.IconSuccess
 		}
 
 		name := item.name
@@ -60,28 +60,28 @@ func (m *rulesPickerModel) View() string {
 		// Show loading indicator: arrow from source to destination
 		if m.loadingActive || m.loadingComplete {
 			if i == m.loadingFromIdx {
-				name = theme.DefaultTheme.Highlight.Render("↑ " + item.name + " →")
+				name = theme.DefaultTheme.Highlight.Render(theme.IconArrowUp + " " + item.name + " " + theme.IconArrow)
 			} else if i == m.loadingToIdx {
-				name = theme.DefaultTheme.Success.Render("→ " + item.name)
+				name = theme.DefaultTheme.Success.Render(theme.IconArrow + " " + item.name)
 			}
 		}
 
 		// Show setting indicator: star/checkmark for the item being set as active
 		if m.settingActive || m.settingComplete {
 			if i == m.settingIdx {
-				name = theme.DefaultTheme.Success.Render("★ " + item.name)
+				name = theme.DefaultTheme.Success.Render(theme.IconSparkle + " " + item.name)
 			}
 		}
 
 		// Show delete confirmation needed indicator
 		if m.deleteConfirmNeeded && i == m.deleteConfirmIdx {
-			name = theme.DefaultTheme.Error.Render("⚠ " + item.name + " (press 'd' again)")
+			name = theme.DefaultTheme.Error.Render(theme.IconWarning + " " + item.name + " (press 'd' again)")
 		}
 
 		// Show deleting indicator: X for the item being deleted
 		if m.deletingActive || m.deletingComplete {
 			if i == m.deletingIdx {
-				name = theme.DefaultTheme.Error.Render("✗ " + item.name)
+				name = theme.DefaultTheme.Error.Render(theme.IconError + " " + item.name)
 			}
 		}
 
@@ -129,7 +129,7 @@ func (m *rulesPickerModel) View() string {
 	// Render status message
 	statusView := ""
 	if m.statusMessage != "" {
-		statusView = theme.DefaultTheme.Success.Render("✓ " + m.statusMessage)
+		statusView = theme.DefaultTheme.Success.Render(theme.IconSuccess + " " + m.statusMessage)
 	}
 
 	// Render minimal help footer

@@ -79,9 +79,9 @@ func (d languageDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 
 	if index == m.Index() {
 		if indicator != "" {
-			parts = append(parts, theme.Bold.Render("> "+name), theme.Success.Render(indicator), theme.Highlight.Render(percentage), details)
+			parts = append(parts, theme.Bold.Render(core_theme.IconArrowRightBold+" "+name), theme.Success.Render(indicator), theme.Highlight.Render(percentage), details)
 		} else {
-			parts = append(parts, theme.Bold.Render("> "+name), theme.Highlight.Render(percentage), details)
+			parts = append(parts, theme.Bold.Render(core_theme.IconArrowRightBold+" "+name), theme.Highlight.Render(percentage), details)
 		}
 	} else {
 		if indicator != "" {
@@ -144,9 +144,9 @@ func (d fileDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	var line string
 	if index == m.Index() {
 		if indicator != "" {
-			line = fmt.Sprintf("> %s%-*s %s", theme.Success.Render(indicator), pathWidth, displayPath, tokenStyle.Render(details))
+			line = fmt.Sprintf("%s %s%-*s %s", core_theme.IconArrowRightBold, theme.Success.Render(indicator), pathWidth, displayPath, tokenStyle.Render(details))
 		} else {
-			line = fmt.Sprintf("> %-*s %s", pathWidth, displayPath, tokenStyle.Render(details))
+			line = fmt.Sprintf("%s %-*s %s", core_theme.IconArrowRightBold, pathWidth, displayPath, tokenStyle.Render(details))
 		}
 	} else {
 		if indicator != "" {

@@ -909,7 +909,7 @@ func (p *treePage) renderNode(index int) string {
 	// Cursor indicator
 	cursor := "  "
 	if index == p.cursor {
-		cursor = "> "
+		cursor = core_theme.IconArrowRightBold + " "
 	}
 
 	// Icon and name
@@ -930,18 +930,6 @@ func (p *treePage) renderNode(index int) string {
 	if isSearchMatch && len(p.searchResults) > 0 {
 		// Apply inverted style for search matches
 		style = style.Reverse(true)
-	}
-
-	// Directory expansion indicator
-	expandIndicator := ""
-	if node.IsDir && len(node.Children) > 0 {
-		if p.expandedPaths[node.Path] {
-			expandIndicator = "▼ "
-		} else {
-			expandIndicator = "▶ "
-		}
-	} else if node.IsDir {
-		expandIndicator = "  "
 	}
 
 	// Status symbol
@@ -971,8 +959,8 @@ func (p *treePage) renderNode(index int) string {
 		tokenStr = tokenStyle.Render(fmt.Sprintf(" (%s)", context.FormatTokenCount(node.TokenCount)))
 	}
 
-	// Combine all parts
-	line := fmt.Sprintf("%s%s%s%s %s%s%s%s", cursor, indent, expandIndicator, icon, name, statusSymbol, dangerSymbol, tokenStr)
+	// Combine all parts (no expansion indicator - folder icon shows open/closed state)
+	line := fmt.Sprintf("%s%s%s %s%s%s%s", cursor, indent, icon, name, statusSymbol, dangerSymbol, tokenStr)
 	return style.Render(line)
 }
 
@@ -1013,24 +1001,47 @@ func (p *treePage) restoreCursorPosition() {
 
 func (p *treePage) getIcon(node *tree.FileNode) string {
 	if node.IsDir {
-		// Directory icon without explicit color
-		return "📁"
+		// Show tree icon for the root node
+		if p.tree != nil && node.Path == p.tree.Path {
+			return core_theme.IconFolderTree
+		}
+		// Show remove variant for excluded items
+		if node.Status == context.StatusExcludedByRule {
+			return core_theme.IconFolderRemove
+		}
+		// Show plus variant for hot context items
+		if node.Status == context.StatusIncludedHot {
+			return core_theme.IconFolderPlus
+		}
+		// Show open folder if expanded, closed folder otherwise
+		if p.expandedPaths[node.Path] {
+			return core_theme.IconFolderOpen
+		}
+		return core_theme.IconFolder
 	}
-	return "📄"
+	// Show cancel variant for excluded files
+	if node.Status == context.StatusExcludedByRule {
+		return core_theme.IconFileCancel
+	}
+	// Show plus variant for hot context files
+	if node.Status == context.StatusIncludedHot {
+		return core_theme.IconFilePlus
+	}
+	return core_theme.IconFile
 }
 
 func (p *treePage) getStatusSymbol(node *tree.FileNode) string {
 	switch node.Status {
 	case context.StatusIncludedHot:
 		greenStyle := core_theme.DefaultTheme.Success // Green
-		return greenStyle.Render(" ✓")
+		return greenStyle.Render(" " + core_theme.IconSuccess)
 	case context.StatusIncludedCold:
 		lightBlueStyle := core_theme.DefaultTheme.Accent // Light blue
-		return lightBlueStyle.Render(" ❄️")
+		return lightBlueStyle.Render(" " + core_theme.IconPineTreeBox) // Using PineTreeBox for "cold"
 	case context.StatusExcludedByRule:
-		return " 🚫"
+		return " " + core_theme.IconStatusBlocked
 	case context.StatusIgnoredByGit:
-		return " 🙈" // Git ignored
+		return " " + core_theme.IconGit // Using Git icon for gitignored
 	default:
 		return ""
 	}

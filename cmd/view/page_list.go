@@ -83,12 +83,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		return
 	}
 
-	theme := theme.DefaultTheme
+	themeStyle := theme.DefaultTheme
 
 	// Add folder icon for directories
 	var prefix string
 	if i.isDir {
-		prefix = "📁 "
+		prefix = theme.IconFolder + " "
 	}
 
 	// Build the path string with colored components
@@ -99,18 +99,18 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	if isFiltering && filter != "" {
 		highlightStyle := lipgloss.NewStyle().Reverse(true)
 		if i.ecosystem != "" {
-			pathParts = append(pathParts, highlight(i.ecosystem, filter, theme.Accent, theme.Accent.Copy().Inherit(highlightStyle)))
+			pathParts = append(pathParts, highlight(i.ecosystem, filter, themeStyle.Accent, themeStyle.Accent.Copy().Inherit(highlightStyle)))
 		}
 		if i.repo != "" {
-			pathParts = append(pathParts, highlight(i.repo, filter, theme.Highlight, theme.Highlight.Copy().Inherit(highlightStyle)))
+			pathParts = append(pathParts, highlight(i.repo, filter, themeStyle.Highlight, themeStyle.Highlight.Copy().Inherit(highlightStyle)))
 		}
 		pathParts = append(pathParts, highlight(i.path, filter, lipgloss.NewStyle(), highlightStyle))
 	} else {
 		if i.ecosystem != "" {
-			pathParts = append(pathParts, theme.Accent.Render(i.ecosystem))
+			pathParts = append(pathParts, themeStyle.Accent.Render(i.ecosystem))
 		}
 		if i.repo != "" {
-			pathParts = append(pathParts, theme.Highlight.Render(i.repo))
+			pathParts = append(pathParts, themeStyle.Highlight.Render(i.repo))
 		}
 		// Bold directories
 		if i.isDir {
@@ -125,7 +125,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 
 	fn := lipgloss.NewStyle().Padding(0, 0, 0, 2)
 	if index == m.Index() {
-		pathStr = "> " + pathStr
+		pathStr = theme.IconArrowRightBold + " " + pathStr
 	} else {
 		pathStr = "  " + pathStr
 	}
