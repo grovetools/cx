@@ -2,6 +2,9 @@ package context
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -319,9 +322,15 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 		cacheKey = gitRootPath
 	}
 
-	// Check if we have a cached result for this repository
+	// Check if we have a cached result for this repository in memory
 	if cachedResult, found := m.gitIgnoredCache[cacheKey]; found {
 		return cachedResult, nil
+	}
+
+	// Try to load from disk cache
+	if diskCached, found := m.loadGitIgnoredFromDiskCache(gitRootPath); found {
+		m.gitIgnoredCache[cacheKey] = diskCached
+		return diskCached, nil
 	}
 
 	// If not cached, proceed with the original logic
@@ -369,10 +378,144 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 		}
 	}
 
-	// Cache the result before returning (use normalized key)
+	// Cache the result in memory (use normalized key)
 	m.gitIgnoredCache[cacheKey] = ignoredFiles
 
+	// Cache the result on disk for future invocations
+	m.saveGitIgnoredToDiskCache(gitRootPath, ignoredFiles)
+
 	return ignoredFiles, nil
+}
+
+// computeGitignoreHash computes a hash of all .gitignore files in the repository
+func (m *Manager) computeGitignoreHash(gitRootPath string) (string, error) {
+	hasher := sha256.New()
+
+	// Find all .gitignore files in the repository
+	gitignorePath := filepath.Join(gitRootPath, ".gitignore")
+	if data, err := os.ReadFile(gitignorePath); err == nil {
+		hasher.Write(data)
+	}
+
+	// Also hash .git/info/exclude if it exists
+	excludePath := filepath.Join(gitRootPath, ".git", "info", "exclude")
+	if data, err := os.ReadFile(excludePath); err == nil {
+		hasher.Write(data)
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil))[:16], nil
+}
+
+// getCacheDir returns the directory for storing git ignore caches
+func (m *Manager) getCacheDir(gitRootPath string) string {
+	// Use .grove directory in the git root
+	return filepath.Join(gitRootPath, ".grove", "git-ignored-cache")
+}
+
+// getCacheFilePath returns the path to the cache file for a given git root
+func (m *Manager) getCacheFilePath(gitRootPath string) (string, error) {
+	hash, err := m.computeGitignoreHash(gitRootPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Use a hash of the git root path to create a unique filename
+	rootHasher := sha256.New()
+	rootHasher.Write([]byte(gitRootPath))
+	rootHash := hex.EncodeToString(rootHasher.Sum(nil))[:16]
+
+	cacheDir := m.getCacheDir(gitRootPath)
+	return filepath.Join(cacheDir, fmt.Sprintf("%s-%s.json", rootHash, hash)), nil
+}
+
+// loadGitIgnoredFromDiskCache attempts to load cached git ignored files from disk
+func (m *Manager) loadGitIgnoredFromDiskCache(gitRootPath string) (map[string]bool, bool) {
+	cacheFile, err := m.getCacheFilePath(gitRootPath)
+	if err != nil {
+		return nil, false
+	}
+
+	// Check if cache file exists
+	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+		return nil, false
+	}
+
+	// Read cache file
+	data, err := os.ReadFile(cacheFile)
+	if err != nil {
+		return nil, false
+	}
+
+	// Parse JSON
+	var ignoredPaths []string
+	if err := json.Unmarshal(data, &ignoredPaths); err != nil {
+		return nil, false
+	}
+
+	// Convert to map
+	result := make(map[string]bool, len(ignoredPaths))
+	for _, path := range ignoredPaths {
+		result[path] = true
+	}
+
+	return result, true
+}
+
+// saveGitIgnoredToDiskCache saves git ignored files to disk cache
+func (m *Manager) saveGitIgnoredToDiskCache(gitRootPath string, ignoredFiles map[string]bool) {
+	cacheFile, err := m.getCacheFilePath(gitRootPath)
+	if err != nil {
+		return // Silently fail if we can't compute cache path
+	}
+
+	// Create cache directory if it doesn't exist
+	cacheDir := m.getCacheDir(gitRootPath)
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return // Silently fail if we can't create directory
+	}
+
+	// Convert map to slice for JSON serialization
+	ignoredPaths := make([]string, 0, len(ignoredFiles))
+	for path := range ignoredFiles {
+		ignoredPaths = append(ignoredPaths, path)
+	}
+
+	// Write to cache file
+	data, err := json.Marshal(ignoredPaths)
+	if err != nil {
+		return
+	}
+
+	// Write atomically by writing to temp file and renaming
+	tmpFile := cacheFile + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return
+	}
+	os.Rename(tmpFile, cacheFile)
+
+	// Clean up old cache files (keep only the current one)
+	m.cleanupOldCacheFiles(gitRootPath, cacheFile)
+}
+
+// cleanupOldCacheFiles removes old cache files from the cache directory
+func (m *Manager) cleanupOldCacheFiles(gitRootPath, currentCacheFile string) {
+	cacheDir := m.getCacheDir(gitRootPath)
+
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		fullPath := filepath.Join(cacheDir, entry.Name())
+		if fullPath != currentCacheFile && strings.HasSuffix(entry.Name(), ".json") {
+			os.Remove(fullPath)
+		}
+	}
 }
 
 // UpdateFromRules updates the files list based on rules file patterns (deprecated - kept for compatibility)
