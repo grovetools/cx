@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	ctx "context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,8 @@ import (
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/pkg/repo"
+	"github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/util/sanitize"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +29,7 @@ func NewRepoCmd() *cobra.Command {
 	repoCmd.AddCommand(newRepoListCmd())
 	repoCmd.AddCommand(newRepoSyncCmd())
 	repoCmd.AddCommand(newRepoAuditCmd())
+	repoCmd.AddCommand(newRepoRulesCmd())
 
 	return repoCmd
 }
@@ -236,12 +240,12 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 
 			// Use context manager to parse the git rule
 			mgr := context.NewManager("")
-			isGitURL, repoURL, version := mgr.ParseGitRule(repoStr)
+			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Ignore ruleset part here
 
 			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
 			if !isGitURL {
 				if !strings.HasPrefix(repoStr, "https://") && !strings.HasPrefix(repoStr, "git@") && strings.Count(repoStr, "/") == 1 {
-					isGitURL, repoURL, version = mgr.ParseGitRule("https://github.com/" + repoStr)
+					isGitURL, repoURL, version, _ = mgr.ParseGitRule("https://github.com/" + repoStr)
 				}
 			}
 
@@ -430,5 +434,145 @@ func promptForApproval() (bool, error) {
 		return false, err
 	}
 	return strings.ToLower(input) == "y" || strings.ToLower(input) == "yes", nil
+}
+
+func newRepoRulesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "rules",
+		Short: "Manage rulesets for a cloned repository",
+		Long:  `Create, edit, list, and remove rulesets for external Git repositories.`,
+	}
+	cmd.AddCommand(newRepoRulesEditCmd())
+	// Future subcommands like 'list' and 'rm' can be added here.
+	return cmd
+}
+
+func newRepoRulesEditCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "edit <url>[@version] [ruleset-name]",
+		Short: "Create or edit a ruleset for a repository",
+		Long: `Creates or opens a rules file for a cloned repository in your default editor.
+The rules file is stored within the repository's local clone at .cx/<ruleset-name>.rules.
+If no ruleset name is provided, it defaults to 'default'.`,
+		Example: `  cx repo rules edit my-org/my-repo
+  cx repo rules edit https://github.com/my-org/my-repo@v1.2.3 my-feature-rules`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repoStr := args[0]
+			rulesetName := "default"
+			if len(args) > 1 {
+				rulesetName = args[1]
+			}
+
+			// Use context manager to parse the git rule string
+			mgr := context.NewManager("")
+			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Ignore ruleset part here
+
+			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
+			if !isGitURL {
+				if !strings.HasPrefix(repoStr, "https://") && !strings.HasPrefix(repoStr, "git@") && strings.Count(repoStr, "/") == 1 {
+					isGitURL, repoURL, version, _ = mgr.ParseGitRule("https://github.com/" + repoStr)
+				}
+			}
+
+			if !isGitURL {
+				return fmt.Errorf("invalid repository URL or shorthand format: %s", repoStr)
+			}
+
+			// Instantiate repo manager
+			manager, err := repo.NewManager()
+			if err != nil {
+				return fmt.Errorf("failed to create repository manager: %w", err)
+			}
+
+			// Ensure repo is cloned and get local path
+			localPath, _, err := manager.Ensure(repoURL, version)
+			if err != nil {
+				return fmt.Errorf("failed to ensure repository is cloned: %w", err)
+			}
+
+			// Construct paths
+			rulesDir := filepath.Join(localPath, context.RulesDir)
+			rulesFile := filepath.Join(rulesDir, rulesetName+context.RulesExt)
+
+			// Ensure .cx directory exists
+			if err := os.MkdirAll(rulesDir, 0o755); err != nil {
+				return fmt.Errorf("failed to create %s directory: %w", rulesDir, err)
+			}
+
+			// If rules file doesn't exist, create it with a default pattern
+			if _, err := os.Stat(rulesFile); os.IsNotExist(err) {
+				prettyLog.InfoPretty(fmt.Sprintf("Creating new ruleset '%s' for %s", rulesetName, repoURL))
+				content := []byte("*\n\n# Add glob patterns to include files from this repository.\n# Use '!' to exclude.\n")
+				if err := os.WriteFile(rulesFile, content, 0o644); err != nil {
+					return fmt.Errorf("failed to create initial rules file: %w", err)
+				}
+			}
+
+			prettyLog.InfoPretty(fmt.Sprintf("Opening tmux session for %s...", repoURL))
+
+			// Create a tmux session for the repository workspace
+			tmuxClient, err := tmux.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create tmux client: %w", err)
+			}
+			background := ctx.Background()
+
+			// Generate a sanitized session name from the repo URL
+			sessionName := sanitize.SanitizeForTmuxSession(filepath.Base(localPath))
+
+			// Check if session already exists
+			exists, err := tmuxClient.SessionExists(background, sessionName)
+			if err != nil {
+				return fmt.Errorf("failed to check if session exists: %w", err)
+			}
+
+			if exists {
+				prettyLog.InfoPretty(fmt.Sprintf("Session '%s' already exists, switching to it...", sessionName))
+				// Just switch to the existing session
+				if err := tmuxClient.SwitchClientToSession(background, sessionName); err != nil {
+					// If we're not in tmux, try to attach instead
+					attachCmd := exec.Command("tmux", "attach-session", "-t", sessionName)
+					attachCmd.Stdin = os.Stdin
+					attachCmd.Stdout = os.Stdout
+					attachCmd.Stderr = os.Stderr
+					return attachCmd.Run()
+				}
+				return nil
+			}
+
+			// Launch a new tmux session
+			launchOpts := tmux.LaunchOptions{
+				SessionName:      sessionName,
+				WorkingDirectory: localPath,
+				WindowName:       "editor",
+				Panes: []tmux.PaneOptions{
+					{
+						Command: fmt.Sprintf("nvim %s", rulesFile),
+					},
+				},
+			}
+
+			if err := tmuxClient.Launch(background, launchOpts); err != nil {
+				return fmt.Errorf("failed to launch tmux session: %w", err)
+			}
+
+			prettyLog.Success(fmt.Sprintf("Created session '%s'", sessionName))
+
+			// Switch to the new session (if we're in tmux) or attach (if we're not)
+			if err := tmuxClient.SwitchClientToSession(background, sessionName); err != nil {
+				// If we're not in tmux, try to attach instead
+				prettyLog.InfoPretty("Attaching to session...")
+				attachCmd := exec.Command("tmux", "attach-session", "-t", sessionName)
+				attachCmd.Stdin = os.Stdin
+				attachCmd.Stdout = os.Stdout
+				attachCmd.Stderr = os.Stderr
+				return attachCmd.Run()
+			}
+
+			return nil
+		},
+	}
+	return cmd
 }
 

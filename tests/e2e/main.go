@@ -70,6 +70,9 @@ func main() {
 		GitAliasWithGlobPatternsScenario(),
 		GitAliasStatsPerLineScenario(),
 
+		// Git Repository Rules Files
+		GitRepoRulesScenario(),
+
 		// Command-based Context Scenarios
 		FromCmdScenario(),
 		FromCmdPipelineScenario(),

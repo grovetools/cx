@@ -281,9 +281,9 @@ func outputPerLineStats(args []string) error {
 				}
 				repoPart := strings.TrimPrefix(ruleText, prefix)
 				fullURL := "https://github.com/" + repoPart
-				_, repoURL, version = mgr.ParseGitRule(fullURL)
+				_, repoURL, version, _ = mgr.ParseGitRule(fullURL)
 			} else {
-				_, repoURL, version = mgr.ParseGitRule(ruleText)
+				_, repoURL, version, _ = mgr.ParseGitRule(ruleText)
 			}
 
 			if repoURL != "" {
@@ -358,9 +358,9 @@ func outputPerLineStats(args []string) error {
 					}
 					repoPart := strings.TrimPrefix(ruleText, prefix)
 					fullURL := "https://github.com/" + repoPart
-					_, repoURL, version = mgr.ParseGitRule(fullURL)
+					_, repoURL, version, _ = mgr.ParseGitRule(fullURL)
 				} else {
-					_, repoURL, version = mgr.ParseGitRule(ruleText)
+					_, repoURL, version, _ = mgr.ParseGitRule(ruleText)
 				}
 
 				if repoURL != "" {
@@ -477,9 +477,9 @@ func outputPerLineStats(args []string) error {
 				}
 				repoPart := strings.TrimPrefix(ruleText, prefix)
 				fullURL := "https://github.com/" + repoPart
-				isGitURL, repoURL, version = mgr.ParseGitRule(fullURL)
+				isGitURL, repoURL, version, _ = mgr.ParseGitRule(fullURL)
 			} else {
-				isGitURL, repoURL, version = mgr.ParseGitRule(ruleText)
+				isGitURL, repoURL, version, _ = mgr.ParseGitRule(ruleText)
 			}
 
 			// If this is a Git URL/alias, add a synthetic entry with gitInfo

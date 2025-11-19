@@ -45,6 +45,27 @@ func styleLineByType(line string, parsed context.ParsedLine) string {
 		// Git URLs are styled as info/cyan
 		return theme.Info.Render(line)
 
+	case context.LineTypeGitURLRuleset:
+		// Git URLs with ruleset have component-level styling
+		var styledParts []string
+
+		// URL part
+		if val, ok := parsed.Parts["url"]; ok {
+			styledParts = append(styledParts, theme.Info.Render(val))
+		}
+
+		// Delimiter (::)
+		if val, ok := parsed.Parts["delimiter"]; ok {
+			styledParts = append(styledParts, theme.Muted.Render(val))
+		}
+
+		// Ruleset name
+		if val, ok := parsed.Parts["ruleset"]; ok {
+			styledParts = append(styledParts, theme.Success.Render(val))
+		}
+
+		return strings.Join(styledParts, "")
+
 	case context.LineTypeAliasPattern:
 		// Aliases with component-level styling
 		var styledParts []string

@@ -414,17 +414,27 @@ func (m *Manager) UpdateFromRules() error {
 	return m.WriteFilesList(filesPath, filesToInclude)
 }
 
-// ParseGitRule checks if a rule is a Git URL and extracts the URL and optional version
-func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version string) {
+// ParseGitRule checks if a rule is a Git URL and extracts the URL, optional version, and optional ruleset
+func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version, ruleset string) {
 	// Remove exclusion prefix if present
 	if strings.HasPrefix(rule, "!") {
 		rule = strings.TrimPrefix(rule, "!")
 	}
 
+	// Check for and extract ruleset specifier (e.g., ::default)
+	if colonIndex := strings.LastIndex(rule, "::"); colonIndex != -1 {
+		potentialRuleset := rule[colonIndex+2:]
+		// A ruleset name shouldn't contain path separators
+		if !strings.Contains(potentialRuleset, "/") {
+			ruleset = potentialRuleset
+			rule = rule[:colonIndex]
+		}
+	}
+
 	// Check for common Git URL patterns
 	gitURLPattern := regexp.MustCompile(`^(https?://|git@|github\.com/|gitlab\.com/|bitbucket\.org/)`)
 	if !gitURLPattern.MatchString(rule) {
-		return false, "", ""
+		return false, "", "", ruleset
 	}
 
 	// Ensure proper URL format first
@@ -453,7 +463,7 @@ func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version str
 	// First, extract protocol://domain/ part
 	protoEnd := strings.Index(rule, "://")
 	if protoEnd == -1 {
-		return false, "", ""
+		return false, "", "", ruleset
 	}
 	protoEnd += 3 // Move past ://
 
@@ -461,7 +471,7 @@ func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version str
 	domainEnd := strings.Index(rule[protoEnd:], "/")
 	if domainEnd == -1 {
 		// No path at all, just domain
-		return true, rule, ""
+		return true, rule, "", ruleset
 	}
 	domainEnd += protoEnd
 
@@ -472,7 +482,7 @@ func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version str
 
 	if len(pathSegments) < 2 {
 		// Need at least owner/repo
-		return true, rule, ""
+		return true, rule, "", ruleset
 	}
 
 	// owner is pathSegments[0]
@@ -492,7 +502,7 @@ func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version str
 		version = ""
 	}
 
-	return true, repoURL, version
+	return true, repoURL, version, ruleset
 }
 
 // ShowContext outputs the context file content

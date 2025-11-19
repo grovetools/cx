@@ -443,7 +443,56 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			continue
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
-			// Check for ruleset imports first (using :: delimiter)
+			// Check for Git alias ruleset imports first (e.g., @a:git:owner/repo::ruleset)
+			// These need special handling to convert to GitHub URLs before processing
+			isGitAliasRuleset := false
+			if strings.HasPrefix(line, "@alias:git:") || strings.HasPrefix(line, "@a:git:") {
+				// Extract the git alias part
+				tempLine := line
+				prefix := "@a:git:"
+				if strings.HasPrefix(tempLine, "@alias:git:") {
+					prefix = "@alias:git:"
+				}
+				gitPart := strings.TrimPrefix(tempLine, prefix)
+
+				// Check if it has a ruleset specifier (::)
+				if strings.Contains(gitPart, "::") {
+					isGitAliasRuleset = true
+					// Split on :: to get repo part and ruleset name
+					parts := strings.SplitN(gitPart, "::", 2)
+					if len(parts) == 2 {
+						repoPart := parts[0]    // e.g., "owner/repo" or "owner/repo@version"
+						rulesetName := parts[1] // e.g., "default"
+
+						// Convert to GitHub URL
+						githubURL := "https://github.com/" + repoPart
+
+						// Parse to extract version if present
+						_, repoURL, version, _ := m.ParseGitRule(githubURL)
+
+						// Create git import identifier
+						importIdentifier := fmt.Sprintf("git::%s@%s::%s", repoURL, version, rulesetName)
+
+						if inColdSection {
+							results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
+								ImportIdentifier: importIdentifier,
+								LineNum:          lineNum,
+							})
+						} else {
+							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
+								ImportIdentifier: importIdentifier,
+								LineNum:          lineNum,
+							})
+						}
+					}
+				}
+			}
+
+			if isGitAliasRuleset {
+				continue // Skip further processing for this line
+			}
+
+			// Check for regular ruleset imports (using :: delimiter)
 			// Format: @alias:project-name::ruleset-name or @a:project-name::ruleset-name
 			isRuleSetAlias := false
 			if strings.HasPrefix(line, "@alias:") || strings.HasPrefix(line, "@a:") {
@@ -613,7 +662,29 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					cleanLine = strings.TrimPrefix(processedLine, "!")
 				}
 
-				if isGitURL, repoURL, version := m.ParseGitRule(cleanLine); isGitURL {
+				if isGitURL, repoURL, version, ruleset := m.ParseGitRule(cleanLine); isGitURL {
+					// If a ruleset is specified, treat this as a special import, not a pattern
+					if ruleset != "" {
+						importIdentifier := fmt.Sprintf("git::%s@%s::%s", repoURL, version, ruleset)
+						if isExclude {
+							// Exclusions on git ruleset imports are not yet supported.
+							fmt.Fprintf(os.Stderr, "Warning: exclusion prefix '!' on git ruleset import is not supported: %s\n", processedLine)
+						} else {
+							if inColdSection {
+								results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
+									ImportIdentifier: importIdentifier,
+									LineNum:          lineNum,
+								})
+							} else {
+								results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
+									ImportIdentifier: importIdentifier,
+									LineNum:          lineNum,
+								})
+							}
+						}
+						continue // This is an import, so we're done with this line.
+					}
+
 					// Clone/update the repository
 					localPath, _, cloneErr := repoManager.Ensure(repoURL, version)
 					if cloneErr != nil {

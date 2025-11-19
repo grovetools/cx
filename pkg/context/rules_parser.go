@@ -14,6 +14,7 @@ const (
 	LineTypeSeparator
 	LineTypeExclude
 	LineTypeGitURL
+	LineTypeGitURLRuleset
 	LineTypeRulesetImport
 	LineTypeAliasPattern
 	LineTypeViewDirective
@@ -41,6 +42,9 @@ var (
 
 	// Exclusion: lines starting with !
 	excludeRegex = regexp.MustCompile(`^\s*!.*$`)
+
+	// Git URLs with ruleset: lines starting with git@ or http(s):// and containing ::
+	gitURLRulesetRegex = regexp.MustCompile(`^\s*(git@|https?://)\S+::\S+\s*$`)
 
 	// Git URLs: lines starting with git@ or http(s)://
 	gitURLRegex = regexp.MustCompile(`^\s*(git@|https?://).*$`)
@@ -105,6 +109,16 @@ func ParseRulesLine(line string) ParsedLine {
 			Type:    LineTypeExclude,
 			Content: line,
 			Parts:   map[string]string{"pattern": strings.TrimSpace(strings.TrimPrefix(trimmed, "!"))},
+		}
+	}
+
+	// Git URL with ruleset (must be checked BEFORE regular Git URL)
+	if gitURLRulesetRegex.MatchString(line) {
+		parts := parseGitURLRuleset(trimmed)
+		return ParsedLine{
+			Type:    LineTypeGitURLRuleset,
+			Content: line,
+			Parts:   parts,
 		}
 	}
 
@@ -195,6 +209,23 @@ func ParseRulesLine(line string) ParsedLine {
 		Content: line,
 		Parts:   map[string]string{"pattern": trimmed},
 	}
+}
+
+// parseGitURLRuleset parses a Git URL with ruleset like https://github.com/owner/repo::ruleset
+func parseGitURLRuleset(line string) map[string]string {
+	parts := make(map[string]string)
+
+	// Split by ::
+	if idx := strings.Index(line, "::"); idx != -1 {
+		parts["url"] = strings.TrimSpace(line[:idx])
+		parts["delimiter"] = "::"
+		parts["ruleset"] = strings.TrimSpace(line[idx+2:])
+	} else {
+		// Fallback if :: not found (shouldn't happen due to regex)
+		parts["url"] = line
+	}
+
+	return parts
 }
 
 // parseRulesetImport parses a ruleset import like @alias:project::ruleset

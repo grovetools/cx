@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/mattsolo1/grove-core/util/pathutil"
 )
 
@@ -252,6 +253,84 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 	// Process hot rule set imports
 	for _, importInfo := range mainImports {
+		// Handle Git ruleset imports
+		if strings.HasPrefix(importInfo.ImportIdentifier, "git::") {
+			// Format: git::repoURL@version::ruleset
+			gitImportParts := strings.SplitN(strings.TrimPrefix(importInfo.ImportIdentifier, "git::"), "::", 2)
+			if len(gitImportParts) != 2 {
+				fmt.Fprintf(os.Stderr, "Warning: invalid git ruleset import format '%s'\n", importInfo.ImportIdentifier)
+				continue
+			}
+			repoAndVersion, rulesetName := gitImportParts[0], gitImportParts[1]
+			atIndex := strings.LastIndex(repoAndVersion, "@")
+			repoURL := repoAndVersion
+			version := ""
+			if atIndex != -1 {
+				repoURL = repoAndVersion[:atIndex]
+				version = repoAndVersion[atIndex+1:]
+			}
+
+			// Instantiate repo manager
+			repoManager, err := repo.NewManager()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not create repository manager for git import: %v\n", err)
+				continue
+			}
+
+			localPath, _, err := repoManager.Ensure(repoURL, version)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not ensure repository %s for rule import: %v\n", repoURL, err)
+				continue
+			}
+
+			// Find the ruleset file within the cloned repo
+			rulesFilePath := filepath.Join(localPath, RulesDir, rulesetName+RulesExt)
+			if _, err := os.Stat(rulesFilePath); os.IsNotExist(err) {
+				// Special case: if 'default' ruleset is requested but doesn't exist, treat it as "include all"
+				if rulesetName == "default" {
+					// Add a single "include all" rule for this repo
+					hotRules = append(hotRules, RuleInfo{
+						Pattern:          filepath.Join(localPath, "**"),
+						IsExclude:        false,
+						LineNum:          importInfo.LineNum,
+						EffectiveLineNum: importInfo.LineNum,
+					})
+				} else {
+					fmt.Fprintf(os.Stderr, "Warning: could not find named ruleset '%s' in repository %s\n", rulesetName, repoURL)
+				}
+				continue
+			}
+
+			nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from repository %s: %v\n", rulesetName, repoURL, err)
+				continue
+			}
+
+			// Prefix patterns with the local repository path
+			for i := range nestedHot {
+				if !filepath.IsAbs(nestedHot[i].Pattern) {
+					nestedHot[i].Pattern = filepath.Join(localPath, nestedHot[i].Pattern)
+				}
+			}
+			for i := range nestedCold {
+				if !filepath.IsAbs(nestedCold[i].Pattern) {
+					nestedCold[i].Pattern = filepath.Join(localPath, nestedCold[i].Pattern)
+				}
+			}
+			hotRules = append(hotRules, nestedHot...)
+			coldRules = append(coldRules, nestedCold...) // Rules from git repo are flattened into hot/cold of importer
+
+			for i, path := range nestedView {
+				if !filepath.IsAbs(path) {
+					nestedView[i] = filepath.Join(localPath, path)
+				}
+			}
+			viewPaths = append(viewPaths, nestedView...)
+
+			continue
+		}
+
 		parts := strings.SplitN(importInfo.ImportIdentifier, "::", 2)
 		if len(parts) != 2 {
 			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importInfo.ImportIdentifier)
@@ -323,6 +402,74 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 	// Process cold rule set imports
 	for _, importInfo := range coldImports {
+		// Handle Git ruleset imports
+		if strings.HasPrefix(importInfo.ImportIdentifier, "git::") {
+			// Format: git::repoURL@version::ruleset
+			gitImportParts := strings.SplitN(strings.TrimPrefix(importInfo.ImportIdentifier, "git::"), "::", 2)
+			if len(gitImportParts) != 2 {
+				fmt.Fprintf(os.Stderr, "Warning: invalid git ruleset import format '%s'\n", importInfo.ImportIdentifier)
+				continue
+			}
+			repoAndVersion, rulesetName := gitImportParts[0], gitImportParts[1]
+			atIndex := strings.LastIndex(repoAndVersion, "@")
+			repoURL := repoAndVersion
+			version := ""
+			if atIndex != -1 {
+				repoURL = repoAndVersion[:atIndex]
+				version = repoAndVersion[atIndex+1:]
+			}
+
+			repoManager, err := repo.NewManager()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not create repository manager for git import: %v\n", err)
+				continue
+			}
+
+			localPath, _, err := repoManager.Ensure(repoURL, version)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not ensure repository %s for rule import: %v\n", repoURL, err)
+				continue
+			}
+
+			rulesFilePath := filepath.Join(localPath, RulesDir, rulesetName+RulesExt)
+			if _, err := os.Stat(rulesFilePath); os.IsNotExist(err) {
+				if rulesetName == "default" {
+					coldRules = append(coldRules, RuleInfo{
+						Pattern:          filepath.Join(localPath, "**"),
+						IsExclude:        false,
+						LineNum:          importInfo.LineNum,
+						EffectiveLineNum: importInfo.LineNum,
+					})
+				} else {
+					fmt.Fprintf(os.Stderr, "Warning: could not find named ruleset '%s' in repository %s\n", rulesetName, repoURL)
+				}
+				continue
+			}
+
+			nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from repository %s: %v\n", rulesetName, repoURL, err)
+				continue
+			}
+
+			// For cold imports, everything from the imported ruleset goes into the cold section
+			allNestedRules := append(nestedHot, nestedCold...)
+			for i := range allNestedRules {
+				if !filepath.IsAbs(allNestedRules[i].Pattern) {
+					allNestedRules[i].Pattern = filepath.Join(localPath, allNestedRules[i].Pattern)
+				}
+			}
+			coldRules = append(coldRules, allNestedRules...)
+
+			for i, path := range nestedView {
+				if !filepath.IsAbs(path) {
+					nestedView[i] = filepath.Join(localPath, path)
+				}
+			}
+			viewPaths = append(viewPaths, nestedView...)
+			continue
+		}
+
 		parts := strings.SplitN(importInfo.ImportIdentifier, "::", 2)
 		if len(parts) != 2 {
 			fmt.Fprintf(os.Stderr, "Warning: invalid ruleset import format '%s'\n", importInfo.ImportIdentifier)
