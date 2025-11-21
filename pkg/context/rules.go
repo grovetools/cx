@@ -479,6 +479,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 
 						if inColdSection {
 							results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
+								OriginalLine:     line,
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
 								Directive:        directive,
@@ -486,6 +487,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 							})
 						} else {
 							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
+								OriginalLine:     line,
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
 								Directive:        directive,
@@ -522,6 +524,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 
 						if inColdSection {
 							results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
+								OriginalLine:     line,
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
 								Directive:        directive,
@@ -529,6 +532,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 							})
 						} else {
 							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
+								OriginalLine:     line,
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
 								Directive:        directive,
@@ -684,11 +688,13 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 						} else {
 							if inColdSection {
 								results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
+									OriginalLine:     line,
 									ImportIdentifier: importIdentifier,
 									LineNum:          lineNum,
 								})
 							} else {
 								results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
+									OriginalLine:     line,
 									ImportIdentifier: importIdentifier,
 									LineNum:          lineNum,
 								})

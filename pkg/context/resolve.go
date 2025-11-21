@@ -279,7 +279,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 			localPath, _, err := repoManager.EnsureVersion(repoURL, version)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not ensure repository %s for rule import: %v\n", repoURL, err)
+				m.addSkippedRule(importInfo.LineNum, importInfo.OriginalLine, fmt.Sprintf("invalid git ref: %v", err))
 				continue
 			}
 
@@ -460,7 +460,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 			localPath, _, err := repoManager.EnsureVersion(repoURL, version)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not ensure repository %s for rule import: %v\n", repoURL, err)
+				m.addSkippedRule(importInfo.LineNum, importInfo.OriginalLine, fmt.Sprintf("invalid git ref: %v", err))
 				continue
 			}
 

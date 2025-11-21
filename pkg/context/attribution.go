@@ -20,6 +20,7 @@ type RuleInfo struct {
 
 // ImportInfo holds information about a ruleset import with its line number.
 type ImportInfo struct {
+	OriginalLine     string `json:"originalLine,omitempty"`   // The full original line text
 	ImportIdentifier string // e.g., "project:ruleset"
 	LineNum          int    // The line number where this import appears
 	Directive        string `json:"directive,omitempty"`      // e.g., "find" or "grep"
