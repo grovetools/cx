@@ -22,6 +22,8 @@ type RuleInfo struct {
 type ImportInfo struct {
 	ImportIdentifier string // e.g., "project:ruleset"
 	LineNum          int    // The line number where this import appears
+	Directive        string `json:"directive,omitempty"`      // e.g., "find" or "grep"
+	DirectiveQuery   string `json:"directiveQuery,omitempty"` // the search query
 }
 
 // AttributionResult maps a line number to the list of files it includes.

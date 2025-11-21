@@ -307,6 +307,22 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				continue
 			}
 
+			// Propagate directive from import to nested rules if they don't have one
+			if importInfo.Directive != "" {
+				for i := range nestedHot {
+					if nestedHot[i].Directive == "" {
+						nestedHot[i].Directive = importInfo.Directive
+						nestedHot[i].DirectiveQuery = importInfo.DirectiveQuery
+					}
+				}
+				for i := range nestedCold {
+					if nestedCold[i].Directive == "" {
+						nestedCold[i].Directive = importInfo.Directive
+						nestedCold[i].DirectiveQuery = importInfo.DirectiveQuery
+					}
+				}
+			}
+
 			// Prefix patterns with the local repository path
 			for i := range nestedHot {
 				if !filepath.IsAbs(nestedHot[i].Pattern) {
@@ -362,6 +378,23 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
 		}
+
+		// Propagate directive from import to nested rules if they don't have one
+		if importInfo.Directive != "" {
+			for i := range nestedHot {
+				if nestedHot[i].Directive == "" {
+					nestedHot[i].Directive = importInfo.Directive
+					nestedHot[i].DirectiveQuery = importInfo.DirectiveQuery
+				}
+			}
+			for i := range nestedCold {
+				if nestedCold[i].Directive == "" {
+					nestedCold[i].Directive = importInfo.Directive
+					nestedCold[i].DirectiveQuery = importInfo.DirectiveQuery
+				}
+			}
+		}
+
 		// The patterns from external project need to be prefixed with the project path
 		// so they resolve files from that project, not the current one
 		for i := range nestedHot {
@@ -454,6 +487,17 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 			// For cold imports, everything from the imported ruleset goes into the cold section
 			allNestedRules := append(nestedHot, nestedCold...)
+
+			// Propagate directive from import to all nested rules
+			if importInfo.Directive != "" {
+				for i := range allNestedRules {
+					if allNestedRules[i].Directive == "" {
+						allNestedRules[i].Directive = importInfo.Directive
+						allNestedRules[i].DirectiveQuery = importInfo.DirectiveQuery
+					}
+				}
+			}
+
 			for i := range allNestedRules {
 				if !filepath.IsAbs(allNestedRules[i].Pattern) {
 					allNestedRules[i].Pattern = filepath.Join(localPath, allNestedRules[i].Pattern)
@@ -501,34 +545,35 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
 		}
+
+		allNestedRules := append(nestedHot, nestedCold...)
+
+		// Propagate directive from import to all nested rules
+		if importInfo.Directive != "" {
+			for i := range allNestedRules {
+				if allNestedRules[i].Directive == "" {
+					allNestedRules[i].Directive = importInfo.Directive
+					allNestedRules[i].DirectiveQuery = importInfo.DirectiveQuery
+				}
+			}
+		}
+
 		// The patterns from external project need to be prefixed with the project path
-		for i := range nestedHot {
-			pattern := nestedHot[i].Pattern
+		for i := range allNestedRules {
+			pattern := allNestedRules[i].Pattern
 			if !filepath.IsAbs(pattern) {
 				if strings.Contains(pattern, "/") {
 					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
-					nestedHot[i].Pattern = filepath.Join(projectPath, pattern)
+					allNestedRules[i].Pattern = filepath.Join(projectPath, pattern)
 				} else {
 					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
-					nestedHot[i].Pattern = filepath.Join(projectPath, "**", pattern)
+					allNestedRules[i].Pattern = filepath.Join(projectPath, "**", pattern)
 				}
 			}
 		}
-		for i := range nestedCold {
-			pattern := nestedCold[i].Pattern
-			if !filepath.IsAbs(pattern) {
-				if strings.Contains(pattern, "/") {
-					// This is a path-like pattern (e.g., "src/**/*.go"), so join it directly.
-					nestedCold[i].Pattern = filepath.Join(projectPath, pattern)
-				} else {
-					// This is a gitignore-style pattern (e.g., "*.go"), make it recursive within the project.
-					nestedCold[i].Pattern = filepath.Join(projectPath, "**", pattern)
-				}
-			}
-		}
+
 		// For cold imports, add everything to cold patterns
-		coldRules = append(coldRules, nestedHot...)
-		coldRules = append(coldRules, nestedCold...)
+		coldRules = append(coldRules, allNestedRules...)
 
 		// Add view paths from nested rules, adjusting relative paths
 		for i, path := range nestedView {

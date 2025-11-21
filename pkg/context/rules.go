@@ -443,12 +443,16 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			continue
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
+			// First, parse out any inline search directives from the line.
+			// The rest of the logic will operate on the `rulePart`.
+			rulePart, directive, query, hasInlineDirective := parseSearchDirective(line)
+
 			// Check for Git alias ruleset imports first (e.g., @a:git:owner/repo::ruleset)
 			// These need special handling to convert to GitHub URLs before processing
 			isGitAliasRuleset := false
-			if strings.HasPrefix(line, "@alias:git:") || strings.HasPrefix(line, "@a:git:") {
+			if strings.HasPrefix(rulePart, "@alias:git:") || strings.HasPrefix(rulePart, "@a:git:") {
 				// Extract the git alias part
-				tempLine := line
+				tempLine := rulePart
 				prefix := "@a:git:"
 				if strings.HasPrefix(tempLine, "@alias:git:") {
 					prefix = "@alias:git:"
@@ -477,11 +481,15 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 							results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
+								Directive:        directive,
+								DirectiveQuery:   query,
 							})
 						} else {
 							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
+								Directive:        directive,
+								DirectiveQuery:   query,
 							})
 						}
 					}
@@ -495,9 +503,9 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			// Check for regular ruleset imports (using :: delimiter)
 			// Format: @alias:project-name::ruleset-name or @a:project-name::ruleset-name
 			isRuleSetAlias := false
-			if strings.HasPrefix(line, "@alias:") || strings.HasPrefix(line, "@a:") {
+			if strings.HasPrefix(rulePart, "@alias:") || strings.HasPrefix(rulePart, "@a:") {
 				// Extract the alias part
-				aliasPart := line
+				aliasPart := rulePart
 				if strings.HasPrefix(aliasPart, "@alias:") {
 					aliasPart = strings.TrimPrefix(aliasPart, "@alias:")
 				} else {
@@ -516,11 +524,15 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 							results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
+								Directive:        directive,
+								DirectiveQuery:   query,
 							})
 						} else {
 							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
+								Directive:        directive,
+								DirectiveQuery:   query,
 							})
 						}
 					}
@@ -555,7 +567,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			// Handle Git aliases before workspace aliases.
 			// e.g., @a:git:owner/repo[@version]
 			isGitAlias := false
-			tempLineForCheck := line
+			tempLineForCheck := rulePart
 			if strings.HasPrefix(tempLineForCheck, "!") {
 				tempLineForCheck = strings.TrimSpace(strings.TrimPrefix(tempLineForCheck, "!"))
 			}
@@ -564,10 +576,10 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			}
 
 			// Resolve alias if present (supports both @alias: and @a:), before further processing
-			processedLine := line
+			processedLine := rulePart
 			if isGitAlias {
 				isExclude := false
-				tempLine := line
+				tempLine := rulePart
 				if strings.HasPrefix(tempLine, "!") {
 					isExclude = true
 					tempLine = strings.TrimPrefix(tempLine, "!")
@@ -586,8 +598,8 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 				} else {
 					processedLine = githubURL
 				}
-			} else if resolver != nil && (strings.Contains(line, "@alias:") || strings.Contains(line, "@a:")) {
-				resolvedLine, resolveErr := resolver.ResolveLine(line)
+			} else if resolver != nil && (strings.Contains(rulePart, "@alias:") || strings.Contains(rulePart, "@a:")) {
+				resolvedLine, resolveErr := resolver.ResolveLine(rulePart)
 				if resolveErr != nil {
 					fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in line '%s': %v\n", line, resolveErr)
 					continue // Skip this line if alias resolution fails
@@ -716,14 +728,15 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 				}
 			}
 
-			// Check for search directives before brace expansion
-			basePattern, directive, query, hasDirective := parseSearchDirective(processedLine)
+			// We already parsed inline directives at the start.
+			// Now we check if we should apply a global directive.
+			basePattern := processedLine
 
 			// If no inline directive but there's a global directive, use that
-			if !hasDirective && globalDirective != "" {
+			if !hasInlineDirective && globalDirective != "" {
 				directive = globalDirective
 				query = globalQuery
-				hasDirective = true
+				hasInlineDirective = true // Mark that a directive is now active
 			}
 
 			// Apply brace expansion to the base pattern
@@ -743,7 +756,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					IsExclude: isExclude,
 					LineNum:   lineNum,
 				}
-				if hasDirective {
+				if hasInlineDirective {
 					ruleInfo.Directive = directive
 					ruleInfo.DirectiveQuery = query
 				}
