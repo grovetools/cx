@@ -478,8 +478,19 @@ If no ruleset name is provided, it defaults to 'default'.`,
 				return fmt.Errorf("failed to ensure repository version is available: %w", err)
 			}
 
-			// Construct paths
-			rulesDir := filepath.Join(localPath, context.RulesWorkDir)
+			// Get the bare path to store persistent rules
+			manifest, err := manager.LoadManifest()
+			if err != nil {
+				return fmt.Errorf("failed to load repo manifest: %w", err)
+			}
+			repoInfo, ok := manifest.Repositories[repoURL]
+			if !ok {
+				return fmt.Errorf("repository %s not found in manifest", repoURL)
+			}
+			barePath := repoInfo.BarePath
+
+			// Construct paths - rules are stored in the bare repo for persistence
+			rulesDir := filepath.Join(barePath, context.RulesWorkDir)
 			rulesFile := filepath.Join(rulesDir, rulesetName+context.RulesExt)
 
 			// Ensure .cx directory exists

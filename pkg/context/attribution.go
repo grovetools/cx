@@ -389,6 +389,16 @@ func (m *Manager) matchPattern(pattern, relPath string) bool {
 		return true
 	}
 
+	// For absolute path patterns without globs, check if this is a directory pattern
+	// that should match files inside it. This handles the case where a rule like
+	// "/path/to/dir" should match "/path/to/dir/file.txt"
+	if filepath.IsAbs(normalizedPattern) && !strings.ContainsAny(normalizedPattern, "*?[") {
+		// Check if the path is under this directory
+		if strings.HasPrefix(normalizedPath, normalizedPattern+"/") {
+			return true
+		}
+	}
+
 	// If pattern doesn't contain /, it matches against the basename or any directory component.
 	if !strings.Contains(normalizedPattern, "/") {
 		// Check basename

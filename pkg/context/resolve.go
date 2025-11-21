@@ -283,9 +283,22 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				continue
 			}
 
-			// Find the ruleset file within the cloned repo
-			rulesFilePath := filepath.Join(localPath, RulesDir, rulesetName+RulesExt)
-			if _, err := os.Stat(rulesFilePath); os.IsNotExist(err) {
+			// Get the bare path from the manifest to find persistent rules
+			manifest, err := repoManager.LoadManifest()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not load repo manifest for git import: %v\n", err)
+				continue
+			}
+			repoInfo, ok := manifest.Repositories[repoURL]
+			if !ok {
+				fmt.Fprintf(os.Stderr, "Warning: repository %s not found in manifest for git import\n", repoURL)
+				continue
+			}
+			barePath := repoInfo.BarePath
+
+			// Find the ruleset file within the bare repository's .cx directories
+			rulesFilePath, err := FindRulesetFile(barePath, rulesetName)
+			if err != nil {
 				// Special case: if 'default' ruleset is requested but doesn't exist, treat it as "include all"
 				if rulesetName == "default" {
 					// Add a single "include all" rule for this repo
@@ -296,7 +309,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 						EffectiveLineNum: importInfo.LineNum,
 					})
 				} else {
-					fmt.Fprintf(os.Stderr, "Warning: could not find named ruleset '%s' in repository %s\n", rulesetName, repoURL)
+					fmt.Fprintf(os.Stderr, "Warning: could not find named ruleset '%s' in repository %s: %v\n", rulesetName, repoURL, err)
 				}
 				continue
 			}
@@ -464,8 +477,21 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				continue
 			}
 
-			rulesFilePath := filepath.Join(localPath, RulesDir, rulesetName+RulesExt)
-			if _, err := os.Stat(rulesFilePath); os.IsNotExist(err) {
+			// Get the bare path from the manifest to find persistent rules
+			manifest, err := repoManager.LoadManifest()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not load repo manifest for git import: %v\n", err)
+				continue
+			}
+			repoInfo, ok := manifest.Repositories[repoURL]
+			if !ok {
+				fmt.Fprintf(os.Stderr, "Warning: repository %s not found in manifest for git import\n", repoURL)
+				continue
+			}
+			barePath := repoInfo.BarePath
+
+			rulesFilePath, err := FindRulesetFile(barePath, rulesetName)
+			if err != nil {
 				if rulesetName == "default" {
 					coldRules = append(coldRules, RuleInfo{
 						Pattern:          filepath.Join(localPath, "**"),
@@ -474,7 +500,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 						EffectiveLineNum: importInfo.LineNum,
 					})
 				} else {
-					fmt.Fprintf(os.Stderr, "Warning: could not find named ruleset '%s' in repository %s\n", rulesetName, repoURL)
+					fmt.Fprintf(os.Stderr, "Warning: could not find named ruleset '%s' in repository %s: %v\n", rulesetName, repoURL, err)
 				}
 				continue
 			}

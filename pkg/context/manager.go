@@ -766,23 +766,23 @@ func (m *Manager) findGitRoot() string {
 	return "" // Not in a git repository
 }
 
-// FindRulesetFile searches for a ruleset file by name in both .cx/ and .cx.work/ directories.
+// FindRulesetFile searches for a ruleset file by name in both .cx.work/ and .cx/ directories.
 // It returns the absolute path to the file if found, or an error if not found.
-// This function checks .cx/ first, then .cx.work/ as a fallback.
+// This function checks .cx.work/ first for local overrides, then .cx/ as a fallback.
 func FindRulesetFile(projectPath, rulesetName string) (string, error) {
-	// Check .cx/ directory first
-	rulesFilePath := filepath.Join(projectPath, RulesDir, rulesetName+RulesExt)
+	// Check .cx.work/ directory first for local overrides
+	rulesFilePath := filepath.Join(projectPath, RulesWorkDir, rulesetName+RulesExt)
 	if _, err := os.Stat(rulesFilePath); err == nil {
 		return rulesFilePath, nil
 	}
 
-	// Try .cx.work/ as fallback
-	rulesFilePath = filepath.Join(projectPath, RulesWorkDir, rulesetName+RulesExt)
+	// Try .cx/ as fallback
+	rulesFilePath = filepath.Join(projectPath, RulesDir, rulesetName+RulesExt)
 	if _, err := os.Stat(rulesFilePath); err == nil {
 		return rulesFilePath, nil
 	}
 
-	return "", fmt.Errorf("ruleset '%s' not found in %s/ or %s/", rulesetName, RulesDir, RulesWorkDir)
+	return "", fmt.Errorf("ruleset '%s' not found in %s/ or %s/", rulesetName, RulesWorkDir, RulesDir)
 }
 
 // GetSkippedRules returns the list of rules that were skipped during the last parsing operation
