@@ -439,7 +439,7 @@ func newRepoRulesEditCmd() *cobra.Command {
 		Use:   "edit <url>[@version] [ruleset-name]",
 		Short: "Create or edit a ruleset for a repository",
 		Long: `Creates or opens a rules file for a cloned repository in your default editor.
-The rules file is stored within the repository's local clone at .cx/<ruleset-name>.rules.
+The rules file is stored within the repository's local clone at .cx.work/<ruleset-name>.rules.
 If no ruleset name is provided, it defaults to 'default'.`,
 		Example: `  cx repo rules edit my-org/my-repo
   cx repo rules edit https://github.com/my-org/my-repo@v1.2.3 my-feature-rules`,
@@ -479,7 +479,7 @@ If no ruleset name is provided, it defaults to 'default'.`,
 			}
 
 			// Construct paths
-			rulesDir := filepath.Join(localPath, context.RulesDir)
+			rulesDir := filepath.Join(localPath, context.RulesWorkDir)
 			rulesFile := filepath.Join(rulesDir, rulesetName+context.RulesExt)
 
 			// Ensure .cx directory exists
@@ -562,4 +562,3 @@ If no ruleset name is provided, it defaults to 'default'.`,
 	}
 	return cmd
 }
-
