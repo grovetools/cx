@@ -293,9 +293,23 @@ func outputPerLineStats(args []string) error {
 			if repoURL != "" {
 				if _, ok := manifest.Repositories[repoURL]; ok {
 					commit := ""
+					status := ""
+
+					// Extract commit from file path if available
+					if len(files) > 0 {
+						commit = context.ExtractCommitFromPath(files[0])
+					}
 					if len(commit) > 7 {
 						commit = commit[:7]
 					}
+
+					// Look up audit status from manifest
+					if commit != "" && manifest.Audits != nil {
+						if audit, ok := manifest.Audits[commit]; ok {
+							status = audit.Status
+						}
+					}
+
 					if version == "" { // If rule didn't specify version, use pinned one
 						version = ""
 					}
@@ -307,7 +321,7 @@ func outputPerLineStats(args []string) error {
 						URL:     repoURL,
 						Version: version,
 						Commit:  commit,
-						Status:  "",
+						Status:  status,
 					}
 				}
 			}
@@ -371,9 +385,23 @@ func outputPerLineStats(args []string) error {
 				if repoURL != "" {
 					if _, ok := manifest.Repositories[repoURL]; ok {
 						commit := ""
+						status := ""
+
+						// For exclusion-only rules, try to extract commit from excluded files
+						if len(excludedFiles) > 0 {
+							commit = context.ExtractCommitFromPath(excludedFiles[0])
+						}
 						if len(commit) > 7 {
 							commit = commit[:7]
 						}
+
+						// Look up audit status from manifest
+						if commit != "" && manifest.Audits != nil {
+							if audit, ok := manifest.Audits[commit]; ok {
+								status = audit.Status
+							}
+						}
+
 						if version == "" {
 							version = ""
 						}
@@ -384,7 +412,7 @@ func outputPerLineStats(args []string) error {
 							URL:     repoURL,
 							Version: version,
 							Commit:  commit,
-							Status:  "",
+							Status:  status,
 						}
 					}
 				}
@@ -490,13 +518,8 @@ func outputPerLineStats(args []string) error {
 			// If this is a Git URL/alias, add a synthetic entry with gitInfo
 			if isGitURL && repoURL != "" {
 				if _, ok := manifest.Repositories[repoURL]; ok {
-					commit := ""
-					if len(commit) > 7 {
-						commit = commit[:7]
-					}
-					if version == "" {
-						version = ""
-					}
+					// For synthetic entries without file attribution, we cannot extract commit from path
+					// The commit and status will remain empty
 					if version == "default" {
 						version = ""
 					}
@@ -504,8 +527,8 @@ func outputPerLineStats(args []string) error {
 					gitInfo := &GitInfo{
 						URL:     repoURL,
 						Version: version,
-						Commit:  commit,
-						Status:  "",
+						Commit:  "", // Cannot determine without file attribution
+						Status:  "", // Cannot determine without commit
 					}
 
 					// Add entry with gitInfo but empty file list

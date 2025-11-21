@@ -3,6 +3,7 @@ package context
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -24,21 +25,22 @@ type CachedFileStats struct {
 }
 
 // RepoCache is the structure of the cache file stored in the stats cache directory.
+// It is now keyed by the worktree path, which implicitly includes the commit hash.
 type RepoCache struct {
-	CommitHash string            `json:"commitHash"`
-	CreatedAt  time.Time         `json:"createdAt"`
-	RepoURL    string            `json:"repoUrl"`
-	LocalPath  string            `json:"localPath"`
-	Files      []CachedFileStats `json:"files"`
+	WorktreePath string                     `json:"worktreePath"`
+	CreatedAt    time.Time                  `json:"createdAt"`
+	Files        map[string]CachedFileStats `json:"files"` // Use map for faster lookups
 }
 
 // getStatsCacheDir returns the path to the centralized stats cache directory.
+// It is now a sibling of the 'repos' directory for better organization.
 func getStatsCacheDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	cacheDir := filepath.Join(homeDir, ".grove", "cx", "repos", StatsCacheDirName)
+	// Place stats-cache next to repos, not inside it
+	cacheDir := filepath.Join(homeDir, ".grove", "cx", StatsCacheDirName)
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
@@ -48,9 +50,25 @@ func getStatsCacheDir() (string, error) {
 	return cacheDir, nil
 }
 
+// GetCacheFilePathForWorktree returns the path to the cache file for a given worktree path.
+// Uses a hash of the worktree path for the filename.
+func getCacheFilePathForWorktree(worktreePath string) (string, error) {
+	cacheDir, err := getStatsCacheDir()
+	if err != nil {
+		return "", err
+	}
+
+	// Create a hash of the worktree path for a unique, filesystem-safe filename
+	hash := sha256.Sum256([]byte(worktreePath))
+	hashStr := hex.EncodeToString(hash[:])
+
+	filename := fmt.Sprintf("%s.json", hashStr)
+
+	return filepath.Join(cacheDir, filename), nil
+}
+
 // GetCacheFilePathForRepo returns the path to the cache file for a given repository.
-// Uses a hash of the repo URL for the filename to avoid filesystem issues.
-// This is exported for use by cache invalidation logic.
+// Deprecated: Use getCacheFilePathForWorktree instead. Kept for backwards compatibility.
 func GetCacheFilePathForRepo(repoURL string) (string, error) {
 	cacheDir, err := getStatsCacheDir()
 	if err != nil {
@@ -77,7 +95,7 @@ func GetCacheFilePathForRepo(repoURL string) (string, error) {
 // StatsProvider provides file statistics, using a cache for managed repositories.
 type StatsProvider struct {
 	repoManager *repo.Manager
-	repoCaches  map[string]*RepoCache // map workspace path -> RepoCache
+	repoCaches  map[string]*RepoCache // map worktree path -> RepoCache
 	mu          sync.RWMutex
 }
 
@@ -91,8 +109,6 @@ func GetStatsProvider() *StatsProvider {
 	providerOnce.Do(func() {
 		rm, err := repo.NewManager()
 		if err != nil {
-			// This will cause panics if not handled, but NewManager rarely fails.
-			// For CLI tools, this is acceptable; errors will surface during use.
 			fmt.Fprintf(os.Stderr, "Warning: failed to initialize repo manager for stats provider: %v\n", err)
 		}
 
@@ -105,11 +121,39 @@ func GetStatsProvider() *StatsProvider {
 	return globalStatsProvider
 }
 
-// GetFileStats returns statistics for a file.
-// TODO: Re-implement caching using workspace paths instead of RepoInfo
+// GetFileStats returns statistics for a file, utilizing the worktree cache if applicable.
 func (sp *StatsProvider) GetFileStats(filePath string) (FileInfo, error) {
-	// TODO: Implement workspace-based caching
-	// For now, fall back to os.Stat for all files
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return FileInfo{}, err
+	}
+
+	// Check if the file is inside a managed worktree
+	worktreePath, isWorktree := sp.findWorktreeForPath(absPath)
+	if isWorktree {
+		// Get the cache for this worktree (will generate if it doesn't exist)
+		cache, err := sp.getWorktreeCache(worktreePath)
+		if err != nil {
+			// If caching fails, fall back to os.Stat
+			return sp.getFileStatsUncached(filePath)
+		}
+
+		// Look up the file in the cache
+		if stats, ok := cache.Files[absPath]; ok {
+			return FileInfo{
+				Path:   stats.Path,
+				Size:   stats.Size,
+				Tokens: stats.Tokens,
+			}, nil
+		}
+	}
+
+	// Fallback for local files or files not found in cache
+	return sp.getFileStatsUncached(filePath)
+}
+
+// getFileStatsUncached provides file stats using os.Stat as a fallback.
+func (sp *StatsProvider) getFileStatsUncached(filePath string) (FileInfo, error) {
 	stat, err := os.Stat(filePath)
 	if err != nil {
 		return FileInfo{}, err
@@ -117,38 +161,163 @@ func (sp *StatsProvider) GetFileStats(filePath string) (FileInfo, error) {
 	return FileInfo{
 		Path:   filePath,
 		Size:   stat.Size(),
-		Tokens: int(stat.Size() / 4),
+		Tokens: int(stat.Size() / 4), // Simple token estimation
 	}, nil
 }
 
-// TODO: Re-implement these functions using workspace-based caching
-// For now, these are disabled and GetFileStats falls back to os.Stat
+// findWorktreeForPath determines if a file is inside a cx-managed worktree.
+// Returns the worktree root path and true if found, empty string and false otherwise.
+func (sp *StatsProvider) findWorktreeForPath(absPath string) (worktreePath string, found bool) {
+	const worktreeDir = ".grove-worktrees"
+	if !strings.Contains(absPath, worktreeDir) {
+		return "", false
+	}
 
-// getRepoCache would retrieve the cache for a workspace
-func (sp *StatsProvider) getRepoCache(workspacePath, commitHash string) (*RepoCache, error) {
+	parts := strings.Split(absPath, worktreeDir)
+	if len(parts) < 2 {
+		return "", false
+	}
+
+	// The path after .grove-worktrees will be something like "/{commit-hash}/path/to/file.go"
+	subPath := strings.TrimPrefix(parts[1], string(filepath.Separator))
+	commitAndFile := strings.SplitN(subPath, string(filepath.Separator), 2)
+	if len(commitAndFile) == 0 || commitAndFile[0] == "" {
+		return "", false
+	}
+
+	// The worktree path is everything up to and including the commit hash directory
+	worktreePath = filepath.Join(parts[0], worktreeDir, commitAndFile[0])
+	return worktreePath, true
+}
+
+// ExtractCommitFromPath extracts the commit hash from a worktree path.
+// Returns the commit hash if the path is inside a .grove-worktrees directory, empty string otherwise.
+func ExtractCommitFromPath(filePath string) string {
+	const worktreeDir = ".grove-worktrees"
+	if !strings.Contains(filePath, worktreeDir) {
+		return ""
+	}
+
+	parts := strings.Split(filePath, worktreeDir)
+	if len(parts) < 2 {
+		return ""
+	}
+
+	// The path after .grove-worktrees will be something like "/{commit-hash}/path/to/file.go"
+	subPath := strings.TrimPrefix(parts[1], string(filepath.Separator))
+	commitAndFile := strings.SplitN(subPath, string(filepath.Separator), 2)
+	if len(commitAndFile) == 0 || commitAndFile[0] == "" {
+		return ""
+	}
+
+	return commitAndFile[0]
+}
+
+// getWorktreeCache retrieves the cache for a worktree, loading from disk or generating it if needed.
+func (sp *StatsProvider) getWorktreeCache(worktreePath string) (*RepoCache, error) {
 	sp.mu.RLock()
-	cache, found := sp.repoCaches[workspacePath]
+	cache, found := sp.repoCaches[worktreePath]
 	sp.mu.RUnlock()
 
-	if found && cache.CommitHash == commitHash {
+	if found {
 		return cache, nil
 	}
 
-	// Not in memory or stale, lock for writing
+	// Not in memory, lock for writing
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 
-	// Double-check in case another goroutree just populated it
-	cache, found = sp.repoCaches[workspacePath]
-	if found && cache.CommitHash == commitHash {
+	// Double-check in case another goroutine just populated it
+	cache, found = sp.repoCaches[worktreePath]
+	if found {
 		return cache, nil
 	}
 
-	// TODO: Implement workspace-based caching
-	return nil, fmt.Errorf("workspace caching not yet implemented")
+	// Try to load from disk
+	cacheFilePath, err := getCacheFilePathForWorktree(worktreePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if data, err := os.ReadFile(cacheFilePath); err == nil {
+		var loadedCache RepoCache
+		if err := json.Unmarshal(data, &loadedCache); err == nil {
+			sp.repoCaches[worktreePath] = &loadedCache
+			return &loadedCache, nil
+		}
+	}
+
+	// If not on disk or loading failed, generate it
+	newCache, err := sp.generateCacheForWorktree(worktreePath)
+	if err != nil {
+		return nil, err
+	}
+	sp.repoCaches[worktreePath] = newCache
+	return newCache, nil
 }
 
-// IsBinaryFile is copied from resolve.go to be used here.
+// generateCacheForWorktree walks a worktree directory, computes stats for all files, and saves the cache.
+func (sp *StatsProvider) generateCacheForWorktree(worktreePath string) (*RepoCache, error) {
+	cache := &RepoCache{
+		WorktreePath: worktreePath,
+		CreatedAt:    time.Now(),
+		Files:        make(map[string]CachedFileStats),
+	}
+
+	err := filepath.WalkDir(worktreePath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip .git directories
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+
+		if d.IsDir() || IsBinaryFile(path) {
+			return nil
+		}
+
+		stat, err := d.Info()
+		if err != nil {
+			return nil // Skip files we can't stat
+		}
+
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil // Skip if we can't get absolute path
+		}
+
+		cache.Files[absPath] = CachedFileStats{
+			Path:   absPath,
+			Size:   stat.Size(),
+			Tokens: int(stat.Size() / 4),
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Save to disk
+	cacheFilePath, err := getCacheFilePathForWorktree(worktreePath)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(cacheFilePath, data, 0644); err != nil {
+		// Non-fatal, just log a warning
+		fmt.Fprintf(os.Stderr, "Warning: failed to save stats cache for %s: %v\n", worktreePath, err)
+	}
+
+	return cache, nil
+}
+
+// IsBinaryFile checks if a file is binary based on extension or content.
 func IsBinaryFile(path string) bool {
 	// Check common binary file extensions first for performance
 	ext := strings.ToLower(filepath.Ext(path))
