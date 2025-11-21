@@ -195,6 +195,8 @@ func outputPerLineStats(args []string) error {
 		SkipReason        string           `json:"skipReason,omitempty"` // Reason why this rule was skipped
 	}
 
+	statsProvider := context.GetStatsProvider()
+
 	var results []PerLineStat
 	// Build a map of line number to original rule text
 	ruleMap := make(map[int]string)
@@ -227,9 +229,10 @@ func outputPerLineStats(args []string) error {
 		var totalTokens int
 		var totalSize int64
 		for _, file := range files {
-			if info, err := os.Stat(file); err == nil {
-				totalSize += info.Size()
-				totalTokens += int(info.Size() / 4) // Rough estimate: 4 bytes per token
+			info, err := statsProvider.GetFileStats(file)
+			if err == nil {
+				totalSize += info.Size
+				totalTokens += info.Tokens
 			}
 		}
 
@@ -237,8 +240,9 @@ func outputPerLineStats(args []string) error {
 		var excludedTokens int
 		if excludedFiles, ok := exclusions[lineNum]; ok {
 			for _, file := range excludedFiles {
-				if info, err := os.Stat(file); err == nil {
-					excludedTokens += int(info.Size() / 4)
+				info, err := statsProvider.GetFileStats(file)
+				if err == nil {
+					excludedTokens += info.Tokens
 				}
 			}
 		}
@@ -338,8 +342,9 @@ func outputPerLineStats(args []string) error {
 		if !found && len(excludedFiles) > 0 {
 			var excludedTokens int
 			for _, file := range excludedFiles {
-				if info, err := os.Stat(file); err == nil {
-					excludedTokens += int(info.Size() / 4)
+				info, err := statsProvider.GetFileStats(file)
+				if err == nil {
+					excludedTokens += info.Tokens
 				}
 			}
 

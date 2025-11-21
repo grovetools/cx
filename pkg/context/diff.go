@@ -2,7 +2,6 @@ package context
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -101,13 +100,12 @@ func calculateDiff(currentFiles, compareFiles []string) *DiffResult {
 
 // getFileInfo returns information about a file
 func getFileInfo(path string) FileInfo {
-	info := FileInfo{Path: path}
-
-	// Get file size and estimate tokens
-	if stat, err := os.Stat(path); err == nil {
-		info.Size = stat.Size()
-		// Rough estimate: 4 characters per token
-		info.Tokens = int(info.Size / 4)
+	// Use the stats provider for potentially cached info
+	statsProvider := GetStatsProvider()
+	info, err := statsProvider.GetFileStats(path)
+	if err != nil {
+		// Fallback for files not in cache or other errors
+		return FileInfo{Path: path}
 	}
 
 	return info

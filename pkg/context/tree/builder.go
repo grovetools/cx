@@ -42,6 +42,8 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 		return nil, err
 	}
 
+	statsProvider := context.GetStatsProvider()
+
 	// Get canonical workDir for consistent path comparisons
 	// This is critical on macOS where /var is a symlink to /private/var
 	workDir := m.GetWorkDir()
@@ -107,9 +109,8 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 		tokenCount := 0
 		// Calculate token count for included files
 		if !isDir && (status == context.StatusIncludedHot || status == context.StatusIncludedCold) {
-			if info, err := os.Stat(path); err == nil {
-				// Estimate tokens as roughly 4 bytes per token
-				tokenCount = int(info.Size() / 4)
+			if info, err := statsProvider.GetFileStats(path); err == nil {
+				tokenCount = info.Tokens
 			}
 		}
 

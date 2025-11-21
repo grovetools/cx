@@ -124,11 +124,36 @@ func newRepoSyncCmd() *cobra.Command {
 
 			prettyLog.InfoPretty("Syncing all tracked repositories...")
 
+			// Get repo state before sync for cache invalidation
+			reposBefore, _ := manager.List()
+			commitsBefore := make(map[string]string)
+			for _, r := range reposBefore {
+				commitsBefore[r.URL] = r.ResolvedCommit
+			}
+
 			if err := manager.Sync(); err != nil {
 				return fmt.Errorf("failed to sync repositories: %w", err)
 			}
 
 			prettyLog.Success("All repositories synced successfully.")
+
+			// Invalidate caches for updated repos
+			reposAfter, _ := manager.List()
+			for _, r := range reposAfter {
+				if oldCommit, ok := commitsBefore[r.URL]; ok && oldCommit != r.ResolvedCommit {
+					prettyLog.InfoPretty(fmt.Sprintf("Repository %s updated, clearing stats cache.", r.URL))
+					// Get cache path from context package (uses centralized cache directory)
+					cachePath, err := context.GetCacheFilePathForRepo(r.URL)
+					if err != nil {
+						prettyLog.WarnPretty(fmt.Sprintf("Could not get cache path for %s: %v", r.URL, err))
+						continue
+					}
+					if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
+						prettyLog.WarnPretty(fmt.Sprintf("Could not clear cache for %s: %v", r.URL, err))
+					}
+				}
+			}
+
 			return nil
 		},
 	}

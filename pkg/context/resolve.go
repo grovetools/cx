@@ -1577,8 +1577,8 @@ func matchDoubleStarPattern(pattern, path string) bool {
 	return matched
 }
 
-// Common binary file extensions - defined at package level for performance
-var binaryExtensions = map[string]bool{
+// BinaryExtensions contains a map of common binary file extensions for fast checking.
+var BinaryExtensions = map[string]bool{
 	".exe": true, ".dll": true, ".so": true, ".dylib": true, ".a": true,
 	".o": true, ".obj": true, ".lib": true, ".bin": true, ".dat": true,
 	".db": true, ".sqlite": true, ".sqlite3": true,
@@ -1602,7 +1602,7 @@ func isBinaryFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 
 	// If it's a known binary extension, return true immediately
-	if binaryExtensions[ext] {
+	if BinaryExtensions[ext] {
 		return true
 	}
 
