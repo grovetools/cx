@@ -2,6 +2,7 @@ package cmd
 
 import (
 	ctx "context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,7 +36,8 @@ func NewRepoCmd() *cobra.Command {
 }
 
 func newRepoListCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all tracked repositories",
 		Long:  `List all Git repositories that have been cloned and are tracked in the manifest.`,
@@ -48,6 +50,15 @@ func newRepoListCmd() *cobra.Command {
 			repos, err := manager.List()
 			if err != nil {
 				return fmt.Errorf("failed to list repositories: %w", err)
+			}
+
+			if jsonOutput {
+				jsonData, err := json.MarshalIndent(repos, "", "  ")
+				if err != nil {
+					return fmt.Errorf("failed to marshal repositories to JSON: %w", err)
+				}
+				fmt.Println(string(jsonData))
+				return nil
 			}
 
 			if len(repos) == 0 {
@@ -96,6 +107,8 @@ func newRepoListCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	return cmd
 }
 
 func newRepoSyncCmd() *cobra.Command {
