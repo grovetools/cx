@@ -101,6 +101,11 @@ func main() {
 		AliasWithOverlappingDirectiveScenario(),
 		CombinedDirectivesScenario(),
 
+		// Directive Import Scenarios
+		DirectiveWorkspaceGrepImportScenario(),
+		DirectiveWorkspaceFindImportScenario(),
+		// DirectiveGitGrepImportScenario(), // TODO: Add git import test
+
 		// Gitignore Scenarios
 		GitignoreStatsPerLineScenario(),
 		StarPatternRespectsGitignoreScenario(),
