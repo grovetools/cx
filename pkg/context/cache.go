@@ -1,14 +1,11 @@
 package context
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -80,8 +77,7 @@ func GetCacheFilePathForRepo(repoURL string) (string, error) {
 // StatsProvider provides file statistics, using a cache for managed repositories.
 type StatsProvider struct {
 	repoManager *repo.Manager
-	repoRoots   map[string]repo.RepoInfo // map local path -> RepoInfo
-	repoCaches  map[string]*RepoCache    // map local path -> RepoCache
+	repoCaches  map[string]*RepoCache // map workspace path -> RepoCache
 	mu          sync.RWMutex
 }
 
@@ -102,98 +98,39 @@ func GetStatsProvider() *StatsProvider {
 
 		provider := &StatsProvider{
 			repoManager: rm,
-			repoRoots:   make(map[string]repo.RepoInfo),
 			repoCaches:  make(map[string]*RepoCache),
-		}
-
-		if rm != nil {
-			manifest, err := rm.LoadManifest()
-			if err == nil {
-				for _, repoInfo := range manifest.Repositories {
-					provider.repoRoots[repoInfo.LocalPath] = repoInfo
-				}
-			}
 		}
 		globalStatsProvider = provider
 	})
 	return globalStatsProvider
 }
 
-// GetFileStats returns statistics for a file. It uses the cache if the file
-// is in a managed repository, otherwise falls back to os.Stat.
+// GetFileStats returns statistics for a file.
+// TODO: Re-implement caching using workspace paths instead of RepoInfo
 func (sp *StatsProvider) GetFileStats(filePath string) (FileInfo, error) {
-	absFilePath, err := filepath.Abs(filePath)
+	// TODO: Implement workspace-based caching
+	// For now, fall back to os.Stat for all files
+	stat, err := os.Stat(filePath)
 	if err != nil {
 		return FileInfo{}, err
 	}
-
-	repoInfo, inRepo := sp.findRepoForPath(absFilePath)
-	if !inRepo {
-		// Not in a managed repo, fall back to os.Stat
-		stat, err := os.Stat(absFilePath)
-		if err != nil {
-			return FileInfo{}, err
-		}
-		return FileInfo{
-			Path:   filePath, // Return original path
-			Size:   stat.Size(),
-			Tokens: int(stat.Size() / 4),
-		}, nil
-	}
-
-	// It's in a repo, use the cache
-	cache, err := sp.getRepoCache(repoInfo)
-	if err != nil {
-		return FileInfo{}, fmt.Errorf("could not get repo cache for %s: %w", repoInfo.URL, err)
-	}
-
-	relPath, err := filepath.Rel(repoInfo.LocalPath, absFilePath)
-	if err != nil {
-		return FileInfo{}, err
-	}
-	relPath = filepath.ToSlash(relPath)
-
-	// Find file in cache (could optimize with a map if needed)
-	for _, f := range cache.Files {
-		if f.Path == relPath {
-			return FileInfo{
-				Path:   filePath, // Return original path
-				Size:   f.Size,
-				Tokens: f.Tokens,
-			}, nil
-		}
-	}
-
-	return FileInfo{}, fmt.Errorf("file %s not found in cache for repo %s", relPath, repoInfo.URL)
+	return FileInfo{
+		Path:   filePath,
+		Size:   stat.Size(),
+		Tokens: int(stat.Size() / 4),
+	}, nil
 }
 
-// findRepoForPath checks if a file path is within a managed repository.
-func (sp *StatsProvider) findRepoForPath(absFilePath string) (*repo.RepoInfo, bool) {
-	sp.mu.RLock()
-	defer sp.mu.RUnlock()
-	for root, info := range sp.repoRoots {
-		// Ensure root has a trailing separator for accurate matching
-		rootWithSep := root
-		if !strings.HasSuffix(rootWithSep, string(filepath.Separator)) {
-			rootWithSep += string(filepath.Separator)
-		}
+// TODO: Re-implement these functions using workspace-based caching
+// For now, these are disabled and GetFileStats falls back to os.Stat
 
-		// Check if file is within this repo directory
-		if strings.HasPrefix(absFilePath, rootWithSep) || absFilePath == root {
-			repoInfo := info // Make a copy
-			return &repoInfo, true
-		}
-	}
-	return nil, false
-}
-
-// getRepoCache retrieves the cache for a repo, from memory, disk, or by generating it.
-func (sp *StatsProvider) getRepoCache(repoInfo *repo.RepoInfo) (*RepoCache, error) {
+// getRepoCache would retrieve the cache for a workspace
+func (sp *StatsProvider) getRepoCache(workspacePath, commitHash string) (*RepoCache, error) {
 	sp.mu.RLock()
-	cache, found := sp.repoCaches[repoInfo.LocalPath]
+	cache, found := sp.repoCaches[workspacePath]
 	sp.mu.RUnlock()
 
-	if found && cache.CommitHash == repoInfo.ResolvedCommit {
+	if found && cache.CommitHash == commitHash {
 		return cache, nil
 	}
 
@@ -201,93 +138,14 @@ func (sp *StatsProvider) getRepoCache(repoInfo *repo.RepoInfo) (*RepoCache, erro
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 
-	// Double-check in case another goroutine just populated it
-	cache, found = sp.repoCaches[repoInfo.LocalPath]
-	if found && cache.CommitHash == repoInfo.ResolvedCommit {
+	// Double-check in case another goroutree just populated it
+	cache, found = sp.repoCaches[workspacePath]
+	if found && cache.CommitHash == commitHash {
 		return cache, nil
 	}
 
-	// Try loading from disk
-	cachePath, err := GetCacheFilePathForRepo(repoInfo.URL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cache path: %w", err)
-	}
-
-	if data, err := os.ReadFile(cachePath); err == nil {
-		var diskCache RepoCache
-		if json.Unmarshal(data, &diskCache) == nil {
-			if diskCache.CommitHash == repoInfo.ResolvedCommit {
-				sp.repoCaches[repoInfo.LocalPath] = &diskCache
-				return &diskCache, nil
-			}
-		}
-	}
-
-	// Not on disk or stale, generate new cache
-	newCache, err := sp.generateCacheForRepo(repoInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	sp.repoCaches[repoInfo.LocalPath] = newCache
-	return newCache, nil
-}
-
-// generateCacheForRepo walks a repository, gets stats for all files, and saves the cache.
-func (sp *StatsProvider) generateCacheForRepo(repoInfo *repo.RepoInfo) (*RepoCache, error) {
-	// Use `git ls-files` which is fast and respects .gitignore
-	cmd := exec.Command("git", "ls-files", "-z")
-	cmd.Dir = repoInfo.LocalPath
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list files for repo %s: %w", repoInfo.URL, err)
-	}
-
-	newCache := &RepoCache{
-		CommitHash: repoInfo.ResolvedCommit,
-		CreatedAt:  time.Now().UTC(),
-		RepoURL:    repoInfo.URL,
-		LocalPath:  repoInfo.LocalPath,
-	}
-
-	files := strings.Split(string(bytes.TrimRight(output, "\x00")), "\x00")
-	for _, relPath := range files {
-		if relPath == "" {
-			continue
-		}
-		absPath := filepath.Join(repoInfo.LocalPath, relPath)
-
-		if IsBinaryFile(absPath) {
-			continue
-		}
-
-		stat, err := os.Stat(absPath)
-		if err != nil {
-			continue // Skip files that we can't stat
-		}
-
-		newCache.Files = append(newCache.Files, CachedFileStats{
-			Path:   relPath,
-			Size:   stat.Size(),
-			Tokens: int(stat.Size() / 4),
-		})
-	}
-
-	// Save cache to disk
-	cachePath, err := GetCacheFilePathForRepo(repoInfo.URL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cache path: %w", err)
-	}
-
-	data, err := json.MarshalIndent(newCache, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(cachePath, data, 0644); err != nil {
-		return nil, err
-	}
-
-	return newCache, nil
+	// TODO: Implement workspace-based caching
+	return nil, fmt.Errorf("workspace caching not yet implemented")
 }
 
 // IsBinaryFile is copied from resolve.go to be used here.

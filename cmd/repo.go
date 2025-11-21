@@ -69,38 +69,11 @@ func newRepoListCmd() *cobra.Command {
 
 			// Create a tabwriter for formatted output
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "URL\tVERSION\tCOMMIT\tSTATUS\tREPORT\tLAST SYNCED")
-			fmt.Fprintln(w, "---\t-------\t------\t------\t------\t-----------")
+			fmt.Fprintln(w, "URL\tBARE REPO PATH")
+			fmt.Fprintln(w, "---\t--------------")
 
 			for _, r := range repos {
-				version := r.PinnedVersion
-				if version == "" {
-					version = "default"
-				}
-
-				commit := r.ResolvedCommit
-				if len(commit) > 7 {
-					commit = commit[:7]
-				}
-
-				lastSynced := "never"
-				if !r.LastSyncedAt.IsZero() {
-					lastSynced = formatTimeSince(r.LastSyncedAt)
-				}
-
-				reportIndicator := " "
-				if r.Audit.ReportPath != "" {
-					reportIndicator = "✓"
-				}
-
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					r.URL,
-					version,
-					commit,
-					r.Audit.Status,
-					reportIndicator,
-					lastSynced,
-				)
+				fmt.Fprintf(w, "%s\t%s\n", r.URL, r.BarePath)
 			}
 
 			w.Flush()
@@ -124,35 +97,11 @@ func newRepoSyncCmd() *cobra.Command {
 
 			prettyLog.InfoPretty("Syncing all tracked repositories...")
 
-			// Get repo state before sync for cache invalidation
-			reposBefore, _ := manager.List()
-			commitsBefore := make(map[string]string)
-			for _, r := range reposBefore {
-				commitsBefore[r.URL] = r.ResolvedCommit
-			}
-
 			if err := manager.Sync(); err != nil {
 				return fmt.Errorf("failed to sync repositories: %w", err)
 			}
 
-			prettyLog.Success("All repositories synced successfully.")
-
-			// Invalidate caches for updated repos
-			reposAfter, _ := manager.List()
-			for _, r := range reposAfter {
-				if oldCommit, ok := commitsBefore[r.URL]; ok && oldCommit != r.ResolvedCommit {
-					prettyLog.InfoPretty(fmt.Sprintf("Repository %s updated, clearing stats cache.", r.URL))
-					// Get cache path from context package (uses centralized cache directory)
-					cachePath, err := context.GetCacheFilePathForRepo(r.URL)
-					if err != nil {
-						prettyLog.WarnPretty(fmt.Sprintf("Could not get cache path for %s: %v", r.URL, err))
-						continue
-					}
-					if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
-						prettyLog.WarnPretty(fmt.Sprintf("Could not clear cache for %s: %v", r.URL, err))
-					}
-				}
-			}
+			prettyLog.Success("All bare repositories synced successfully.")
 
 			return nil
 		},
@@ -163,12 +112,27 @@ func newRepoAuditCmd() *cobra.Command {
 	var statusFlag string
 
 	cmd := &cobra.Command{
-		Use:   "audit <url>",
+		Use:   "audit <url>[@version]",
 		Short: "Perform an interactive LLM-based security audit for a repository",
-		Long:  `Initiates an interactive workflow to audit a repository. This clones the repo, allows context refinement via 'cx view', runs an LLM analysis for security vulnerabilities, and prompts for approval to update the manifest.`,
+		Long:  `Initiates an interactive workflow to audit a repository at a specific version. This creates a worktree, allows context refinement via 'cx view', runs an LLM analysis for security vulnerabilities, and prompts for approval to update the manifest.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repoURL := args[0]
+			repoStr := args[0]
+
+			// Use context manager to parse the git rule
+			mgr := context.NewManager("")
+			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Ignore ruleset part here
+
+			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
+			if !isGitURL {
+				if !strings.HasPrefix(repoStr, "https://") && !strings.HasPrefix(repoStr, "git@") && strings.Count(repoStr, "/") == 1 {
+					isGitURL, repoURL, version, _ = mgr.ParseGitRule("https://github.com/" + repoStr)
+				}
+			}
+
+			if !isGitURL {
+				return fmt.Errorf("invalid repository URL or shorthand format: %s", repoStr)
+			}
 
 			manager, err := repo.NewManager()
 			if err != nil {
@@ -177,23 +141,13 @@ func newRepoAuditCmd() *cobra.Command {
 
 			// If status flag is provided, just update the status
 			if statusFlag != "" {
-				_, _, err := manager.Ensure(repoURL, "")
-				if err != nil {
-					return fmt.Errorf("failed to ensure repository is cloned: %w", err)
-				}
-
-				if err := manager.UpdateAuditResult(repoURL, statusFlag, ""); err != nil {
-					return fmt.Errorf("failed to update audit status: %w", err)
-				}
-
-				prettyLog.Success(fmt.Sprintf("Updated audit status to '%s' for %s", statusFlag, repoURL))
-				return nil
+				return fmt.Errorf("--status flag requires a commit hash, not a repository URL")
 			}
 
 			prettyLog.InfoPretty("Preparing repository for audit...")
-			localPath, currentCommit, err := manager.Ensure(repoURL, "")
+			localPath, currentCommit, err := manager.EnsureVersion(repoURL, version)
 			if err != nil {
-				return fmt.Errorf("failed to ensure repository is cloned: %w", err)
+				return fmt.Errorf("failed to ensure repository version is checked out: %w", err)
 			}
 			prettyLog.InfoPretty(fmt.Sprintf("Auditing %s at commit %s", repoURL, currentCommit[:7]))
 
@@ -246,7 +200,7 @@ func newRepoAuditCmd() *cobra.Command {
 
 			// The report path should be relative to the repo root for portability.
 			relativeReportPath := filepath.Join(".grove", "audits", filepath.Base(reportPath))
-			if err := manager.UpdateAuditResult(repoURL, status, relativeReportPath); err != nil {
+			if err := manager.UpdateAuditResult(currentCommit, status, relativeReportPath); err != nil {
 				return fmt.Errorf("failed to update manifest with audit result: %w", err)
 			}
 
@@ -278,12 +232,12 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 
 			// Use context manager to parse the git rule
 			mgr := context.NewManager("")
-			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Ignore ruleset part here
+			isGitURL, repoURL, _, _ := mgr.ParseGitRule(repoStr) // Ignore version and ruleset part
 
 			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
 			if !isGitURL {
 				if !strings.HasPrefix(repoStr, "https://") && !strings.HasPrefix(repoStr, "git@") && strings.Count(repoStr, "/") == 1 {
-					isGitURL, repoURL, version, _ = mgr.ParseGitRule("https://github.com/" + repoStr)
+					isGitURL, repoURL, _, _ = mgr.ParseGitRule("https://github.com/" + repoStr)
 				}
 			}
 
@@ -297,20 +251,15 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 				return fmt.Errorf("failed to create repository manager: %w", err)
 			}
 
-			versionDisplay := "default branch"
-			if version != "" {
-				versionDisplay = version
-			}
-			prettyLog.InfoPretty(fmt.Sprintf("Adding repository %s and pinning to %s...", repoURL, versionDisplay))
+			prettyLog.InfoPretty(fmt.Sprintf("Adding repository %s...", repoURL))
 
-			localPath, commit, err := manager.Ensure(repoURL, version)
+			err = manager.Ensure(repoURL)
 			if err != nil {
 				return fmt.Errorf("failed to add repository: %w", err)
 			}
 
 			prettyLog.Success(fmt.Sprintf("Successfully added repository: %s", repoURL))
-			prettyLog.InfoPretty(fmt.Sprintf("  -> Cloned to: %s", localPath))
-			prettyLog.InfoPretty(fmt.Sprintf("  -> Resolved to commit: %s", commit[:7]))
+			prettyLog.InfoPretty("Bare clone created and ready for version-specific worktrees")
 
 			return nil
 		},
@@ -523,10 +472,10 @@ If no ruleset name is provided, it defaults to 'default'.`,
 				return fmt.Errorf("failed to create repository manager: %w", err)
 			}
 
-			// Ensure repo is cloned and get local path
-			localPath, _, err := manager.Ensure(repoURL, version)
+			// Ensure repo worktree is created and get local path
+			localPath, _, err := manager.EnsureVersion(repoURL, version)
 			if err != nil {
-				return fmt.Errorf("failed to ensure repository is cloned: %w", err)
+				return fmt.Errorf("failed to ensure repository version is available: %w", err)
 			}
 
 			// Construct paths

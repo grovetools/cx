@@ -697,10 +697,10 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 						continue // This is an import, so we're done with this line.
 					}
 
-					// Clone/update the repository
-					localPath, _, cloneErr := repoManager.Ensure(repoURL, version)
+					// Ensure the repository worktree exists for the specified version
+					localPath, _, cloneErr := repoManager.EnsureVersion(repoURL, version)
 					if cloneErr != nil {
-						fmt.Fprintf(os.Stderr, "Warning: could not clone repository %s: %v\n", repoURL, cloneErr)
+						fmt.Fprintf(os.Stderr, "Warning: could not ensure repository version %s: %v\n", repoURL, cloneErr)
 						continue
 					}
 

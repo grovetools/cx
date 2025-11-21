@@ -291,13 +291,13 @@ func outputPerLineStats(args []string) error {
 			}
 
 			if repoURL != "" {
-				if repoData, ok := manifest.Repositories[repoURL]; ok {
-					commit := repoData.ResolvedCommit
+				if _, ok := manifest.Repositories[repoURL]; ok {
+					commit := ""
 					if len(commit) > 7 {
 						commit = commit[:7]
 					}
 					if version == "" { // If rule didn't specify version, use pinned one
-						version = repoData.PinnedVersion
+						version = ""
 					}
 					if version == "default" {
 						version = ""
@@ -307,7 +307,7 @@ func outputPerLineStats(args []string) error {
 						URL:     repoURL,
 						Version: version,
 						Commit:  commit,
-						Status:  repoData.Audit.Status,
+						Status:  "",
 					}
 				}
 			}
@@ -369,13 +369,13 @@ func outputPerLineStats(args []string) error {
 				}
 
 				if repoURL != "" {
-					if repoData, ok := manifest.Repositories[repoURL]; ok {
-						commit := repoData.ResolvedCommit
+					if _, ok := manifest.Repositories[repoURL]; ok {
+						commit := ""
 						if len(commit) > 7 {
 							commit = commit[:7]
 						}
 						if version == "" {
-							version = repoData.PinnedVersion
+							version = ""
 						}
 						if version == "default" {
 							version = ""
@@ -384,7 +384,7 @@ func outputPerLineStats(args []string) error {
 							URL:     repoURL,
 							Version: version,
 							Commit:  commit,
-							Status:  repoData.Audit.Status,
+							Status:  "",
 						}
 					}
 				}
@@ -489,13 +489,13 @@ func outputPerLineStats(args []string) error {
 
 			// If this is a Git URL/alias, add a synthetic entry with gitInfo
 			if isGitURL && repoURL != "" {
-				if repoData, ok := manifest.Repositories[repoURL]; ok {
-					commit := repoData.ResolvedCommit
+				if _, ok := manifest.Repositories[repoURL]; ok {
+					commit := ""
 					if len(commit) > 7 {
 						commit = commit[:7]
 					}
 					if version == "" {
-						version = repoData.PinnedVersion
+						version = ""
 					}
 					if version == "default" {
 						version = ""
@@ -505,7 +505,7 @@ func outputPerLineStats(args []string) error {
 						URL:     repoURL,
 						Version: version,
 						Commit:  commit,
-						Status:  repoData.Audit.Status,
+						Status:  "",
 					}
 
 					// Add entry with gitInfo but empty file list
