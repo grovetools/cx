@@ -34,6 +34,15 @@ type parsedRules struct {
 // RuleStatus represents the current state of a rule
 type RuleStatus int
 
+// GitRule represents a parsed Git alias rule from the rules file.
+type GitRule struct {
+	RepoURL     string
+	Version     string
+	Ruleset     string
+	ContextType RuleStatus
+	IsExclude   bool
+}
+
 const (
 	RuleNotFound RuleStatus = iota // Rule doesn't exist
 	RuleHot                        // Rule exists in hot context
@@ -122,6 +131,151 @@ func (m *Manager) GetDefaultRuleName() string {
 	}
 
 	return ""
+}
+
+// parseGitRuleForModification is a helper to parse a rule line to check if it's a Git rule.
+// It handles both direct URLs and @a:git: aliases.
+func (m *Manager) parseGitRuleForModification(rule string) (isGit bool, repoURL, version, ruleset string) {
+	cleanRule := strings.TrimSpace(rule)
+	if strings.HasPrefix(cleanRule, "!") {
+		cleanRule = strings.TrimPrefix(cleanRule, "!")
+	}
+
+	// Handle @a:git: or @alias:git: alias
+	isGitAlias := false
+	if strings.HasPrefix(cleanRule, "@a:git:") || strings.HasPrefix(cleanRule, "@alias:git:") {
+		isGitAlias = true
+	}
+
+	lineForParsing := cleanRule
+	if isGitAlias {
+		prefix := "@a:git:"
+		if strings.HasPrefix(cleanRule, "@alias:git:") {
+			prefix = "@alias:git:"
+		}
+		repoPart := strings.TrimPrefix(cleanRule, prefix)
+
+		// Check for ruleset within alias (e.g., @a:git:owner/repo::ruleset)
+		if strings.Contains(repoPart, "::") {
+			parts := strings.SplitN(repoPart, "::", 2)
+			repoPart = parts[0]
+			// The ruleset will be picked up by ParseGitRule on the full line
+		}
+
+		lineForParsing = "https://github.com/" + repoPart
+	}
+
+	return m.ParseGitRule(lineForParsing)
+}
+
+// ListGitRules parses the active rules file and returns a slice of all Git-based rules.
+func (m *Manager) ListGitRules() ([]GitRule, error) {
+	content, _, err := m.LoadRulesContent()
+	if err != nil {
+		return nil, err
+	}
+	if content == nil {
+		return nil, nil // No rules file, no git rules.
+	}
+
+	var gitRules []GitRule
+	inColdSection := false
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if line == "---" {
+			inColdSection = true
+			continue
+		}
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		isExclude := strings.HasPrefix(line, "!")
+
+		// Use the helper to parse the line
+		isGit, repoURL, version, ruleset := m.parseGitRuleForModification(line)
+
+		if isGit {
+			status := RuleHot
+			if inColdSection {
+				status = RuleCold
+			}
+			if isExclude {
+				status = RuleExcluded
+			}
+
+			gitRules = append(gitRules, GitRule{
+				RepoURL:     repoURL,
+				Version:     version,
+				Ruleset:     ruleset,
+				ContextType: status,
+				IsExclude:   isExclude,
+			})
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return gitRules, nil
+}
+
+// MatchesGitRule checks if a project matches a Git rule by comparing repo URL and version.
+// It handles exact version matches, partial commit hash matches, and branch-to-commit resolution.
+// Parameters:
+//   - rule: the Git rule to match against
+//   - projectRepoURL: the project's repository URL (e.g., "https://github.com/owner/repo")
+//   - projectVersion: the project's current branch or version string
+//   - projectHeadCommit: the project's current HEAD commit hash
+//   - projectPath: the project's filesystem path (used for git ref resolution)
+func MatchesGitRule(rule GitRule, projectRepoURL, projectVersion, projectHeadCommit, projectPath string) bool {
+	// Must match repo URL
+	if rule.RepoURL != projectRepoURL {
+		return false
+	}
+
+	// Check exact version match
+	if rule.Version == projectVersion {
+		return true
+	}
+
+	// Handle partial commit hash matching (rule version is prefix of project version or vice versa)
+	if len(rule.Version) >= 7 {
+		if strings.HasPrefix(projectVersion, rule.Version) || strings.HasPrefix(rule.Version, projectVersion) {
+			return true
+		}
+	}
+
+	// Handle branch-to-commit matching for detached HEAD worktrees:
+	// If the rule specifies a branch (like "master") and the project is at a commit,
+	// resolve the branch to its commit hash and compare
+	if projectHeadCommit != "" && projectPath != "" {
+		// Use exec directly here to avoid circular dependency with grove-core
+		cmd := exec.Command("git", "-C", projectPath, "rev-parse", rule.Version)
+		output, err := cmd.Output()
+		if err == nil {
+			ruleCommit := strings.TrimSpace(string(output))
+			if ruleCommit != "" {
+				// Compare with at least 12 chars for safety
+				minLen := 12
+				if len(ruleCommit) < minLen {
+					minLen = len(ruleCommit)
+				}
+				if len(projectHeadCommit) < minLen {
+					minLen = len(projectHeadCommit)
+				}
+				if strings.HasPrefix(ruleCommit, projectHeadCommit[:minLen]) ||
+					strings.HasPrefix(projectHeadCommit, ruleCommit[:minLen]) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // LoadRulesContent finds and reads the active rules file, falling back to grove.yml defaults.
@@ -925,6 +1079,45 @@ func (m *Manager) WriteRulesTo(destPath string) error {
 	return nil
 }
 
+// removeGitRulesForRepo scans the active rules file and removes all rules
+// (hot, cold, or excluded) that pertain to the given repository URL.
+func (m *Manager) removeGitRulesForRepo(repoURL string) error {
+	rulesFilePath := m.findActiveRulesFile()
+	if rulesFilePath == "" {
+		return nil // No file, nothing to remove
+	}
+
+	content, err := os.ReadFile(rulesFilePath)
+	if err != nil {
+		// If file doesn't exist, it's not an error
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading rules file: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+
+	for _, line := range lines {
+		isGit, lineRepoURL, _, _ := m.parseGitRuleForModification(strings.TrimSpace(line))
+		if isGit && lineRepoURL == repoURL {
+			// This is a rule for the repo we want to remove, so skip it.
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	// Clean up and write back to file
+	newLines = cleanupRulesLines(newLines)
+
+	newContent := strings.Join(newLines, "\n")
+	if len(newLines) > 0 && !strings.HasSuffix(newContent, "\n") {
+		newContent += "\n"
+	}
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0644)
+}
+
 // AppendRule adds a rule to the active rules file in the specified context
 // contextType can be "hot", "cold", or "exclude".
 func (m *Manager) AppendRule(rulePath, contextType string) error {
@@ -933,11 +1126,21 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 		return fmt.Errorf("safety validation failed: %w", err)
 	}
 
-	// First, remove any existing rules for this path to prevent duplicates
-	// This makes the function idempotent and handles state changes
-	if err := m.RemoveRuleForPath(rulePath); err != nil {
-		// Non-fatal error, log and continue
-		fmt.Fprintf(os.Stderr, "Warning: could not remove existing rules: %v\n", err)
+	// Check if the new rule is a Git rule. If so, remove all existing rules for that repo.
+	// Otherwise, use the existing path-based removal logic.
+	isGit, repoURL, _, _ := m.parseGitRuleForModification(rulePath)
+	if isGit {
+		if err := m.removeGitRulesForRepo(repoURL); err != nil {
+			// Non-fatal error, log and continue
+			fmt.Fprintf(os.Stderr, "Warning: could not remove existing git rules for %s: %v\n", repoURL, err)
+		}
+	} else {
+		// First, remove any existing rules for this path to prevent duplicates
+		// This makes the function idempotent and handles state changes
+		if err := m.RemoveRuleForPath(rulePath); err != nil {
+			// Non-fatal error, log and continue
+			fmt.Fprintf(os.Stderr, "Warning: could not remove existing rules: %v\n", err)
+		}
 	}
 
 	// Find or create the rules file

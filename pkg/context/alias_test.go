@@ -54,7 +54,7 @@ func TestAliasResolver_Resolve(t *testing.T) {
 	}
 
 	provider := workspace.NewProvider(mockResult)
-	resolver := &AliasResolver{provider: provider}
+	resolver := &AliasResolver{Provider: provider}
 	// Mark providerOnce as already done to prevent initProvider from running
 	resolver.providerOnce.Do(func() {})
 
@@ -119,7 +119,7 @@ func TestAliasResolver_ResolveLine(t *testing.T) {
 	}
 
 	provider := workspace.NewProvider(mockResult)
-	resolver := &AliasResolver{provider: provider}
+	resolver := &AliasResolver{Provider: provider}
 	// Mark providerOnce as already done to prevent initProvider from running
 	resolver.providerOnce.Do(func() {})
 
