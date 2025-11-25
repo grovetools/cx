@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mattsolo1/grove-core/logging"
 	"github.com/mattsolo1/grove-tend/pkg/command"
 	"github.com/mattsolo1/grove-tend/pkg/fs"
 	"github.com/mattsolo1/grove-tend/pkg/harness"
@@ -19,8 +20,10 @@ func AliasSiblingResolutionScenario() *harness.Scenario {
 		Tags:        []string{"cx", "alias", "siblings", "worktree"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup ecosystem with main repos and worktree", func(ctx *harness.Context) error {
+				log := logging.NewLogger("e2e:cx-alias-siblings")
 				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
 				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
+				log.WithField("grovesDir", grovesDir).WithField("groveConfigDir", groveConfigDir).Debug("Setting up test directories")
 
 				// Create global grove.yml
 				groveConfig := fmt.Sprintf(`groves:
@@ -31,9 +34,11 @@ func AliasSiblingResolutionScenario() *harness.Scenario {
 				if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig); err != nil {
 					return err
 				}
+				log.Debug("Created global grove.yml config")
 
 				// Create ecosystem
 				ecoDir := filepath.Join(grovesDir, "my-ecosystem")
+				log.WithField("ecoDir", ecoDir).Debug("Creating ecosystem directory")
 				if err := fs.WriteString(filepath.Join(ecoDir, ".gitmodules"), "# ecosystem"); err != nil {
 					return err
 				}
@@ -46,9 +51,11 @@ workspaces:
 				if result := command.New("git", "init").Dir(ecoDir).Run(); result.Error != nil {
 					return fmt.Errorf("failed to init git in ecosystem: %w", result.Error)
 				}
+				log.Debug("Initialized git in ecosystem")
 
 				// Create main repos in ecosystem
 				repoADir := filepath.Join(ecoDir, "repo-a")
+				log.WithField("repoADir", repoADir).Debug("Creating main repo-a")
 				if err := fs.WriteString(filepath.Join(repoADir, "main.go"), "package main // main version"); err != nil {
 					return err
 				}
@@ -61,8 +68,10 @@ workspaces:
 				if result := command.New("git", "init").Dir(repoADir).Run(); result.Error != nil {
 					return fmt.Errorf("failed to init git in repo-a: %w", result.Error)
 				}
+				log.WithField("files", []string{"main.go", "utils.go", "grove.yml"}).Debug("Created main repo-a with files")
 
 				repoBDir := filepath.Join(ecoDir, "repo-b")
+				log.WithField("repoBDir", repoBDir).Debug("Creating main repo-b")
 				if err := fs.WriteString(filepath.Join(repoBDir, "main.go"), "package main // main version"); err != nil {
 					return err
 				}
@@ -75,9 +84,11 @@ workspaces:
 				if result := command.New("git", "init").Dir(repoBDir).Run(); result.Error != nil {
 					return fmt.Errorf("failed to init git in repo-b: %w", result.Error)
 				}
+				log.WithField("files", []string{"main.go", "helper.go", "grove.yml"}).Debug("Created main repo-b with files")
 
 				// Create ecosystem worktree: my-ecosystem/.grove-worktrees/feature-x
 				worktreeDir := filepath.Join(ecoDir, ".grove-worktrees", "feature-x")
+				log.WithField("worktreeDir", worktreeDir).Debug("Creating ecosystem worktree")
 				if err := fs.WriteString(filepath.Join(worktreeDir, ".gitmodules"), "# ecosystem worktree"); err != nil {
 					return err
 				}
@@ -88,9 +99,11 @@ workspaces:
 				if err := fs.WriteString(filepath.Join(worktreeDir, ".git"), "gitdir: ../../.git/worktrees/feature-x"); err != nil {
 					return err
 				}
+				log.Debug("Created worktree marker (.git file)")
 
 				// Create worktree versions of repos (siblings in same worktree)
 				repoAWorktreeDir := filepath.Join(worktreeDir, "repo-a")
+				log.WithField("repoAWorktreeDir", repoAWorktreeDir).Debug("Creating worktree repo-a")
 				if err := fs.WriteString(filepath.Join(repoAWorktreeDir, "main.go"), "package main // worktree version"); err != nil {
 					return err
 				}
@@ -106,8 +119,10 @@ workspaces:
 				if result := command.New("git", "init").Dir(repoAWorktreeDir).Run(); result.Error != nil {
 					return fmt.Errorf("failed to init git in repo-a worktree: %w", result.Error)
 				}
+				log.WithField("files", []string{"main.go", "utils.go", "feature.go", "grove.yml"}).Debug("Created worktree repo-a with files")
 
 				repoBWorktreeDir := filepath.Join(worktreeDir, "repo-b")
+				log.WithField("repoBWorktreeDir", repoBWorktreeDir).Debug("Creating worktree repo-b")
 				if err := fs.WriteString(filepath.Join(repoBWorktreeDir, "main.go"), "package main // worktree version"); err != nil {
 					return err
 				}
@@ -123,15 +138,49 @@ workspaces:
 				if result := command.New("git", "init").Dir(repoBWorktreeDir).Run(); result.Error != nil {
 					return fmt.Errorf("failed to init git in repo-b worktree: %w", result.Error)
 				}
+				log.WithField("files", []string{"main.go", "helper.go", "worktree_only.go", "grove.yml"}).Debug("Created worktree repo-b with files")
 
 				ctx.Set("repoAWorktreeDir", repoAWorktreeDir)
 				ctx.Set("repoBWorktreeDir", repoBWorktreeDir)
 				ctx.Set("repoADir", repoADir)
 
+				// Log comprehensive setup summary as JSON
+				log.WithField("setup", map[string]interface{}{
+					"ecosystem": map[string]interface{}{
+						"name": "my-ecosystem",
+						"path": ecoDir,
+					},
+					"mainRepos": map[string]interface{}{
+						"repo-a": map[string]interface{}{
+							"path":  repoADir,
+							"files": []string{"main.go", "utils.go", "grove.yml"},
+						},
+						"repo-b": map[string]interface{}{
+							"path":  repoBDir,
+							"files": []string{"main.go", "helper.go", "grove.yml"},
+						},
+					},
+					"worktree": map[string]interface{}{
+						"name": "feature-x",
+						"path": worktreeDir,
+						"repos": map[string]interface{}{
+							"repo-a": map[string]interface{}{
+								"path":  repoAWorktreeDir,
+								"files": []string{"main.go", "utils.go", "feature.go", "grove.yml"},
+							},
+							"repo-b": map[string]interface{}{
+								"path":        repoBWorktreeDir,
+								"files":       []string{"main.go", "helper.go", "worktree_only.go", "grove.yml"},
+								"uniqueFiles": []string{"worktree_only.go"},
+							},
+						},
+					},
+				}).Info("Setup complete")
 				return nil
 			}),
 
 			harness.NewStep("Test sibling resolution from repo-a worktree", func(ctx *harness.Context) error {
+				log := logging.NewLogger("e2e:cx-alias-siblings")
 				// When working in repo-a worktree, @alias:repo-b should resolve to sibling repo-b worktree
 				cx, err := FindProjectBinary()
 				if err != nil {
@@ -139,9 +188,19 @@ workspaces:
 				}
 
 				repoAWorktreeDir := ctx.Get("repoAWorktreeDir").(string)
-
-				// Create rules in repo-a that reference repo-b
 				rules := `@alias:repo-b/**/*.go`
+
+				// Log test input as JSON
+				log.WithField("testInput", map[string]interface{}{
+					"testName":       "sibling_resolution_from_worktree",
+					"binary":         cx,
+					"workingDir":     repoAWorktreeDir,
+					"rules":          rules,
+					"aliasType":      "simple_name",
+					"expectedTarget": "worktree_sibling",
+					"description":    "From repo-a worktree, @alias:repo-b should resolve to sibling repo-b worktree",
+				}).Info("Starting test")
+
 				if err := fs.WriteString(filepath.Join(repoAWorktreeDir, ".grove", "rules"), rules); err != nil {
 					return err
 				}
@@ -151,21 +210,36 @@ workspaces:
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
 				if result.Error != nil {
+					log.WithField("error", map[string]interface{}{
+						"command": cmd.String(),
+						"stderr":  result.Stderr,
+						"error":   result.Error.Error(),
+					}).Error("Command failed")
 					return result.Error
 				}
 
 				output := result.Stdout
-				// Should include worktree sibling's unique file
-				if !strings.Contains(output, "worktree_only.go") {
+				hasWorktreeOnly := strings.Contains(output, "worktree_only.go")
+
+				// Log test result as JSON
+				log.WithField("testResult", map[string]interface{}{
+					"testName":            "sibling_resolution_from_worktree",
+					"command":             cmd.String(),
+					"output":              output,
+					"hasWorktreeOnlyFile": hasWorktreeOnly,
+					"passed":              hasWorktreeOnly,
+					"assertion":           "output should contain 'worktree_only.go' (unique to worktree repo-b)",
+				}).Info("Test completed")
+
+				if !hasWorktreeOnly {
 					return fmt.Errorf("should resolve to sibling repo-b worktree, missing 'worktree_only.go'\nOutput:\n%s", output)
 				}
-				// Should NOT include main version's file that doesn't exist in worktree
-				// (both have helper.go, so we can't check that, but worktree_only.go is unique)
 
 				return nil
 			}),
 
 			harness.NewStep("Test explicit ecosystem:repo from worktree context", func(ctx *harness.Context) error {
+				log := logging.NewLogger("e2e:cx-alias-siblings")
 				// From repo-a worktree, @alias:my-ecosystem:repo-b should resolve to MAIN version
 				cx, err := FindProjectBinary()
 				if err != nil {
@@ -173,9 +247,20 @@ workspaces:
 				}
 
 				repoAWorktreeDir := ctx.Get("repoAWorktreeDir").(string)
-
-				// Use explicit ecosystem:repo namespace to get main version
 				rules := `@alias:my-ecosystem:repo-b/**/*.go`
+
+				// Log test input as JSON
+				log.WithField("testInput", map[string]interface{}{
+					"testName":       "explicit_namespace_from_worktree",
+					"binary":         cx,
+					"workingDir":     repoAWorktreeDir,
+					"rules":          rules,
+					"aliasType":      "explicit_namespace",
+					"namespace":      "my-ecosystem:repo-b",
+					"expectedTarget": "main_repo",
+					"description":    "From repo-a worktree, @alias:my-ecosystem:repo-b should resolve to MAIN version (not worktree sibling)",
+				}).Info("Starting test")
+
 				if err := fs.WriteString(filepath.Join(repoAWorktreeDir, ".grove", "rules"), rules); err != nil {
 					return err
 				}
@@ -185,16 +270,37 @@ workspaces:
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
 				if result.Error != nil {
+					log.WithField("error", map[string]interface{}{
+						"command": cmd.String(),
+						"stderr":  result.Stderr,
+						"error":   result.Error.Error(),
+					}).Error("Command failed")
 					return result.Error
 				}
 
 				output := result.Stdout
-				// Should include main version's files
-				if !strings.Contains(output, "helper.go") {
+				hasHelperGo := strings.Contains(output, "helper.go")
+				hasWorktreeOnly := strings.Contains(output, "worktree_only.go")
+				passed := hasHelperGo && !hasWorktreeOnly
+
+				// Log test result as JSON
+				log.WithField("testResult", map[string]interface{}{
+					"testName":            "explicit_namespace_from_worktree",
+					"command":             cmd.String(),
+					"output":              output,
+					"hasHelperGo":         hasHelperGo,
+					"hasWorktreeOnlyFile": hasWorktreeOnly,
+					"passed":              passed,
+					"assertions": map[string]interface{}{
+						"shouldContain":    "helper.go (present in main repo-b)",
+						"shouldNotContain": "worktree_only.go (unique to worktree repo-b)",
+					},
+				}).Info("Test completed")
+
+				if !hasHelperGo {
 					return fmt.Errorf("should resolve to main repo-b, missing 'helper.go'\nOutput:\n%s", output)
 				}
-				// Should NOT include worktree-only file
-				if strings.Contains(output, "worktree_only.go") {
+				if hasWorktreeOnly {
 					return fmt.Errorf("should NOT include worktree version when using explicit namespace\nOutput:\n%s", output)
 				}
 
@@ -202,6 +308,7 @@ workspaces:
 			}),
 
 			harness.NewStep("Test simple name from main repo resolves to main", func(ctx *harness.Context) error {
+				log := logging.NewLogger("e2e:cx-alias-siblings")
 				// From main repo-a, @alias:repo-b should resolve to main repo-b (both top-level)
 				cx, err := FindProjectBinary()
 				if err != nil {
@@ -209,8 +316,20 @@ workspaces:
 				}
 
 				repoADir := ctx.Get("repoADir").(string)
-
 				rules := `@alias:repo-b/**/*.go`
+
+				// Log test input as JSON
+				log.WithField("testInput", map[string]interface{}{
+					"testName":       "simple_name_from_main_repo",
+					"binary":         cx,
+					"workingDir":     repoADir,
+					"rules":          rules,
+					"aliasType":      "simple_name",
+					"context":        "main_repo",
+					"expectedTarget": "main_repo",
+					"description":    "From main repo-a, @alias:repo-b should resolve to main repo-b (both top-level siblings)",
+				}).Info("Starting test")
+
 				if err := fs.WriteString(filepath.Join(repoADir, ".grove", "rules"), rules); err != nil {
 					return err
 				}
@@ -220,16 +339,37 @@ workspaces:
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
 				if result.Error != nil {
+					log.WithField("error", map[string]interface{}{
+						"command": cmd.String(),
+						"stderr":  result.Stderr,
+						"error":   result.Error.Error(),
+					}).Error("Command failed")
 					return result.Error
 				}
 
 				output := result.Stdout
-				// Should include main version
-				if !strings.Contains(output, "helper.go") {
+				hasHelperGo := strings.Contains(output, "helper.go")
+				hasWorktreeOnly := strings.Contains(output, "worktree_only.go")
+				passed := hasHelperGo && !hasWorktreeOnly
+
+				// Log test result as JSON
+				log.WithField("testResult", map[string]interface{}{
+					"testName":            "simple_name_from_main_repo",
+					"command":             cmd.String(),
+					"output":              output,
+					"hasHelperGo":         hasHelperGo,
+					"hasWorktreeOnlyFile": hasWorktreeOnly,
+					"passed":              passed,
+					"assertions": map[string]interface{}{
+						"shouldContain":    "helper.go (present in main repo-b)",
+						"shouldNotContain": "worktree_only.go (unique to worktree repo-b)",
+					},
+				}).Info("Test completed")
+
+				if !hasHelperGo {
 					return fmt.Errorf("should resolve to main repo-b\nOutput:\n%s", output)
 				}
-				// Should NOT include worktree-only file
-				if strings.Contains(output, "worktree_only.go") {
+				if hasWorktreeOnly {
 					return fmt.Errorf("should NOT include worktree version from main context\nOutput:\n%s", output)
 				}
 
