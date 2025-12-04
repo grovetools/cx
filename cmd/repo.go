@@ -219,7 +219,7 @@ func newRepoAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <url>[@version]",
 		Short: "Add and clone a new repository to be tracked",
-		Long: `Clones a new Git repository, adds it to the manifest, and makes it available for context.
+		Long: `Clones a new Git repository, adds it to the manifest, and creates a worktree to make it available for context.
 You can pin the repository to a specific version (branch, tag, or commit hash) by appending @version.
 If no version is specified, it will use the repository's default branch.
 GitHub repositories can be specified using the shorthand 'owner/repo'.`,
@@ -232,12 +232,12 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 
 			// Use context manager to parse the git rule
 			mgr := context.NewManager("")
-			isGitURL, repoURL, _, _ := mgr.ParseGitRule(repoStr) // Ignore version and ruleset part
+			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Capture version
 
 			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
 			if !isGitURL {
 				if !strings.HasPrefix(repoStr, "https://") && !strings.HasPrefix(repoStr, "git@") && strings.Count(repoStr, "/") == 1 {
-					isGitURL, repoURL, _, _ = mgr.ParseGitRule("https://github.com/" + repoStr)
+					isGitURL, repoURL, version, _ = mgr.ParseGitRule("https://github.com/" + repoStr)
 				}
 			}
 
@@ -259,7 +259,22 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 			}
 
 			prettyLog.Success(fmt.Sprintf("Successfully added repository: %s", repoURL))
-			prettyLog.InfoPretty("Bare clone created and ready for version-specific worktrees")
+			prettyLog.InfoPretty("Bare clone created.")
+
+			// Create worktree for the specified version or default branch
+			versionForLog := "default branch"
+			if version != "" {
+				versionForLog = version
+			}
+			prettyLog.InfoPretty(fmt.Sprintf("Creating worktree for %s...", versionForLog))
+
+			localPath, commitHash, err := manager.EnsureVersion(repoURL, version)
+			if err != nil {
+				return fmt.Errorf("failed to create worktree for version '%s': %w", versionForLog, err)
+			}
+
+			prettyLog.Success(fmt.Sprintf("Worktree for commit %s created at:", commitHash[:7]))
+			prettyLog.Path("  ", localPath)
 
 			return nil
 		},
