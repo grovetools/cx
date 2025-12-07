@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	grovelogging "github.com/mattsolo1/grove-core/logging"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/sirupsen/logrus"
 )
 
 // LanguageStats contains statistics for a programming language
@@ -51,6 +53,12 @@ type ContextStats struct {
 
 // GetStats analyzes the context and returns comprehensive statistics
 func (m *Manager) GetStats(contextType string, files []string, topN int) (*ContextStats, error) {
+	log := grovelogging.NewLogger("grove-context")
+	log.WithFields(logrus.Fields{
+		"context_type": contextType,
+		"file_count":   len(files),
+	}).Debug("Calculating context statistics")
+
 	if len(files) == 0 {
 		return &ContextStats{ContextType: contextType}, nil
 	}
@@ -138,6 +146,15 @@ func (m *Manager) GetStats(contextType string, files []string, topN int) (*Conte
 		stats.AvgTokens = stats.TotalTokens / len(tokenCounts)
 		stats.MedianTokens = calculateMedian(tokenCounts)
 	}
+
+	log.WithFields(logrus.Fields{
+		"context_type":  contextType,
+		"total_files":   stats.TotalFiles,
+		"total_tokens":  stats.TotalTokens,
+		"total_size":    stats.TotalSize,
+		"avg_tokens":    stats.AvgTokens,
+		"median_tokens": stats.MedianTokens,
+	}).Debug("Context statistics calculated")
 
 	return stats, nil
 }

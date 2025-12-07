@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/mattsolo1/grove-core/config"
+	grovelogging "github.com/mattsolo1/grove-core/logging"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/state"
 	"github.com/mattsolo1/grove-core/util/pathutil"
@@ -63,6 +64,7 @@ type Manager struct {
 	rootsOnce       sync.Once
 	skippedRules    []SkippedRule // Rules that were skipped during parsing with reasons
 	skippedMutex    sync.Mutex    // Protects skippedRules
+	log             *logrus.Entry
 }
 
 // NewManager creates a new context manager
@@ -79,6 +81,7 @@ func NewManager(workDir string) *Manager {
 		workDir:         workDir,
 		gitIgnoredCache: make(map[string]map[string]bool),
 		aliasResolver:   nil, // Lazily initialized
+		log:             grovelogging.NewLogger("grove-context"),
 	}
 }
 

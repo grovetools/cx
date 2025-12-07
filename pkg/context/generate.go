@@ -6,10 +6,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 // GenerateContextFromRulesFile generates context from an explicit rules file path.
 func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLFormat bool) error {
+	m.log.WithFields(logrus.Fields{
+		"rules_file": rulesFilePath,
+		"xml_format": useXMLFormat,
+	}).Info("Generating context from custom rules file")
+
 	// Ensure .grove directory exists for output files
 	groveDir := filepath.Join(m.workDir, GroveDir)
 	if err := os.MkdirAll(groveDir, 0755); err != nil {
@@ -122,6 +129,12 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 
 // GenerateContext creates the context file from the files list
 func (m *Manager) GenerateContext(useXMLFormat bool) error {
+	m.log.WithFields(logrus.Fields{
+		"workdir":      m.workDir,
+		"xml_format":   useXMLFormat,
+		"context_file": ContextFile,
+	}).Debug("Generating hot context file")
+
 	// Ensure .grove directory exists
 	groveDir := filepath.Join(m.workDir, GroveDir)
 	if err := os.MkdirAll(groveDir, 0755); err != nil {
@@ -210,6 +223,11 @@ func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) er
 		fmt.Fprintf(ctxFile, "</context>\n")
 	}
 
+	m.log.WithFields(logrus.Fields{
+		"file_count":  len(files),
+		"output_path": contextPath,
+	}).Info("Generated hot context file")
+
 	fmt.Printf("Generated %s with %d files\n", ContextFile, len(files))
 
 	return nil
@@ -258,13 +276,19 @@ func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
 	fmt.Fprintf(cachedFile, "  </cold-context>\n")
 	fmt.Fprintf(cachedFile, "</context>\n")
 
-	fmt.Printf("Generated %s with %d cold files\n", CachedContextFile, len(coldFiles))
-
 	// Write the list to .grove/cached-context-files
 	cachedListPath := filepath.Join(m.workDir, CachedContextFilesListFile)
 	if err := m.WriteFilesList(cachedListPath, coldFiles); err != nil {
 		return err
 	}
+
+	m.log.WithFields(logrus.Fields{
+		"file_count":  len(coldFiles),
+		"output_path": cachedPath,
+		"list_path":   cachedListPath,
+	}).Info("Generated cold context artifacts")
+
+	fmt.Printf("Generated %s with %d cold files\n", CachedContextFile, len(coldFiles))
 
 	// Provide user feedback
 	if len(coldFiles) > 0 {

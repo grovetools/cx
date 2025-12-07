@@ -11,6 +11,7 @@ import (
 	"github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/mattsolo1/grove-core/util/pathutil"
+	"github.com/sirupsen/logrus"
 )
 
 // patternInfo holds information about a pattern including any associated directive
@@ -1112,6 +1113,10 @@ func (m *Manager) applyDirectiveFilter(files []string, directive, query string) 
 
 // resolveFilesFromPatterns resolves files from a given set of patterns
 func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) {
+	m.log.WithFields(logrus.Fields{
+		"pattern_count": len(patterns),
+	}).Debug("Resolving files from patterns")
+
 	if len(patterns) == 0 {
 		return []string{}, nil
 	}
@@ -1360,6 +1365,11 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		filesToInclude = append(filesToInclude, file)
 	}
 	sort.Strings(filesToInclude)
+
+	m.log.WithFields(logrus.Fields{
+		"pattern_count": len(patterns),
+		"file_count":    len(filesToInclude),
+	}).Debug("Resolved files from patterns")
 
 	// Return the resolved file list
 	return filesToInclude, nil
