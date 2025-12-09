@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	grovelogging "github.com/mattsolo1/grove-core/logging"
+	"github.com/mattsolo1/grove-core/pkg/profiling"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/sirupsen/logrus"
 )
@@ -53,6 +54,7 @@ type ContextStats struct {
 
 // GetStats analyzes the context and returns comprehensive statistics
 func (m *Manager) GetStats(contextType string, files []string, topN int) (*ContextStats, error) {
+	defer profiling.Start("context.GetStats").Stop()
 	log := grovelogging.NewLogger("grove-context")
 	log.WithFields(logrus.Fields{
 		"context_type": contextType,

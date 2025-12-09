@@ -6,6 +6,7 @@ import (
 
 	"github.com/mattsolo1/grove-core/cli"
 	"github.com/mattsolo1/grove-core/logging"
+	"github.com/mattsolo1/grove-core/pkg/profiling"
 	// "github.com/mattsolo1/grove-core/tui"
 	"github.com/mattsolo1/grove-context/cmd"
 	"github.com/mattsolo1/grove-context/cmd/view"
@@ -29,6 +30,12 @@ func main() {
 		"cx",
 		"LLM context management (formerly grove cx)",
 	)
+
+	// Setup profiling
+	profiler := profiling.NewCobraProfiler()
+	profiler.AddFlags(rootCmd)
+	rootCmd.PersistentPreRunE = profiler.PreRun
+	rootCmd.PersistentPostRun = profiler.PostRun
 
 	// Add subcommands
 	rootCmd.AddCommand(cmd.NewEditCmd())

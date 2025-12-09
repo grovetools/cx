@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/pkg/profiling"
 	"github.com/mattsolo1/grove-core/util/pathutil"
 )
 
@@ -36,8 +37,12 @@ type FileNode struct {
 // AnalyzeProjectTree walks the entire project and creates a tree structure showing
 // which files are included, excluded, or ignored based on context rules
 func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, error) {
+	defer profiling.Start("tree.AnalyzeProjectTree").Stop()
+
 	// Use the new unified classification engine to get all file classifications
+	classifyStopper := profiling.Start("tree.ClassifyAllProjectFiles")
 	fileStatuses, err := m.ClassifyAllProjectFiles(showGitIgnored)
+	classifyStopper.Stop()
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +145,7 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 		nodes = filteredNodes
 	}
 
+	buildStopper := profiling.Start("tree.BuildTreeStructure")
 	// Build the tree structure
 	var root *FileNode
 	if hasExternalFiles || hasExternalViewPaths {
@@ -149,12 +155,15 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 		// No external files, use the working directory as root
 		root = buildTreeWithExternals(workDirCanonical, nodes)
 	}
+	buildStopper.Stop()
 
+	postProcessStopper := profiling.Start("tree.PostProcess")
 	// Post-process the tree to infer directory statuses from their children
 	setDirectoryStatuses(root)
 
 	// Calculate directory token counts
 	calculateDirectoryTokenCounts(root)
+	postProcessStopper.Stop()
 
 	return root, nil
 }

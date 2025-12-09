@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mattsolo1/grove-core/pkg/profiling"
 )
 
 // RuleInfo holds a parsed rule with its line number and origin.
@@ -45,6 +47,7 @@ type FilteredResult map[int][]FilteredFileInfo
 // ResolveFilesWithAttribution walks the filesystem once and attributes each included file
 // to the rule that was responsible for its inclusion. It also tracks exclusions and filtered matches.
 func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionResult, []RuleInfo, ExclusionResult, FilteredResult, error) {
+	defer profiling.Start("context.ResolveFilesWithAttribution").Stop()
 	// 1. Write rulesContent to a temporary file so we can use expandAllRules
 	tmpFile, err := os.CreateTemp("", "grove-rules-*.rules")
 	if err != nil {

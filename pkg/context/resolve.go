@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/pkg/profiling"
 	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/sirupsen/logrus"
@@ -197,6 +198,7 @@ func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, e
 
 // expandAllRules recursively resolves rules, including those from @default directives.
 func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, importLineNum int) (hotRules, coldRules []RuleInfo, viewPaths []string, err error) {
+	defer profiling.Start("context.expandAllRules").Stop()
 	absRulesPath, err := filepath.Abs(rulesPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get absolute path for rules: %w", err)
@@ -795,6 +797,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
+	defer profiling.Start("context.ResolveFilesFromRules").Stop()
 	// Load the active rules content (respects state-based rules)
 	rulesContent, activeRulesFile, err := m.LoadRulesContent()
 	if err != nil {
@@ -956,6 +959,7 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
 func (m *Manager) ResolveColdContextFiles() ([]string, error) {
+	defer profiling.Start("context.ResolveColdContextFiles").Stop()
 	// Load the active rules content (respects state-based rules)
 	rulesContent, activeRulesFile, err := m.LoadRulesContent()
 	if err != nil {
@@ -1113,6 +1117,7 @@ func (m *Manager) applyDirectiveFilter(files []string, directive, query string) 
 
 // resolveFilesFromPatterns resolves files from a given set of patterns
 func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) {
+	defer profiling.Start("context.resolveFilesFromPatterns").Stop()
 	m.log.WithFields(logrus.Fields{
 		"pattern_count": len(patterns),
 	}).Debug("Resolving files from patterns")
@@ -1378,6 +1383,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
 func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher, gitIgnoredFiles map[string]bool, uniqueFiles map[string]bool, useRelativePaths bool) error {
+	defer profiling.Start("context.walkAndMatchPatterns").Stop()
 	// Pre-processing is now done in newPatternMatcher. We access the results from the matcher.
 	dirExclusions := matcher.dirExclusions
 	includeBinary := matcher.includeBinary

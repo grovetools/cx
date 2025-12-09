@@ -13,6 +13,7 @@ import (
 
 	"github.com/mattsolo1/grove-core/config"
 	grovelogging "github.com/mattsolo1/grove-core/logging"
+	"github.com/mattsolo1/grove-core/pkg/profiling"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/state"
 	"github.com/mattsolo1/grove-core/util/pathutil"
@@ -295,6 +296,7 @@ func (m *Manager) WriteFilesList(filename string, files []string) error {
 // getGitIgnoredFiles returns a set of all gitignored files for the repository
 // containing the given directory. It returns a map of absolute paths for efficient lookup.
 func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
+	defer profiling.Start("context.getGitIgnoredFiles").Stop()
 	// Ensure the provided path is absolute
 	absForDir, err := filepath.Abs(forDir)
 	if err != nil {
@@ -974,6 +976,7 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 // resolves and classifies all files based on context rules. It returns a map of file
 // paths to their NodeStatus. This method ensures consistency across all views (tree, stats, list).
 func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeStatus, error) {
+	defer profiling.Start("context.ClassifyAllProjectFiles").Stop()
 	result := make(map[string]NodeStatus)
 
 	// Step 1: Get the definitive sets of hot and cold files using the existing stable methods

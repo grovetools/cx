@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/pkg/profiling"
 	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/sirupsen/logrus"
@@ -55,6 +56,7 @@ func NewAliasResolverWithConfig(configPath string) *AliasResolver {
 // InitProvider performs the workspace discovery process once and initializes the provider.
 func (r *AliasResolver) InitProvider() {
 	r.providerOnce.Do(func() {
+		defer profiling.Start("alias.InitProvider(DiscoverAll)").Stop()
 		logger := logrus.New()
 		logger.SetLevel(logrus.WarnLevel)
 
@@ -75,6 +77,7 @@ func (r *AliasResolver) InitProvider() {
 
 // Resolve translates a pure alias string (e.g., "ecosystem:repo") into an absolute path.
 func (r *AliasResolver) Resolve(alias string) (string, error) {
+	defer profiling.Start("alias.Resolve").Stop()
 	r.InitProvider()
 	if r.DiscoverErr != nil {
 		return "", r.DiscoverErr
@@ -212,6 +215,7 @@ func (r *AliasResolver) Resolve(alias string) (string, error) {
 
 // ResolveLine parses a full rule line, resolves the alias, and reconstructs the line with an absolute path.
 func (r *AliasResolver) ResolveLine(line string) (string, error) {
+	defer profiling.Start("alias.ResolveLine").Stop()
 	// --- Start Notebook Alias Resolution ---
 	// Check for special notebook alias first, as it has higher priority.
 	trimmedLine := strings.TrimSpace(line)
