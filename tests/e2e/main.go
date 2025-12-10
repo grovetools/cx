@@ -108,6 +108,7 @@ func main() {
 
 		// Gitignore Scenarios
 		GitignoreStatsPerLineScenario(),
+		DirectoryPruningPerformanceScenario(),
 		StarPatternRespectsGitignoreScenario(),
 
 		// Floating Pattern Scenarios

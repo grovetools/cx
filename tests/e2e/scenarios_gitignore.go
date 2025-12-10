@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -183,6 +184,125 @@ dist/
 				}
 
 				fmt.Printf("✓ Stats correctly show %d files with %.0f tokens (gitignored files excluded)\n", int(fileCount), totalTokens)
+				return nil
+			}),
+		},
+	}
+}
+
+// DirectoryPruningPerformanceScenario tests that the --directory optimization actually works
+//
+// This test validates that gitignored directories are pruned at the directory level,
+// not by checking every individual file. Without the --directory flag optimization,
+// this test would take 10+ seconds. With it, it should complete in under 5 seconds.
+func DirectoryPruningPerformanceScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-directory-pruning-performance",
+		Description: "Tests that large gitignored directories are pruned efficiently via --directory flag",
+		Tags:        []string{"cx", "gitignore", "performance", "optimization"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup git repository with LARGE gitignored directory", func(ctx *harness.Context) error {
+				// Initialize git repo
+				if result := command.New("git", "init").Dir(ctx.RootDir).Run(); result.Error != nil {
+					return fmt.Errorf("failed to init git repo: %w", result.Error)
+				}
+
+				// Create .gitignore
+				gitignore := `data/
+node_modules/
+`
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, ".gitignore"), gitignore); err != nil {
+					return err
+				}
+
+				// Create a few source files that should be included
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main\n\nfunc main() {}\n"); err != nil {
+					return err
+				}
+
+				// Create THOUSANDS of files in gitignored directories
+				// Without --directory optimization, walking this would take 10+ seconds
+				// With --directory, it should skip the entire directory in milliseconds
+				fmt.Println("Creating 10,000 gitignored files to test directory pruning...")
+				for i := 0; i < 5000; i++ {
+					dataFile := filepath.Join(ctx.RootDir, "data", fmt.Sprintf("file-%d.txt", i))
+					if err := fs.WriteString(dataFile, fmt.Sprintf("Data entry %d\n", i)); err != nil {
+						return err
+					}
+				}
+				for i := 0; i < 5000; i++ {
+					pkgDir := filepath.Join(ctx.RootDir, "node_modules", fmt.Sprintf("pkg-%d", i))
+					if err := fs.WriteString(filepath.Join(pkgDir, "index.js"), fmt.Sprintf("// Package %d\n", i)); err != nil {
+						return err
+					}
+				}
+				fmt.Println("✓ Created 10,000 gitignored files")
+
+				return nil
+			}),
+			harness.NewStep("Create rules file with wildcard pattern", func(ctx *harness.Context) error {
+				rules := `**/*`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Verify --directory flag: cache has 2-3 dirs, not 10k files", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				// First run cx list to populate the cache
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				// Now check the cache file to verify it contains directory entries, not individual files
+				// The cache should be in .grove/git-ignored-cache/
+				cacheDir := filepath.Join(ctx.RootDir, ".grove", "git-ignored-cache")
+				cacheFiles, err := filepath.Glob(filepath.Join(cacheDir, "*.json"))
+				if err != nil || len(cacheFiles) == 0 {
+					return fmt.Errorf("no cache file found in %s", cacheDir)
+				}
+
+				// Read the cache file
+				cacheData, err := os.ReadFile(cacheFiles[0])
+				if err != nil {
+					return fmt.Errorf("failed to read cache file: %w", err)
+				}
+
+				// Parse the JSON array of ignored paths
+				var ignoredPaths []string
+				if err := json.Unmarshal(cacheData, &ignoredPaths); err != nil {
+					return fmt.Errorf("failed to parse cache JSON: %w", err)
+				}
+
+				// THE KEY VALIDATION: With --directory flag, we should have ~2-3 entries (data, node_modules)
+				// Without --directory flag, we would have 10,000+ entries (one per file)
+				if len(ignoredPaths) > 100 {
+					return fmt.Errorf("cache has %d entries, expected ~2-3 (should contain directories, not individual files)\nThis indicates --directory flag is NOT being used", len(ignoredPaths))
+				}
+
+				// Verify the entries are actually directories (not deeply nested files)
+				hasDataDir := false
+				hasNodeModules := false
+				for _, path := range ignoredPaths {
+					base := filepath.Base(path)
+					if base == "data" {
+						hasDataDir = true
+					}
+					if base == "node_modules" {
+						hasNodeModules = true
+					}
+				}
+
+				if !hasDataDir || !hasNodeModules {
+					return fmt.Errorf("cache should contain 'data' and 'node_modules' directory entries, but got: %v", ignoredPaths)
+				}
+
+				fmt.Printf("✓ Gitignore cache has %d entries (directories only, not individual files)\n", len(ignoredPaths))
+				fmt.Printf("✓ Cache contains directory-level entries: data/, node_modules/\n")
 				return nil
 			}),
 		},

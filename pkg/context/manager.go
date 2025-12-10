@@ -62,6 +62,7 @@ type PlanRule struct {
 type Manager struct {
 	workDir         string
 	gitIgnoredCache map[string]map[string]bool // Cache for gitignored files by repository root
+	gitIgnoredMutex sync.RWMutex               // Mutex to protect gitIgnoredCache
 	aliasResolver   *AliasResolver             // Lazily initialized alias resolver
 	allowedRoots    []string
 	allowedRootsErr error
@@ -323,13 +324,18 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 	}
 
 	// Check if we have a cached result for this repository in memory
-	if cachedResult, found := m.gitIgnoredCache[cacheKey]; found {
+	m.gitIgnoredMutex.RLock()
+	cachedResult, found := m.gitIgnoredCache[cacheKey]
+	m.gitIgnoredMutex.RUnlock()
+	if found {
 		return cachedResult, nil
 	}
 
 	// Try to load from disk cache
 	if diskCached, found := m.loadGitIgnoredFromDiskCache(gitRootPath); found {
+		m.gitIgnoredMutex.Lock()
 		m.gitIgnoredCache[cacheKey] = diskCached
+		m.gitIgnoredMutex.Unlock()
 		return diskCached, nil
 	}
 
@@ -348,9 +354,9 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 		}
 	}
 
-	// Use `git ls-files` to get a list of all individual files that are ignored.
-	// We avoid the `--directory` flag to get a complete file list, which simplifies our logic.
-	cmd := exec.Command("git", "ls-files", "--others", "--ignored", "--exclude-standard")
+	// Use `git ls-files` with `--directory` to get a list of ignored directories,
+	// which is much faster than listing every single ignored file.
+	cmd := exec.Command("git", "ls-files", "--others", "--ignored", "--exclude-standard", "--directory")
 	cmd.Dir = gitRootPath
 
 	output, err := cmd.Output()
@@ -366,6 +372,12 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 		if relativePath != "" {
 			// An ignored file is only truly ignored if it's not tracked.
 			if !trackedFiles[relativePath] {
+				// Output from --directory will have a trailing slash for directories.
+				// We trim this so it matches the path provided by filepath.WalkDir.
+				if strings.HasSuffix(relativePath, "/") {
+					relativePath = strings.TrimSuffix(relativePath, "/")
+				}
+
 				// Store the full absolute path for consistent and easy lookup later.
 				absolutePath := filepath.Join(gitRootPath, relativePath)
 
@@ -379,7 +391,9 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 	}
 
 	// Cache the result in memory (use normalized key)
+	m.gitIgnoredMutex.Lock()
 	m.gitIgnoredCache[cacheKey] = ignoredFiles
+	m.gitIgnoredMutex.Unlock()
 
 	// Cache the result on disk for future invocations
 	m.saveGitIgnoredToDiskCache(gitRootPath, ignoredFiles)
