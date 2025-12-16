@@ -11,6 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/tui/components/nvim"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
 )
@@ -58,6 +60,12 @@ type pagerModel struct {
 	// State for Neovim integration
 	exitForNvimEdit bool
 	nvimEditPath    string
+
+	// State for embedded editor
+	editorModel      *nvim.Model
+	isEditing        bool
+	nvimEmbedEnabled bool
+	editingFilePath  string
 }
 
 func newPagerModel(startPage string) (*pagerModel, error) {
@@ -84,14 +92,23 @@ func newPagerModel(startPage string) (*pagerModel, error) {
 		}
 	}
 
+	// Read config to see if nvim embed is enabled
+	nvimEmbedEnabled := false
+	cfg, err := config.LoadFrom(".")
+	// It's okay if config doesn't exist or fails to load, we just use the default (false)
+	if err == nil && cfg != nil && cfg.TUI != nil && cfg.TUI.NvimEmbed != nil {
+		nvimEmbedEnabled = cfg.TUI.NvimEmbed.UserConfig
+	}
+
 	return &pagerModel{
-		pages:           pages,
-		activePage:      activePage,
-		state:           state,
-		keys:            pagerKeys,
-		help:            help.New(),
-		exitForNvimEdit: false,
-		nvimEditPath:    "",
+		pages:            pages,
+		activePage:       activePage,
+		state:            state,
+		keys:             pagerKeys,
+		help:             help.New(),
+		exitForNvimEdit:  false,
+		nvimEditPath:     "",
+		nvimEmbedEnabled: nvimEmbedEnabled,
 	}, nil
 }
 
@@ -102,15 +119,57 @@ func (m *pagerModel) Init() tea.Cmd {
 func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	if m.isEditing && m.editorModel != nil {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.Type == tea.KeyCtrlC {
+				m.editorModel.Save()
+				m.editorModel.Close()
+				m.isEditing = false
+				m.editorModel = nil
+				return m, refreshSharedStateCmd()
+			}
+			if msg.Type == tea.KeyTab || msg.Type == tea.KeyShiftTab {
+				m.editorModel.Save()
+				m.editorModel.Close()
+				m.isEditing = false
+				m.editorModel = nil
+				if msg.Type == tea.KeyShiftTab {
+					m.prevPage()
+				} else {
+					m.nextPage()
+				}
+				return m, tea.Batch(refreshSharedStateCmd(), m.pages[m.activePage].Focus())
+			}
+		case tea.WindowSizeMsg:
+			var cmd tea.Cmd
+			if m.editorModel != nil {
+				editorHeight := msg.Height - 10
+				editorWidth := msg.Width - 4
+				if editorHeight < 10 {
+					editorHeight = 10
+				}
+				if editorWidth < 20 {
+					editorWidth = 20
+				}
+				cmd = m.editorModel.SetSize(editorWidth, editorHeight)
+			}
+			return m, cmd
+		}
+
+		updatedModel, cmd := m.editorModel.Update(msg)
+		if editorModel, ok := updatedModel.(nvim.Model); ok {
+			*m.editorModel = editorModel
+		}
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Calculate available height for the page container
-		// Subtract: pager chrome (4 lines) + top/bottom padding (2 lines) = 6 lines total
 		pageHeight := m.height - 6
 		for _, p := range m.pages {
-			// Pass the full width and the calculated available height to each page.
 			p.SetSize(m.width, pageHeight)
 		}
 
@@ -125,45 +184,70 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prevPage()
 			return m, m.pages[m.activePage].Focus()
 		case key.Matches(msg, m.keys.Edit):
-			// Edit action is only available on the RULES page
 			if m.pages[m.activePage].Name() == "rules" {
-				mgr := context.NewManager("")
-
-				// Check if running inside the Neovim plugin
-				if os.Getenv("GROVE_NVIM_PLUGIN") == "true" {
-					// Signal to Neovim to open the file
-					rulesPath, err := mgr.EnsureAndGetRulesPath()
+				rulesPath := m.state.rulesPath
+				if rulesPath == "" {
+					mgr := context.NewManager("")
+					var err error
+					rulesPath, err = mgr.EnsureAndGetRulesPath()
 					if err != nil {
 						m.state.err = fmt.Errorf("failed to get rules path: %w", err)
 						return m, nil
 					}
+				}
+
+				if m.nvimEmbedEnabled {
+					m.editingFilePath = rulesPath
+					editorHeight := m.height - 10
+					editorWidth := m.width - 4
+					if editorHeight < 10 {
+						editorHeight = 10
+					}
+					if editorWidth < 20 {
+						editorWidth = 20
+					}
+
+					opts := nvim.Options{
+						Width:      editorWidth,
+						Height:     editorHeight,
+						FileToOpen: rulesPath,
+						UseConfig:  true,
+					}
+					editorModel, err := nvim.New(opts)
+					if err != nil {
+						m.state.err = fmt.Errorf("failed to start nvim: %w", err)
+						return m, nil
+					}
+
+					m.editorModel = &editorModel
+					m.editorModel.SetFocused(true)
+					m.isEditing = true
+					return m, m.editorModel.Init()
+				}
+
+				if os.Getenv("GROVE_NVIM_PLUGIN") == "true" {
 					m.exitForNvimEdit = true
 					m.nvimEditPath = rulesPath
 					return m, tea.Quit
 				}
 
-				// Standard terminal: suspend TUI and open editor
+				mgr := context.NewManager("")
 				editorCmd, err := mgr.EditRulesCmd()
 				if err != nil {
 					m.state.err = fmt.Errorf("failed to prepare editor command: %w", err)
 					return m, nil
 				}
 				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
-					// After editor closes, refresh the state
 					return refreshStateMsg{}
 				})
 			}
 		case key.Matches(msg, m.keys.SelectRules):
-			// SelectRules action is only available on the RULES page
 			if m.pages[m.activePage].Name() == "rules" {
-				// Run cx rules command to select a rule set
 				cxCmd := exec.Command("cx", "rules")
 				cxCmd.Stdin = os.Stdin
 				cxCmd.Stdout = os.Stdout
 				cxCmd.Stderr = os.Stderr
-
 				return m, tea.ExecProcess(cxCmd, func(err error) tea.Msg {
-					// After cx rules exits, refresh the state to show new active rule
 					return refreshStateMsg{}
 				})
 			}
@@ -173,7 +257,6 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stateRefreshedMsg:
 		*m.state = msg.state
-		// Refresh the active page's content with the new state
 		return m, m.pages[m.activePage].Focus()
 
 	case refreshStateMsg:
@@ -181,7 +264,6 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, refreshSharedStateCmd()
 	}
 
-	// Delegate msg to active page
 	activePage, pageCmd := m.pages[m.activePage].Update(msg)
 	m.pages[m.activePage] = activePage
 	cmds = append(cmds, pageCmd)
@@ -197,21 +279,28 @@ func (m *pagerModel) View() string {
 		return fmt.Sprintf("Error: %v", m.state.err)
 	}
 
-	// Tab header
 	header := m.renderTabs()
 
-	// Page content
-	pageContent := m.pages[m.activePage].View()
+	var pageContent string
+	if m.isEditing && m.editorModel != nil {
+		pageContent = "\n" + m.editorModel.View()
+	} else {
+		pageContent = m.pages[m.activePage].View()
+	}
 
-	// Footer
-	footer := m.help.View(m.keys)
+	var footer string
+	if m.isEditing && m.editorModel != nil {
+		footer = ""
+	} else {
+		footer = m.help.View(m.keys)
+	}
 
-	// Join all components
 	fullContent := lipgloss.JoinVertical(lipgloss.Left, header, pageContent, footer)
 
-	// Apply padding to the entire view
-	containerStyle := lipgloss.NewStyle().Padding(1, 2)
-	return containerStyle.Render(fullContent)
+	if m.isEditing {
+		return lipgloss.NewStyle().Padding(0, 2).Render(fullContent)
+	}
+	return lipgloss.NewStyle().Padding(1, 2).Render(fullContent)
 }
 
 func (m *pagerModel) nextPage() {
