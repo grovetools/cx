@@ -1279,9 +1279,9 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	// Step 6: Walk each root path to discover all files and directories
 	for _, rootPath := range rootPaths {
 		// Canonicalize the root path for consistent comparisons
-		rootPathCanonical := rootPath
-		if rp, err := filepath.EvalSymlinks(rootPath); err == nil {
-			rootPathCanonical = rp
+		rootPathCanonical, err := pathutil.NormalizeForLookup(rootPath)
+		if err != nil {
+			rootPathCanonical = rootPath
 		}
 
 		gitIgnoredFiles := make(map[string]bool)
@@ -1315,9 +1315,10 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 			}
 
 			// Canonicalize the path to match how files were stored in result
-			canonicalPath := path
-			if cp, err := filepath.EvalSymlinks(path); err == nil {
-				canonicalPath = cp
+			canonicalPath, err := pathutil.NormalizeForLookup(path)
+			if err != nil {
+				// Fallback to the original path if normalization fails
+				canonicalPath = path
 			}
 
 			// Skip the root itself
@@ -1337,14 +1338,14 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 
 			// Classify based on what we know
 			if d.IsDir() {
-				if showGitIgnored && gitIgnoredFiles[path] {
+				if showGitIgnored && gitIgnoredFiles[canonicalPath] {
 					result[canonicalPath] = StatusIgnoredByGit
 				} else {
 					result[canonicalPath] = StatusDirectory
 				}
 			} else {
 				// It's a file
-				if showGitIgnored && gitIgnoredFiles[path] {
+				if showGitIgnored && gitIgnoredFiles[canonicalPath] {
 					result[canonicalPath] = StatusIgnoredByGit
 				} else {
 					// Not in any of our resolved sets, so it's omitted
