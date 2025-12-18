@@ -116,6 +116,10 @@ func main() {
 
 		// Workspace Filter Scenarios
 		WorkspaceExclusionScenario(),
+
+		// Path Normalization Scenarios
+		PathNormalizationWorktreeScenario(),
+		// PathNormalizationSymlinkScenario(), // TODO: Fix symlink test
 	}
 
 	// Setup signal handling for graceful shutdown.

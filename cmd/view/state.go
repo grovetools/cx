@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/sirupsen/logrus"
 )
@@ -121,12 +122,20 @@ func (s *sharedState) getDisplayPathInfo(filePath string) displayPathInfo {
 		return displayPathInfo{path: filePath}
 	}
 
-	absFilePath, err := filepath.Abs(filePath)
+	// Normalize the file path to get a canonical representation
+	// that handles symlinks and case-insensitivity, matching what the provider stores.
+	canonicalPath, err := pathutil.NormalizeForLookup(filePath)
 	if err != nil {
-		return displayPathInfo{path: filePath}
+		// Fallback to absolute path if normalization fails
+		var absErr error
+		canonicalPath, absErr = filepath.Abs(filePath)
+		if absErr != nil {
+			// If even that fails, use the original path
+			canonicalPath = filePath
+		}
 	}
 
-	node := s.projectProvider.FindByPath(absFilePath)
+	node := s.projectProvider.FindByPath(canonicalPath)
 	if node != nil {
 		projectName := node.Name
 		projectPath := node.Path
@@ -140,7 +149,15 @@ func (s *sharedState) getDisplayPathInfo(filePath string) displayPathInfo {
 			}
 		}
 
-		relPath, err := filepath.Rel(projectPath, absFilePath)
+		// Normalize projectPath to match the canonicalPath normalization
+		// This ensures filepath.Rel works correctly when paths have been lowercased
+		normalizedProjectPath, err := pathutil.NormalizeForLookup(projectPath)
+		if err != nil {
+			// Fallback to original projectPath if normalization fails
+			normalizedProjectPath = projectPath
+		}
+
+		relPath, err := filepath.Rel(normalizedProjectPath, canonicalPath)
 		if err == nil {
 			// Add ecosystem context if this is part of an ecosystem
 			var ecosystemName string
@@ -163,7 +180,12 @@ func (s *sharedState) getDisplayPathInfo(filePath string) displayPathInfo {
 	// As a fallback, try to make the path relative to the current working directory.
 	cwd, err := os.Getwd()
 	if err == nil {
-		if relPath, err := filepath.Rel(cwd, absFilePath); err == nil && !strings.HasPrefix(relPath, "..") {
+		// Normalize cwd to match canonicalPath normalization
+		normalizedCwd, cwdErr := pathutil.NormalizeForLookup(cwd)
+		if cwdErr == nil {
+			cwd = normalizedCwd
+		}
+		if relPath, err := filepath.Rel(cwd, canonicalPath); err == nil && !strings.HasPrefix(relPath, "..") {
 			return displayPathInfo{path: relPath}
 		}
 	}
