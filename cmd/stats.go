@@ -17,11 +17,55 @@ import (
 )
 
 var (
-	topN    int
-	perLine bool
+	topN     int
+	perLine  bool
+	chatFile string
 )
 
 func NewStatsCmd() *cobra.Command {
+	// ChatStats holds token counts for a chat session.
+	type ChatStats struct {
+		ContextTokens  int `json:"context_tokens"`
+		ChatFileTokens int `json:"chat_file_tokens"`
+		TotalTokens    int `json:"total_tokens"`
+	}
+
+	// getRulesFileFromChatFile parses the frontmatter of a markdown file to find a `rules_file` key.
+	// It returns the resolved path to the rules file, or an empty string if not found.
+	getRulesFileFromChatFile := func(chatFilePath string) (string, error) {
+		file, err := os.Open(chatFilePath)
+		if err != nil {
+			return "", err
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		inFrontmatter := false
+		frontmatterEnd := false
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.TrimSpace(line) == "---" {
+				if !inFrontmatter {
+					inFrontmatter = true
+					continue
+				} else {
+					frontmatterEnd = true
+					break
+				}
+			}
+
+			if inFrontmatter && !frontmatterEnd {
+				if strings.HasPrefix(line, "rules_file:") {
+					rulesFileName := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+					// Resolve path relative to the chat file's directory
+					return filepath.Join(filepath.Dir(chatFilePath), rulesFileName), nil
+				}
+			}
+		}
+		return "", nil // Not found
+	}
+
 	cmd := &cobra.Command{
 		Use:   "stats [rules-file]",
 		Short: "Provide detailed analysis of context composition",
@@ -35,6 +79,63 @@ Examples:
   cx stats plans/my-plan/rules/job.rules  # Use custom rules file`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Handle --chat-file flag
+			if chatFile != "" {
+				statsProvider := context.GetStatsProvider()
+				mgr := context.NewManager("")
+
+				// 1. Determine the rules file to use
+				rulesFilePath, err := getRulesFileFromChatFile(chatFile)
+				if err != nil {
+					return fmt.Errorf("error reading chat file frontmatter: %w", err)
+				}
+
+				// 2. Resolve context files
+				var contextFiles []string
+				if rulesFilePath != "" {
+					hotFiles, _, err := mgr.ResolveFilesFromCustomRulesFile(rulesFilePath)
+					if err != nil {
+						return fmt.Errorf("failed to resolve context from custom rules file: %w", err)
+					}
+					contextFiles = hotFiles
+				} else {
+					// Fallback to default/active rules
+					contextFiles, err = mgr.ResolveFilesFromRules()
+					if err != nil {
+						return fmt.Errorf("failed to resolve context from active rules: %w", err)
+					}
+				}
+
+				// 3. Calculate context tokens
+				var contextTokens int
+				for _, file := range contextFiles {
+					info, err := statsProvider.GetFileStats(file)
+					if err == nil {
+						contextTokens += info.Tokens
+					}
+				}
+
+				// 4. Calculate chat file tokens
+				var chatFileTokens int
+				chatFileInfo, err := statsProvider.GetFileStats(chatFile)
+				if err == nil {
+					chatFileTokens = chatFileInfo.Tokens
+				}
+
+				// 5. Output JSON result
+				stats := ChatStats{
+					ContextTokens:  contextTokens,
+					ChatFileTokens: chatFileTokens,
+					TotalTokens:    contextTokens + chatFileTokens,
+				}
+				jsonData, err := json.MarshalIndent(stats, "", "  ")
+				if err != nil {
+					return fmt.Errorf("failed to marshal chat stats: %w", err)
+				}
+				fmt.Println(string(jsonData))
+				return nil
+			}
+
 			// Handle --per-line flag
 			if perLine {
 				return outputPerLineStats(args)
@@ -126,6 +227,7 @@ Examples:
 	
 	cmd.Flags().IntVar(&topN, "top", 5, "Number of largest files to show")
 	cmd.Flags().BoolVar(&perLine, "per-line", false, "Provide stats for each line in the rules file")
+	cmd.Flags().StringVar(&chatFile, "chat-file", "", "Provide token stats for a chat file and its context")
 
 	return cmd
 }
