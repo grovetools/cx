@@ -86,7 +86,7 @@ func (m *Manager) GetStats(contextType string, files []string, topN int) (*Conte
 		tokenCounts = append(tokenCounts, fileInfo.Tokens)
 
 		fs := FileStats{
-			Path:   fileInfo.Path,
+			Path:   file,
 			Tokens: fileInfo.Tokens,
 			Size:   fileInfo.Size,
 		}
