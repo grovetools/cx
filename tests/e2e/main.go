@@ -70,6 +70,9 @@ func main() {
 		GitAliasWithGlobPatternsScenario(),
 		GitAliasStatsPerLineScenario(),
 
+		// Notebook Alias Scenarios
+		NotebookAliasScenario(),
+
 		// Git Repository Rules Files
 		GitRepoRulesScenario(),
 
