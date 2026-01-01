@@ -244,30 +244,52 @@ func (m *Manager) resolveConcept(conceptID string, visited map[string]bool) ([]s
 		files = append(files, relatedFiles...)
 	}
 
-	// 8. Resolve related plans using alias resolver
+	// 8. Resolve related plans using notebook locator
 	resolver := m.getAliasResolver()
 	for _, planAlias := range manifest.RelatedPlans {
-		// Parse workspace:path format
+		// Parse workspace:plans/plan-name format
 		parts := strings.SplitN(planAlias, ":", 2)
 		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "Warning: invalid plan alias format '%s', expected workspace:path\n", planAlias)
+			fmt.Fprintf(os.Stderr, "Warning: invalid plan alias format '%s', expected workspace:plans/plan-name\n", planAlias)
 			continue
 		}
 		workspaceName := parts[0]
-		relativePath := parts[1]
+		planPath := parts[1] // e.g., "plans/architecture-plan"
 
-		// Resolve the workspace
+		// Extract plan name from path (should be "plans/plan-name")
+		planPathParts := strings.SplitN(planPath, "/", 2)
+		if len(planPathParts) != 2 || planPathParts[0] != "plans" {
+			fmt.Fprintf(os.Stderr, "Warning: invalid plan path format '%s', expected plans/plan-name\n", planPath)
+			continue
+		}
+		planName := planPathParts[1] // e.g., "architecture-plan"
+
+		// Resolve the workspace to get the WorkspaceNode
 		workspacePath, err := resolver.Resolve(workspaceName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve workspace '%s' for plan alias '%s': %v\n", workspaceName, planAlias, err)
 			continue
 		}
 
-		// Join workspace path with relative path
-		fullPath := filepath.Join(workspacePath, relativePath)
+		// Get the workspace node from the provider
+		currentNode := resolver.Provider.FindByPath(workspacePath)
+		if currentNode == nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not find workspace node for path '%s'\n", workspacePath)
+			continue
+		}
+
+		// Use NotebookLocator to get the plans directory for this workspace
+		plansDir, err := locator.GetPlansDir(currentNode)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not get plans directory for workspace '%s': %v\n", workspaceName, err)
+			continue
+		}
+
+		// Join with the plan name to get the plan directory
+		planDir := filepath.Join(plansDir, planName)
 
 		// Glob all *.md files in the plan directory
-		planFiles, err := filepath.Glob(filepath.Join(fullPath, "*.md"))
+		planFiles, err := filepath.Glob(filepath.Join(planDir, "*.md"))
 		if err == nil {
 			files = append(files, planFiles...)
 		}
