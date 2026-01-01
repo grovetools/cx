@@ -273,26 +273,49 @@ func (m *Manager) resolveConcept(conceptID string, visited map[string]bool) ([]s
 		}
 	}
 
-	// 9. Resolve related notes using alias resolver
+	// 9. Resolve related notes using notebook locator
 	for _, noteAlias := range manifest.RelatedNotes {
-		// Parse workspace:path format
+		// Parse workspace:noteType/filename format (e.g., "test-project:inbox/note.md")
 		parts := strings.SplitN(noteAlias, ":", 2)
 		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "Warning: invalid note alias format '%s', expected workspace:path\n", noteAlias)
+			fmt.Fprintf(os.Stderr, "Warning: invalid note alias format '%s', expected workspace:noteType/filename\n", noteAlias)
 			continue
 		}
 		workspaceName := parts[0]
-		relativePath := parts[1]
+		notePath := parts[1] // e.g., "inbox/note.md"
 
-		// Resolve the workspace
+		// Split the note path into noteType and filename
+		notePathParts := strings.SplitN(notePath, "/", 2)
+		if len(notePathParts) != 2 {
+			fmt.Fprintf(os.Stderr, "Warning: invalid note path format '%s', expected noteType/filename\n", notePath)
+			continue
+		}
+		noteType := notePathParts[0]   // e.g., "inbox"
+		filename := notePathParts[1]   // e.g., "note.md"
+
+		// Resolve the workspace to get the WorkspaceNode
 		workspacePath, err := resolver.Resolve(workspaceName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve workspace '%s' for note alias '%s': %v\n", workspaceName, noteAlias, err)
 			continue
 		}
 
-		// Join workspace path with relative path
-		fullPath := filepath.Join(workspacePath, relativePath)
+		// Get the workspace node from the provider
+		currentNode := resolver.Provider.FindByPath(workspacePath)
+		if currentNode == nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not find workspace node for path '%s'\n", workspacePath)
+			continue
+		}
+
+		// Use NotebookLocator to get the notes directory for this workspace
+		noteTypeDir, err := locator.GetNotesDir(currentNode, noteType)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not get notes directory for workspace '%s', noteType '%s': %v\n", workspaceName, noteType, err)
+			continue
+		}
+
+		// Join with the filename to get the full path
+		fullPath := filepath.Join(noteTypeDir, filename)
 		files = append(files, fullPath)
 	}
 
