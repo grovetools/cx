@@ -252,6 +252,19 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	coldRules = append(coldRules, localCold...)
 	viewPaths = append(viewPaths, localView...)
 
+	// Process concept directives
+	for _, conceptID := range parsed.conceptIDs {
+		resolvedFiles, err := m.resolveConcept(conceptID, visited)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve concept '%s': %v\n", conceptID, err)
+			continue
+		}
+		for _, file := range resolvedFiles {
+			// Add each resolved file as a new rule to be processed
+			hotRules = append(hotRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: 0, EffectiveLineNum: 0})
+		}
+	}
+
 	rulesDir := filepath.Dir(absRulesPath)
 
 	// Process hot rule set imports

@@ -9,6 +9,7 @@ import (
 
 	"github.com/mattsolo1/grove-context/cmd/rules"
 	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/pkg/alias"
 	"github.com/mattsolo1/grove-core/state"
 	"github.com/spf13/cobra"
 )
@@ -128,7 +129,7 @@ Examples:
 // listRulesForProject lists rule sets for a specific project alias.
 func listRulesForProject(projectAlias string, jsonOutput bool) error {
 	// Import the context package to use AliasResolver
-	resolver := context.NewAliasResolver()
+	resolver := alias.NewAliasResolver()
 	projectPath, err := resolver.Resolve(projectAlias)
 	if err != nil {
 		return fmt.Errorf("failed to resolve project alias '%s': %w", projectAlias, err)

@@ -16,11 +16,13 @@ import (
 
 	"github.com/mattsolo1/grove-core/config"
 	grovelogging "github.com/mattsolo1/grove-core/logging"
+	"github.com/mattsolo1/grove-core/pkg/alias"
 	"github.com/mattsolo1/grove-core/pkg/profiling"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/state"
 	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
 // Constants for context file paths
@@ -63,7 +65,7 @@ type Manager struct {
 	workDir         string
 	gitIgnoredCache map[string]map[string]bool // Cache for gitignored files by repository root
 	gitIgnoredMutex sync.RWMutex               // Mutex to protect gitIgnoredCache
-	aliasResolver   *AliasResolver             // Lazily initialized alias resolver
+	aliasResolver   *alias.AliasResolver       // Lazily initialized alias resolver
 	allowedRoots    []string
 	allowedRootsErr error
 	rootsOnce       sync.Once
@@ -155,12 +157,119 @@ func (m *Manager) ListPlanRules() ([]PlanRule, error) {
 }
 
 // getAliasResolver lazily initializes and returns the AliasResolver.
-func (m *Manager) getAliasResolver() *AliasResolver {
+func (m *Manager) getAliasResolver() *alias.AliasResolver {
 	if m.aliasResolver == nil {
-		m.aliasResolver = NewAliasResolverWithWorkDir(m.workDir)
+		m.aliasResolver = alias.NewAliasResolverWithWorkDir(m.workDir)
 	}
 	m.aliasResolver.InitProvider() // This is idempotent
 	return m.aliasResolver
+}
+
+// ConceptManifest represents the structure of a concept-manifest.yml file
+type ConceptManifest struct {
+	ID              string   `yaml:"id"`
+	Title           string   `yaml:"title"`
+	Description     string   `yaml:"description"`
+	Status          string   `yaml:"status"`
+	RelatedConcepts []string `yaml:"related_concepts"`
+	RelatedPlans    []string `yaml:"related_plans"`
+	RelatedNotes    []string `yaml:"related_notes"`
+}
+
+// resolveConcept resolves a concept ID to a list of absolute file paths.
+// It reads the concept-manifest.yml, resolves all related files and concepts recursively.
+func (m *Manager) resolveConcept(conceptID string, visited map[string]bool) ([]string, error) {
+	// Prevent infinite recursion
+	if visited[conceptID] {
+		return nil, nil
+	}
+	visited[conceptID] = true
+
+	// 1. Initialize NotebookLocator
+	cfg, err := config.LoadFrom(m.workDir)
+	if err != nil {
+		// Try loading default config
+		cfg, err = config.LoadDefault()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load config: %w", err)
+		}
+	}
+	locator := workspace.NewNotebookLocator(cfg)
+
+	// 2. Find the current workspace context to locate the concepts directory
+	currentWS, err := workspace.GetProjectByPath(m.workDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get workspace: %w", err)
+	}
+
+	// 3. Find the concepts directory and the manifest file
+	conceptsDir, err := locator.GetNotesDir(currentWS, "concepts")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get concepts directory: %w", err)
+	}
+	manifestPath := filepath.Join(conceptsDir, conceptID, "concept-manifest.yml")
+
+	// 4. Check if manifest exists
+	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("concept manifest not found: %s", manifestPath)
+	}
+
+	// 5. Parse the manifest
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	var manifest ConceptManifest
+	if err := yaml.Unmarshal(manifestData, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to parse manifest: %w", err)
+	}
+
+	var files []string
+	conceptPath := filepath.Join(conceptsDir, conceptID)
+
+	// 6. Add all .md files in the concept directory
+	mdFiles, err := filepath.Glob(filepath.Join(conceptPath, "*.md"))
+	if err == nil {
+		files = append(files, mdFiles...)
+	}
+
+	// 7. Resolve related concepts recursively
+	for _, relatedConceptID := range manifest.RelatedConcepts {
+		relatedFiles, err := m.resolveConcept(relatedConceptID, visited)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve related concept '%s': %v\n", relatedConceptID, err)
+			continue
+		}
+		files = append(files, relatedFiles...)
+	}
+
+	// 8. Resolve related plans using alias resolver
+	resolver := m.getAliasResolver()
+	for _, planAlias := range manifest.RelatedPlans {
+		resolvedPath, err := resolver.Resolve(planAlias)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve plan alias '%s': %v\n", planAlias, err)
+			continue
+		}
+		// Glob all *.md files in the plan directory
+		planFiles, err := filepath.Glob(filepath.Join(resolvedPath, "*.md"))
+		if err == nil {
+			files = append(files, planFiles...)
+		}
+	}
+
+	// 9. Resolve related notes using alias resolver
+	for _, noteAlias := range manifest.RelatedNotes {
+		resolvedPath, err := resolver.Resolve(noteAlias)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve note alias '%s': %v\n", noteAlias, err)
+			continue
+		}
+		files = append(files, resolvedPath)
+	}
+
+	return files, nil
 }
 
 // ResolveLineForRulePreview resolves a single rule line, handling aliases.
