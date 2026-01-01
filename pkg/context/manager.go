@@ -247,13 +247,27 @@ func (m *Manager) resolveConcept(conceptID string, visited map[string]bool) ([]s
 	// 8. Resolve related plans using alias resolver
 	resolver := m.getAliasResolver()
 	for _, planAlias := range manifest.RelatedPlans {
-		resolvedPath, err := resolver.Resolve(planAlias)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not resolve plan alias '%s': %v\n", planAlias, err)
+		// Parse workspace:path format
+		parts := strings.SplitN(planAlias, ":", 2)
+		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "Warning: invalid plan alias format '%s', expected workspace:path\n", planAlias)
 			continue
 		}
+		workspaceName := parts[0]
+		relativePath := parts[1]
+
+		// Resolve the workspace
+		workspacePath, err := resolver.Resolve(workspaceName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve workspace '%s' for plan alias '%s': %v\n", workspaceName, planAlias, err)
+			continue
+		}
+
+		// Join workspace path with relative path
+		fullPath := filepath.Join(workspacePath, relativePath)
+
 		// Glob all *.md files in the plan directory
-		planFiles, err := filepath.Glob(filepath.Join(resolvedPath, "*.md"))
+		planFiles, err := filepath.Glob(filepath.Join(fullPath, "*.md"))
 		if err == nil {
 			files = append(files, planFiles...)
 		}
@@ -261,12 +275,25 @@ func (m *Manager) resolveConcept(conceptID string, visited map[string]bool) ([]s
 
 	// 9. Resolve related notes using alias resolver
 	for _, noteAlias := range manifest.RelatedNotes {
-		resolvedPath, err := resolver.Resolve(noteAlias)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not resolve note alias '%s': %v\n", noteAlias, err)
+		// Parse workspace:path format
+		parts := strings.SplitN(noteAlias, ":", 2)
+		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "Warning: invalid note alias format '%s', expected workspace:path\n", noteAlias)
 			continue
 		}
-		files = append(files, resolvedPath)
+		workspaceName := parts[0]
+		relativePath := parts[1]
+
+		// Resolve the workspace
+		workspacePath, err := resolver.Resolve(workspaceName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve workspace '%s' for note alias '%s': %v\n", workspaceName, noteAlias, err)
+			continue
+		}
+
+		// Join workspace path with relative path
+		fullPath := filepath.Join(workspacePath, relativePath)
+		files = append(files, fullPath)
 	}
 
 	return files, nil
