@@ -243,7 +243,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.SelectRules):
 			if m.pages[m.activePage].Name() == "rules" {
-				cxCmd := exec.Command("cx", "rules")
+				cxCmd := exec.Command("grove", "cx", "rules")
 				cxCmd.Stdin = os.Stdin
 				cxCmd.Stdout = os.Stdout
 				cxCmd.Stderr = os.Stderr
