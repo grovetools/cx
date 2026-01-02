@@ -247,49 +247,14 @@ func (m *Manager) resolveConcept(conceptID string, visited map[string]bool) ([]s
 	// 8. Resolve related plans using notebook locator
 	resolver := m.getAliasResolver()
 	for _, planAlias := range manifest.RelatedPlans {
-		// Parse workspace:plans/plan-name format
-		parts := strings.SplitN(planAlias, ":", 2)
-		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "Warning: invalid plan alias format '%s', expected workspace:plans/plan-name\n", planAlias)
-			continue
-		}
-		workspaceName := parts[0]
-		planPath := parts[1] // e.g., "plans/architecture-plan"
-
-		// Extract plan name from path (should be "plans/plan-name")
-		planPathParts := strings.SplitN(planPath, "/", 2)
-		if len(planPathParts) != 2 || planPathParts[0] != "plans" {
-			fmt.Fprintf(os.Stderr, "Warning: invalid plan path format '%s', expected plans/plan-name\n", planPath)
-			continue
-		}
-		planName := planPathParts[1] // e.g., "architecture-plan"
-
-		// Resolve the workspace to get the WorkspaceNode
-		workspacePath, err := resolver.Resolve(workspaceName)
+		resolvedPath, err := resolver.Resolve(planAlias)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not resolve workspace '%s' for plan alias '%s': %v\n", workspaceName, planAlias, err)
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve plan alias '%s': %v\n", planAlias, err)
 			continue
 		}
 
-		// Get the workspace node from the provider
-		currentNode := resolver.Provider.FindByPath(workspacePath)
-		if currentNode == nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not find workspace node for path '%s'\n", workspacePath)
-			continue
-		}
-
-		// Use NotebookLocator to get the plans directory for this workspace
-		plansDir, err := locator.GetPlansDir(currentNode)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not get plans directory for workspace '%s': %v\n", workspaceName, err)
-			continue
-		}
-
-		// Join with the plan name to get the plan directory
-		planDir := filepath.Join(plansDir, planName)
-
-		// Glob all *.md files in the plan directory
-		planFiles, err := filepath.Glob(filepath.Join(planDir, "*.md"))
+		// Glob all *.md files in the plan directory.
+		planFiles, err := filepath.Glob(filepath.Join(resolvedPath, "*.md"))
 		if err == nil {
 			files = append(files, planFiles...)
 		}
@@ -297,48 +262,12 @@ func (m *Manager) resolveConcept(conceptID string, visited map[string]bool) ([]s
 
 	// 9. Resolve related notes using notebook locator
 	for _, noteAlias := range manifest.RelatedNotes {
-		// Parse workspace:noteType/filename format (e.g., "test-project:inbox/note.md")
-		parts := strings.SplitN(noteAlias, ":", 2)
-		if len(parts) != 2 {
-			fmt.Fprintf(os.Stderr, "Warning: invalid note alias format '%s', expected workspace:noteType/filename\n", noteAlias)
-			continue
-		}
-		workspaceName := parts[0]
-		notePath := parts[1] // e.g., "inbox/note.md"
-
-		// Split the note path into noteType and filename
-		notePathParts := strings.SplitN(notePath, "/", 2)
-		if len(notePathParts) != 2 {
-			fmt.Fprintf(os.Stderr, "Warning: invalid note path format '%s', expected noteType/filename\n", notePath)
-			continue
-		}
-		noteType := notePathParts[0]   // e.g., "inbox"
-		filename := notePathParts[1]   // e.g., "note.md"
-
-		// Resolve the workspace to get the WorkspaceNode
-		workspacePath, err := resolver.Resolve(workspaceName)
+		resolvedPath, err := resolver.Resolve(noteAlias)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not resolve workspace '%s' for note alias '%s': %v\n", workspaceName, noteAlias, err)
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve note alias '%s': %v\n", noteAlias, err)
 			continue
 		}
-
-		// Get the workspace node from the provider
-		currentNode := resolver.Provider.FindByPath(workspacePath)
-		if currentNode == nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not find workspace node for path '%s'\n", workspacePath)
-			continue
-		}
-
-		// Use NotebookLocator to get the notes directory for this workspace
-		noteTypeDir, err := locator.GetNotesDir(currentNode, noteType)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not get notes directory for workspace '%s', noteType '%s': %v\n", workspaceName, noteType, err)
-			continue
-		}
-
-		// Join with the filename to get the full path
-		fullPath := filepath.Join(noteTypeDir, filename)
-		files = append(files, fullPath)
+		files = append(files, resolvedPath)
 	}
 
 	return files, nil
