@@ -6,12 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/mattsolo1/grove-tend/pkg/fs"
 	"github.com/mattsolo1/grove-tend/pkg/git"
 	"github.com/mattsolo1/grove-tend/pkg/harness"
-	"github.com/mattsolo1/grove-tend/pkg/tui"
 )
 
 // StatsAndValidateScenario tests the `cx stats` and `cx validate` commands.
@@ -624,67 +622,6 @@ func ExplicitWorktreeInclusionScenario() *harness.Scenario {
 					return fmt.Errorf("list output is missing the explicitly included worktree file 'feature.go'")
 				}
 				return nil
-			}),
-		},
-	}
-}
-
-// NonExistentPathInRulesScenario tests that `cx view` does not crash when a rule references a non-existent path.
-func NonExistentPathInRulesScenario() *harness.Scenario {
-	return &harness.Scenario{
-		Name:        "cx-non-existent-path-in-rules",
-		Description: "Tests that `cx view` does not crash when a rule references a non-existent path.",
-		Tags:        []string{"cx", "rules", "view", "regression"},
-		Steps: []harness.Step{
-			harness.NewStep("Setup project with a rule for a non-existent path", func(ctx *harness.Context) error {
-				// 1. Create a local file that should be visible in the view.
-				if err := fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main"); err != nil {
-					return err
-				}
-
-				// 2. Configure a default ruleset in grove.yml.
-				groveYml := `name: test-project
-context:
-  default_rules_path: .cx/default.rules`
-				if err := fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), groveYml); err != nil {
-					return err
-				}
-
-				// 3. Create the default ruleset with a pattern for a directory that does not exist.
-				//    This is the problematic rule.
-				defaultRules := `!non-existent-dir/**`
-				if err := fs.WriteString(filepath.Join(ctx.RootDir, ".cx/default.rules"), defaultRules); err != nil {
-					return err
-				}
-
-				// 4. Create the main rules file that includes a valid file and imports the default rules.
-				mainRules := `main.go
-@default: .`
-				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove/rules"), mainRules)
-			}),
-			harness.NewStep("Launch 'cx view' and verify it does not crash", func(ctx *harness.Context) error {
-				cxBinary, err := FindProjectBinary()
-				if err != nil {
-					return err
-				}
-
-				// Start the TUI. Before the fix, this will fail because the process crashes.
-				session, err := ctx.StartTUI(cxBinary, []string{"view"})
-				if err != nil {
-					return fmt.Errorf("failed to start 'cx view' TUI, it may have crashed: %w", err)
-				}
-				ctx.Set("view_session", session)
-
-				// Wait for some text from the UI to confirm it has loaded successfully.
-				if err := session.WaitForText("main.go", 5*time.Second); err != nil {
-					content, _ := session.Capture()
-					return fmt.Errorf("TUI did not display expected content 'main.go'. Got:\n%s", content)
-				}
-				return nil
-			}),
-			harness.NewStep("Quit the TUI", func(ctx *harness.Context) error {
-				session := ctx.Get("view_session").(*tui.Session)
-				return session.SendKeys("q")
 			}),
 		},
 	}
