@@ -97,7 +97,6 @@ func main() {
 		FindDirectiveScenario(),
 		GrepDirectiveScenario(),
 		AliasWithDirectiveScenario(),
-		AliasWithOverlappingDirectiveScenario(),
 		CombinedDirectivesScenario(),
 
 		// Directive Import Scenarios

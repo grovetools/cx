@@ -79,18 +79,19 @@ func newPatternMatcher(patternInfos []patternInfo, workDir string) *patternMatch
 // classify determines if a file should be included based on the matcher's rules.
 // It implements the "last matching pattern wins" logic.
 func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
-	isIncluded := false
+	var lastValidMatch *patternInfo
 
 	relToWorkDir, err := filepath.Rel(pm.workDir, path)
 	isExternal := err != nil || strings.HasPrefix(relToWorkDir, "..")
 
-	for _, info := range pm.patternInfos {
+	for i := range pm.patternInfos {
+		info := pm.patternInfos[i] // Use index to correctly reference the item
+
 		if info.pattern == "!binary:exclude" || info.pattern == "binary:include" {
 			continue
 		}
 
 		// Floating inclusion patterns should not match external files.
-		// A pattern is "floating" if it doesn't contain "/" and isn't an absolute path and doesn't start with ".."
 		isFloatingInclusion := !info.isExclude && !strings.Contains(info.pattern, "/") && !filepath.IsAbs(info.pattern) && !strings.HasPrefix(info.pattern, "..")
 		if isFloatingInclusion && isExternal {
 			continue
@@ -112,19 +113,32 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 		match = m.matchPattern(cleanPattern, matchPath)
 
 		if match {
-			if !info.isExclude && info.directive == "" {
-				isIncluded = true
-			} else if !info.isExclude && info.directive != "" {
-				filtered, err := m.applyDirectiveFilter([]string{path}, info.directive, info.query)
-				if err == nil && len(filtered) > 0 {
-					isIncluded = true
+			isValidMatch := false
+			if info.isExclude {
+				isValidMatch = true
+			} else { // It's an inclusion pattern
+				if info.directive == "" {
+					isValidMatch = true
+				} else {
+					filtered, err := m.applyDirectiveFilter([]string{path}, info.directive, info.query)
+					if err == nil && len(filtered) > 0 {
+						isValidMatch = true
+					}
 				}
-			} else if info.isExclude {
-				isIncluded = false
+			}
+
+			if isValidMatch {
+				lastValidMatch = &info
 			}
 		}
 	}
-	return isIncluded
+
+	if lastValidMatch == nil {
+		return false // No pattern ever matched
+	}
+
+	// Included if the last valid match was not an exclusion
+	return !lastValidMatch.isExclude
 }
 
 // resolveFilesFromRulesContent resolves files based on rules content provided as a byte slice.
