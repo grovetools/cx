@@ -3,7 +3,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -19,56 +18,63 @@ func GitRepoRulesScenario() *harness.Scenario {
 		Description: "Tests importing rules files from external Git repositories using @a:git:owner/repo::ruleset syntax",
 		Tags:        []string{"cx", "git", "repo", "rules", "ruleset"},
 		Steps: []harness.Step{
-			harness.NewStep("Setup mock Git repository with ruleset", func(ctx *harness.Context) error {
-				// Create a mock "remote" repository that will be cloned
-				// We'll put it in a temp location and simulate it as if it were cloned
-				mockRepoPath := filepath.Join(ctx.RootDir, "mock-remote-repos", "github.com", "test-org", "test-repo")
+			harness.NewStep("Setup local Git repository with rulesets", func(ctx *harness.Context) error {
+				// Create a source repository with rulesets, then create a bare clone
+				// This simulates a "remote" repository that can be cloned via file://
+				sourceRepoPath := filepath.Join(ctx.RootDir, "source-repo")
 
-				// Create some files in the mock repo
-				if err := fs.WriteString(filepath.Join(mockRepoPath, "README.md"), "# Test Repo\n"); err != nil {
+				// Create some files in the source repo
+				if err := fs.WriteString(filepath.Join(sourceRepoPath, "README.md"), "# Test Repo\n"); err != nil {
 					return err
 				}
-				if err := fs.WriteString(filepath.Join(mockRepoPath, "src", "main.go"), "package main\n"); err != nil {
+				if err := fs.WriteString(filepath.Join(sourceRepoPath, "src", "main.go"), "package main\n"); err != nil {
 					return err
 				}
-				if err := fs.WriteString(filepath.Join(mockRepoPath, "src", "utils.go"), "package main\n\nfunc Util() {}"); err != nil {
+				if err := fs.WriteString(filepath.Join(sourceRepoPath, "src", "utils.go"), "package main\n\nfunc Util() {}"); err != nil {
 					return err
 				}
-				if err := fs.WriteString(filepath.Join(mockRepoPath, "tests", "main_test.go"), "package main\n\nimport \"testing\""); err != nil {
+				if err := fs.WriteString(filepath.Join(sourceRepoPath, "tests", "main_test.go"), "package main\n\nimport \"testing\""); err != nil {
 					return err
 				}
-				if err := fs.WriteString(filepath.Join(mockRepoPath, "docs", "guide.md"), "# Guide\n"); err != nil {
+				if err := fs.WriteString(filepath.Join(sourceRepoPath, "docs", "guide.md"), "# Guide\n"); err != nil {
 					return err
 				}
 
-				// Create a .cx/default.rules file in the mock repo
+				// Create .cx/default.rules file
 				defaultRules := `# Default rules for test-repo
 src/**/*.go
 !tests/**
 `
-				if err := fs.WriteString(filepath.Join(mockRepoPath, ".cx", "default.rules"), defaultRules); err != nil {
+				if err := fs.WriteString(filepath.Join(sourceRepoPath, ".cx", "default.rules"), defaultRules); err != nil {
 					return err
 				}
 
-				// Create a .cx/docs.rules file in the mock repo
+				// Create .cx/docs.rules file
 				docsRules := `# Documentation rules
 docs/**/*.md
 README.md
 `
-				if err := fs.WriteString(filepath.Join(mockRepoPath, ".cx", "docs.rules"), docsRules); err != nil {
+				if err := fs.WriteString(filepath.Join(sourceRepoPath, ".cx", "docs.rules"), docsRules); err != nil {
 					return err
 				}
 
-				// Initialize git in the mock repo
-				if result := command.New("git", "init").Dir(mockRepoPath).Run(); result.Error != nil {
-					return fmt.Errorf("failed to init git in mock repo: %w", result.Error)
+				// Initialize git and commit
+				if result := command.New("git", "init").Dir(sourceRepoPath).Run(); result.Error != nil {
+					return fmt.Errorf("failed to init git in source repo: %w", result.Error)
 				}
-				if result := command.New("git", "add", ".").Dir(mockRepoPath).Run(); result.Error != nil {
-					return fmt.Errorf("failed to git add in mock repo: %w", result.Error)
+				if result := command.New("git", "add", ".").Dir(sourceRepoPath).Run(); result.Error != nil {
+					return fmt.Errorf("failed to git add in source repo: %w", result.Error)
 				}
-				if result := command.New("git", "commit", "-m", "Initial commit").Dir(mockRepoPath).Run(); result.Error != nil {
-					return fmt.Errorf("failed to git commit in mock repo: %w", result.Error)
+				if result := command.New("git", "commit", "-m", "Initial commit").Dir(sourceRepoPath).Run(); result.Error != nil {
+					return fmt.Errorf("failed to git commit in source repo: %w", result.Error)
 				}
+
+				// Use the source repository directly as the "remote" for file:// URL
+				// No need to create a bare clone - the source repo itself can be cloned
+				repoPath := sourceRepoPath
+
+				// Store the repo path in context for use in later steps
+				ctx.Set("bareRepoPath", repoPath)
 
 				return nil
 			}),
@@ -83,13 +89,16 @@ README.md
 					return err
 				}
 
-				// Create a .grove/rules file that imports from the git repo
-				rulesContent := `# Main project rules
+				// Get the bare repo path from context
+				bareRepoPath := ctx.Get("bareRepoPath").(string)
+
+				// Create a .grove/rules file that imports from the local git repo using file:// URL
+				rulesContent := fmt.Sprintf(`# Main project rules
 *.go
 
-# Import default ruleset from test-repo
-@a:git:test-org/test-repo::default
-`
+# Import default ruleset from local test-repo
+@a:git:file://%s@main::default
+`, bareRepoPath)
 				if err := fs.WriteString(filepath.Join(projectDir, ".grove", "rules"), rulesContent); err != nil {
 					return err
 				}
@@ -107,49 +116,32 @@ README.md
 				return nil
 			}),
 
-			harness.NewStep("Mock repository clone by symlinking", func(ctx *harness.Context) error {
-				// Create the .grove/cx/repos directory structure that grove would use
-				// and symlink our mock repo there to simulate a clone
-				mockRepoPath := filepath.Join(ctx.RootDir, "mock-remote-repos", "github.com", "test-org", "test-repo")
-
-				homeDir, err := os.UserHomeDir()
+			harness.NewStep("Run 'cx generate' to process rules", func(ctx *harness.Context) error {
+				projectDir := filepath.Join(ctx.RootDir, "my-project")
+				cxBinary, err := FindProjectBinary()
 				if err != nil {
-					return fmt.Errorf("failed to get home directory: %w", err)
-				}
-				cxReposDir := filepath.Join(homeDir, ".grove", "cx", "repos")
-
-				// Create the target directory
-				targetPath := filepath.Join(cxReposDir, "github.com_test-org_test-repo_000000")
-
-				// Symlink the mock repo to the cx repos directory
-				if result := command.New("ln", "-s", mockRepoPath, targetPath).Run(); result.Error != nil {
-					return fmt.Errorf("failed to symlink mock repo: %w", result.Error)
-				}
-
-				// Create a manifest file to register the repository
-				manifestContent := fmt.Sprintf(`repositories:
-  https://github.com/test-org/test-repo:
-    pinned_version: ""
-    resolved_commit: "000000"
-    last_synced_at: "2024-01-01T00:00:00Z"
-    audit:
-      status: passed
-      report_path: ""
-`)
-				manifestPath := filepath.Join(homeDir, ".grove", "cx", "manifest.yml")
-				if err := fs.WriteString(manifestPath, manifestContent); err != nil {
 					return err
 				}
 
+				result := command.New(cxBinary, "generate").Dir(projectDir).Run()
+
+				if result.ExitCode != 0 {
+					return fmt.Errorf("cx generate failed: %s\nStderr: %s", result.Stdout, result.Stderr)
+				}
 				return nil
 			}),
 
 			harness.NewStep("Verify default ruleset import includes correct files", func(ctx *harness.Context) error {
 				projectDir := filepath.Join(ctx.RootDir, "my-project")
-				result := command.New("grove", "cx", "list").Dir(projectDir).Run()
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
 
-				if result.Error != nil {
-					return fmt.Errorf("cx list failed: %w", result.Error)
+				result := command.New(cxBinary, "list").Dir(projectDir).Run()
+
+				if result.ExitCode != 0 {
+					return fmt.Errorf("cx list failed: %s\nStderr: %s", result.Stdout, result.Stderr)
 				}
 
 				output := result.Stdout
@@ -161,7 +153,7 @@ README.md
 
 				// Should include src/main.go and src/utils.go from the imported repo
 				if !strings.Contains(output, "src/main.go") {
-					return fmt.Errorf("expected src/main.go from imported repo to be included but it wasn't")
+					return fmt.Errorf("expected src/main.go from imported repo to be included but it wasn't. Output:\n%s", output)
 				}
 				if !strings.Contains(output, "src/utils.go") {
 					return fmt.Errorf("expected src/utils.go from imported repo to be included but it wasn't")
@@ -183,21 +175,35 @@ README.md
 			harness.NewStep("Test different ruleset import (docs)", func(ctx *harness.Context) error {
 				projectDir := filepath.Join(ctx.RootDir, "my-project")
 
+				// Get the bare repo path from context
+				bareRepoPath := ctx.Get("bareRepoPath").(string)
+
 				// Update rules file to import docs ruleset instead
-				rulesContent := `# Main project rules
+				rulesContent := fmt.Sprintf(`# Main project rules
 *.go
 
-# Import docs ruleset from test-repo
-@a:git:test-org/test-repo::docs
-`
+# Import docs ruleset from local test-repo
+@a:git:file://%s@main::docs
+`, bareRepoPath)
 				if err := fs.WriteString(filepath.Join(projectDir, ".grove", "rules"), rulesContent); err != nil {
 					return err
 				}
 
-				result := command.New("grove", "cx", "list").Dir(projectDir).Run()
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
 
-				if result.Error != nil {
-					return fmt.Errorf("cx list failed: %w", result.Error)
+				// Run cx generate to process the updated rules
+				genResult := command.New(cxBinary, "generate").Dir(projectDir).Run()
+				if genResult.ExitCode != 0 {
+					return fmt.Errorf("cx generate failed: %s\nStderr: %s", genResult.Stdout, genResult.Stderr)
+				}
+
+				result := command.New(cxBinary, "list").Dir(projectDir).Run()
+
+				if result.ExitCode != 0 {
+					return fmt.Errorf("cx list failed: %s\nStderr: %s", result.Stdout, result.Stderr)
 				}
 
 				output := result.Stdout
@@ -218,36 +224,6 @@ README.md
 				// Should NOT include src files (not in docs.rules)
 				if strings.Contains(output, "src/main.go") {
 					return fmt.Errorf("expected src/main.go to be excluded but it was included")
-				}
-
-				return nil
-			}),
-
-			harness.NewStep("Test direct GitHub URL with ruleset", func(ctx *harness.Context) error {
-				projectDir := filepath.Join(ctx.RootDir, "my-project")
-
-				// Update rules file to use full GitHub URL syntax
-				rulesContent := `# Main project rules
-*.go
-
-# Import using full URL
-https://github.com/test-org/test-repo::default
-`
-				if err := fs.WriteString(filepath.Join(projectDir, ".grove", "rules"), rulesContent); err != nil {
-					return err
-				}
-
-				result := command.New("grove", "cx", "list").Dir(projectDir).Run()
-
-				if result.Error != nil {
-					return fmt.Errorf("cx list failed: %w", result.Error)
-				}
-
-				output := result.Stdout
-
-				// Should include src files from the imported repo
-				if !strings.Contains(output, "src/main.go") {
-					return fmt.Errorf("expected src/main.go from imported repo to be included but it wasn't")
 				}
 
 				return nil

@@ -704,13 +704,13 @@ func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version, ru
 	}
 
 	// Check for common Git URL patterns
-	gitURLPattern := regexp.MustCompile(`^(https?://|git@|github\.com/|gitlab\.com/|bitbucket\.org/)`)
+	gitURLPattern := regexp.MustCompile(`^(https?://|file://|git@|github\.com/|gitlab\.com/|bitbucket\.org/)`)
 	if !gitURLPattern.MatchString(rule) {
 		return false, "", "", ruleset
 	}
 
 	// Ensure proper URL format first
-	if !strings.HasPrefix(rule, "http://") && !strings.HasPrefix(rule, "https://") {
+	if !strings.HasPrefix(rule, "http://") && !strings.HasPrefix(rule, "https://") && !strings.HasPrefix(rule, "file://") {
 		if strings.HasPrefix(rule, "github.com/") {
 			rule = "https://" + rule
 		} else if strings.HasPrefix(rule, "gitlab.com/") {
@@ -728,6 +728,22 @@ func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version, ru
 	// Now parse the URL to extract repo and version
 	// Format: https://github.com/owner/repo[@version][/path/pattern]
 	// We need to find where the repo ends and the version/path begins
+
+	// Special handling for file:// URLs - they don't have domain/owner/repo structure
+	if strings.HasPrefix(rule, "file://") {
+		// file:// URLs are just file:///absolute/path/to/repo[@version]
+		// Check for version in the path
+		if atIndex := strings.Index(rule, "@"); atIndex != -1 {
+			// Has version: file:///path/to/repo@v1.0.0
+			repoURL = rule[:atIndex]
+			version = rule[atIndex+1:]
+		} else {
+			// No version
+			repoURL = rule
+			version = ""
+		}
+		return true, repoURL, version, ruleset
+	}
 
 	// The pattern is: protocol://domain/owner/repo[@version]
 	// Anything after the repo (with optional version) is a path pattern that should be ignored for repo resolution

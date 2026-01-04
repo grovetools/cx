@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/logging"
 	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/mattsolo1/grove-core/state"
 )
+
+var rulesLog = logging.NewLogger("cx.context.rules")
 
 // parsedRules holds the fully parsed contents of a single rules file,
 // including all rules, directives, and import statements.
@@ -163,7 +166,17 @@ func (m *Manager) parseGitRuleForModification(rule string) (isGit bool, repoURL,
 			// The ruleset will be picked up by ParseGitRule on the full line
 		}
 
-		lineForParsing = "https://github.com/" + repoPart
+		// Check if repoPart is already a full URL or use GitHub as default
+		if strings.HasPrefix(repoPart, "http://") ||
+			strings.HasPrefix(repoPart, "https://") ||
+			strings.HasPrefix(repoPart, "git@") ||
+			strings.HasPrefix(repoPart, "file://") {
+			// Use as-is - already a full URL
+			lineForParsing = repoPart
+		} else {
+			// Shorthand - default to GitHub
+			lineForParsing = "https://github.com/" + repoPart
+		}
 	}
 
 	return m.ParseGitRule(lineForParsing)
@@ -623,6 +636,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 
 				// Check if it has a ruleset specifier (::)
 				if strings.Contains(gitPart, "::") {
+
 					isGitAliasRuleset = true
 					// Split on :: to get repo part and ruleset name
 					parts := strings.SplitN(gitPart, "::", 2)
@@ -630,11 +644,21 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 						repoPart := parts[0]    // e.g., "owner/repo" or "owner/repo@version"
 						rulesetName := parts[1] // e.g., "default"
 
-						// Convert to GitHub URL
-						githubURL := "https://github.com/" + repoPart
+						// Check if repoPart is already a full URL or use GitHub as default
+						var fullURL string
+						if strings.HasPrefix(repoPart, "http://") ||
+							strings.HasPrefix(repoPart, "https://") ||
+							strings.HasPrefix(repoPart, "git@") ||
+							strings.HasPrefix(repoPart, "file://") {
+							// Use as-is - already a full URL
+							fullURL = repoPart
+						} else {
+							// Shorthand - default to GitHub
+							fullURL = "https://github.com/" + repoPart
+						}
 
 						// Parse to extract version if present
-						_, repoURL, version, _ := m.ParseGitRule(githubURL)
+						_, repoURL, version, _ := m.ParseGitRule(fullURL)
 
 						// Create git import identifier
 						importIdentifier := fmt.Sprintf("git::%s@%s::%s", repoURL, version, rulesetName)
@@ -757,12 +781,24 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					prefix = "@alias:git:"
 				}
 				repoPart := strings.TrimPrefix(tempLine, prefix)
-				githubURL := "https://github.com/" + repoPart
+
+				// Check if repoPart is already a full URL or use GitHub as default
+				var fullURL string
+				if strings.HasPrefix(repoPart, "http://") ||
+					strings.HasPrefix(repoPart, "https://") ||
+					strings.HasPrefix(repoPart, "git@") ||
+					strings.HasPrefix(repoPart, "file://") {
+					// Use as-is - already a full URL
+					fullURL = repoPart
+				} else {
+					// Shorthand - default to GitHub
+					fullURL = "https://github.com/" + repoPart
+				}
 
 				if isExclude {
-					processedLine = "!" + githubURL
+					processedLine = "!" + fullURL
 				} else {
-					processedLine = githubURL
+					processedLine = fullURL
 				}
 			} else if resolver != nil && (strings.Contains(rulePart, "@alias:") || strings.Contains(rulePart, "@a:")) {
 				resolvedLine, resolveErr := resolver.ResolveLine(rulePart)

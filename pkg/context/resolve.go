@@ -9,11 +9,14 @@ import (
 	"strings"
 
 	"github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/logging"
 	"github.com/mattsolo1/grove-core/pkg/profiling"
 	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/sirupsen/logrus"
 )
+
+var log = logging.NewLogger("cx.context.resolve")
 
 // patternInfo holds information about a pattern including any associated directive
 type patternInfo struct {
@@ -313,21 +316,10 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				continue
 			}
 
-			// Get the bare path from the manifest to find persistent rules
-			manifest, err := repoManager.LoadManifest()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not load repo manifest for git import: %v\n", err)
-				continue
-			}
-			repoInfo, ok := manifest.Repositories[repoURL]
-			if !ok {
-				fmt.Fprintf(os.Stderr, "Warning: repository %s not found in manifest for git import\n", repoURL)
-				continue
-			}
-			barePath := repoInfo.BarePath
-
-			// Find the ruleset file within the bare repository's .cx directories
-			rulesFilePath, err := FindRulesetFile(barePath, rulesetName)
+			// Find the ruleset file within the cloned repository's .cx directories
+			// Use localPath (the worktree) instead of barePath because the ruleset files
+			// are in the checked-out working tree, not the bare repository
+			rulesFilePath, err := FindRulesetFile(localPath, rulesetName)
 			if err != nil {
 				// Special case: if 'default' ruleset is requested but doesn't exist, treat it as "include all"
 				if rulesetName == "default" {
@@ -507,20 +499,10 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				continue
 			}
 
-			// Get the bare path from the manifest to find persistent rules
-			manifest, err := repoManager.LoadManifest()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not load repo manifest for git import: %v\n", err)
-				continue
-			}
-			repoInfo, ok := manifest.Repositories[repoURL]
-			if !ok {
-				fmt.Fprintf(os.Stderr, "Warning: repository %s not found in manifest for git import\n", repoURL)
-				continue
-			}
-			barePath := repoInfo.BarePath
-
-			rulesFilePath, err := FindRulesetFile(barePath, rulesetName)
+			// Find the ruleset file within the cloned repository's .cx directories
+			// Use localPath (the worktree) instead of barePath because the ruleset files
+			// are in the checked-out working tree, not the bare repository
+			rulesFilePath, err := FindRulesetFile(localPath, rulesetName)
 			if err != nil {
 				if rulesetName == "default" {
 					coldRules = append(coldRules, RuleInfo{
