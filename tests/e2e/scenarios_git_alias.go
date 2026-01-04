@@ -6,16 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattsolo1/grove-tend/pkg/command"
 	"github.com/mattsolo1/grove-tend/pkg/fs"
 	"github.com/mattsolo1/grove-tend/pkg/harness"
 )
 
-// GitAliasBasicScenario tests basic Git alias syntax without version
+// GitAliasBasicScenario tests basic Git alias syntax with explicit version
 func GitAliasBasicScenario() *harness.Scenario {
 	return &harness.Scenario{
 		Name:        "cx-git-alias-basic",
-		Description: "Tests basic @a:git:owner/repo alias syntax without version",
+		Description: "Tests basic @a:git:owner/repo@version alias syntax",
 		Tags:        []string{"cx", "git", "alias"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup test project", func(ctx *harness.Context) error {
@@ -36,8 +35,8 @@ func main() {
 				rulesContent := `# Local files
 *.go
 
-# Include lipgloss using Git alias
-@a:git:charmbracelet/lipgloss
+# Include lipgloss using Git alias (explicit version for sandboxed testing)
+@a:git:charmbracelet/lipgloss@v0.13.0
 
 # Exclude tests
 !**/*_test.go`
@@ -55,7 +54,7 @@ func main() {
 					return err
 				}
 
-				cmd := command.New(cxBinary, "generate").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				if result.ExitCode != 0 {
@@ -76,7 +75,7 @@ func main() {
 					return err
 				}
 
-				cmd := command.New(cxBinary, "repo", "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "repo", "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				if result.ExitCode != 0 {
@@ -96,7 +95,7 @@ func main() {
 					return err
 				}
 
-				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				cmd := ctx.Command(cxBinary, "list").Dir(ctx.RootDir)
 				result := cmd.Run()
 
 				if result.ExitCode != 0 {
@@ -154,7 +153,7 @@ func main() {}`
 					return err
 				}
 
-				result := command.New(cxBinary, "generate").Dir(ctx.RootDir).Run()
+				result := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir).Run()
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx generate failed: %s\nStderr: %s", result.Stdout, result.Stderr)
 				}
@@ -167,7 +166,7 @@ func main() {}`
 					return err
 				}
 
-				result := command.New(cxBinary, "repo", "list").Dir(ctx.RootDir).Run()
+				result := ctx.Command(cxBinary, "repo", "list").Dir(ctx.RootDir).Run()
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx repo list failed: %s", result.Stderr)
 				}
@@ -198,8 +197,8 @@ func GitAliasWithGlobPatternsScenario() *harness.Scenario {
 				rulesContent := `# Local files
 *.go
 
-# Git alias without version but with glob pattern
-@a:git:charmbracelet/lipgloss/**/*.go
+# Git alias with version and glob pattern
+@a:git:charmbracelet/lipgloss@v0.13.0/**/*.go
 
 # Git alias with version and glob pattern
 @a:git:charmbracelet/bubbletea@v1.3.9/**/*.go
@@ -217,7 +216,7 @@ func GitAliasWithGlobPatternsScenario() *harness.Scenario {
 					return err
 				}
 
-				result := command.New(cxBinary, "generate").Dir(ctx.RootDir).Run()
+				result := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir).Run()
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx generate failed: %s\nStderr: %s", result.Stdout, result.Stderr)
 				}
@@ -230,7 +229,7 @@ func GitAliasWithGlobPatternsScenario() *harness.Scenario {
 					return err
 				}
 
-				result := command.New(cxBinary, "repo", "list").Dir(ctx.RootDir).Run()
+				result := ctx.Command(cxBinary, "repo", "list").Dir(ctx.RootDir).Run()
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx repo list failed: %s", result.Stderr)
 				}
@@ -256,7 +255,7 @@ func GitAliasWithGlobPatternsScenario() *harness.Scenario {
 					return err
 				}
 
-				result := command.New(cxBinary, "list").Dir(ctx.RootDir).Run()
+				result := ctx.Command(cxBinary, "list").Dir(ctx.RootDir).Run()
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx list failed: %s", result.Stderr)
 				}
@@ -314,7 +313,7 @@ func GitAliasStatsPerLineScenario() *harness.Scenario {
 					return err
 				}
 
-				result := command.New(cxBinary, "generate").Dir(ctx.RootDir).Run()
+				result := ctx.Command(cxBinary, "generate").Dir(ctx.RootDir).Run()
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx generate failed: %s", result.Stderr)
 				}
@@ -328,7 +327,7 @@ func GitAliasStatsPerLineScenario() *harness.Scenario {
 				}
 
 				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
-				result := command.New(cxBinary, "stats", rulesPath, "--per-line").Dir(ctx.RootDir).Run()
+				result := ctx.Command(cxBinary, "stats", rulesPath, "--per-line").Dir(ctx.RootDir).Run()
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx stats --per-line failed: %s", result.Stderr)
 				}
