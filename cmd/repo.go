@@ -69,11 +69,57 @@ func newRepoListCmd() *cobra.Command {
 
 			// Create a tabwriter for formatted output
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "URL\tBARE REPO PATH")
-			fmt.Fprintln(w, "---\t--------------")
+			fmt.Fprintln(w, "URL\tSOURCE REF\tCOMMIT")
+			fmt.Fprintln(w, "---\t----------\t------")
 
 			for _, r := range repos {
-				fmt.Fprintf(w, "%s\t%s\n", r.URL, r.BarePath)
+				if r.Worktrees == nil || len(r.Worktrees) == 0 {
+					fmt.Fprintf(w, "%s\t(none)\t(none)\n", r.URL)
+					continue
+				}
+
+				// Collect and sort worktrees for consistent output
+				type worktreeEntry struct {
+					sourceRef string
+					commit    string
+				}
+				var entries []worktreeEntry
+				for commit, wt := range r.Worktrees {
+					sourceRef := wt.SourceRef
+					if sourceRef == "" {
+						sourceRef = "(default)"
+					}
+					entries = append(entries, worktreeEntry{
+						sourceRef: sourceRef,
+						commit:    commit,
+					})
+				}
+
+				// Sort by source ref for consistent output
+				for i := 0; i < len(entries); i++ {
+					for j := i + 1; j < len(entries); j++ {
+						if entries[i].sourceRef > entries[j].sourceRef {
+							entries[i], entries[j] = entries[j], entries[i]
+						}
+					}
+				}
+
+				// Print first entry with URL
+				first := entries[0]
+				commitShort := first.commit
+				if len(commitShort) > 7 {
+					commitShort = commitShort[:7]
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\n", r.URL, first.sourceRef, commitShort)
+
+				// Print remaining entries without URL
+				for _, entry := range entries[1:] {
+					commitShort := entry.commit
+					if len(commitShort) > 7 {
+						commitShort = commitShort[:7]
+					}
+					fmt.Fprintf(w, "\t%s\t%s\n", entry.sourceRef, commitShort)
+				}
 			}
 
 			w.Flush()
