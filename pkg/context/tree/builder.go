@@ -200,10 +200,14 @@ func buildTreeWithSyntheticRoot(workDir string, nodes map[string]*FileNode) *Fil
 		cwdNode.Name = filepath.Base(workDir) + " (CWD)"
 	}
 
-	// Add /Users as the only child of synthetic root
-	usersKey := normalizePathKey("/Users")
-	if usersNode, exists := nodes[usersKey]; exists {
-		syntheticRoot.Children = append(syntheticRoot.Children, usersNode)
+	// Add common top-level directories to synthetic root
+	// Check for common Unix top-level paths (not hardcoded to /Users which fails in test environments)
+	commonTopLevelDirs := []string{"/Users", "/var", "/private", "/tmp", "/home", "/opt", "/usr"}
+	for _, topLevelPath := range commonTopLevelDirs {
+		topLevelKey := normalizePathKey(topLevelPath)
+		if topLevelNode, exists := nodes[topLevelKey]; exists {
+			syntheticRoot.Children = append(syntheticRoot.Children, topLevelNode)
+		}
 	}
 
 	// Sort children at each level
@@ -286,12 +290,16 @@ func ensureParentNodes(rootPath string, path string, nodes map[string]*FileNode)
 
 // sortChildren recursively sorts all children nodes
 func sortChildren(node *FileNode) {
-	if len(node.Children) == 0 {
+	if node == nil || len(node.Children) == 0 {
 		return
 	}
 
 	// Sort: directories first, then by name
 	sort.Slice(node.Children, func(i, j int) bool {
+		// Nil check for safety
+		if node.Children[i] == nil || node.Children[j] == nil {
+			return false
+		}
 		if node.Children[i].IsDir != node.Children[j].IsDir {
 			return node.Children[i].IsDir
 		}
@@ -300,7 +308,7 @@ func sortChildren(node *FileNode) {
 
 	// Recursively sort children
 	for _, child := range node.Children {
-		if child.IsDir {
+		if child != nil && child.IsDir {
 			sortChildren(child)
 		}
 	}

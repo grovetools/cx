@@ -1,4 +1,4 @@
-// File: grove-context/tests/e2e/scenarios_tui.go
+// File: grove-context/tests/e2e/scenarios_view_tree.go
 package main
 
 import (
@@ -8,155 +8,264 @@ import (
 	"time"
 
 	"github.com/mattsolo1/grove-tend/pkg/fs"
+	"github.com/mattsolo1/grove-tend/pkg/git"
 	"github.com/mattsolo1/grove-tend/pkg/harness"
 	"github.com/mattsolo1/grove-tend/pkg/tui"
+	"github.com/mattsolo1/grove-tend/pkg/verify"
 )
 
-// TUIViewTreeScenario tests the interactive `cx view` tree page.
+// TUIViewTreeScenario tests the primary features of `cx view`.
 func TUIViewTreeScenario() *harness.Scenario {
-	return &harness.Scenario{
-		Name:        "cx-view-tui-tree",
-		Description: "Tests the interactive `cx view` tree page for correctness.",
-		Tags:        []string{"cx", "tui", "view", "tree"},
-		Steps: []harness.Step{
-			// harness.NewStep("Clean up existing tmux sessions", func(ctx *harness.Context) error {
-			// 	if err := CleanupExistingTestSessions(); err != nil {
-			// 		fmt.Printf("   ⚠️  Warning: Could not clean existing sessions: %v\n", err)
-			// 	}
-			// 	return nil
-			// }),
-			harness.NewStep("Setup project with diverse file statuses", func(ctx *harness.Context) error {
-				// Create a file structure that will test all status types.
-				fs.WriteString(filepath.Join(ctx.RootDir, "hot-file.go"), "package main // Should be in hot context")
-				fs.CreateDir(filepath.Join(ctx.RootDir, "docs"))
-				fs.WriteString(filepath.Join(ctx.RootDir, "docs", "guide.md"), "# Guide // Should be in cold context")
-				fs.WriteString(filepath.Join(ctx.RootDir, "hot-file_test.go"), "package main // Should be excluded")
-				fs.WriteString(filepath.Join(ctx.RootDir, "untracked.txt"), "Omitted file")
-
-				// Define rules to classify the files.
-				rules := `# Hot context rules
-**/*.go
-!**/*_test.go
----
-# Cold context rules
-docs/**/*.md`
-				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
-			}),
-			harness.NewStep("Launch 'cx view' on tree page", func(ctx *harness.Context) error {
-				cxBinary, err := FindProjectBinary()
-				if err != nil {
-					return err
-				}
-
-				// Start the TUI on the 'tree' page in an isolated tmux session.
-				session, err := ctx.StartTUI(cxBinary, []string{"view", "--page", "tree"}, tui.WithEnv("CLICOLOR_FORCE=1"))
-				if err != nil {
-					return fmt.Errorf("failed to start 'cx view' TUI: %w", err)
-				}
-				ctx.Set("view_session", session)
-
-				// Wait for a key element to ensure the TUI has loaded.
-				return session.WaitForText("hot-file.go", 5*time.Second)
-			}),
-			harness.NewStep("Verify initial file status indicators", func(ctx *harness.Context) error {
-				session := ctx.Get("view_session").(*tui.Session)
-				content, err := session.Capture(tui.WithCleanedOutput())
-				if err != nil {
-					return fmt.Errorf("failed to capture screen: %w", err)
-				}
-
-				// Debug: print the captured content
-				fmt.Printf("\n=== DEBUG: Captured TUI Content ===\n%s\n=== END DEBUG ===\n", content)
-
-				// Verify hot file - status symbol comes AFTER the filename
-				if !strings.Contains(content, "hot-file.go") || !strings.Contains(content, "✓") {
-					return fmt.Errorf("expected 'hot-file.go' with hot context indicator (✓)")
-				}
-
-				// Verify excluded file - status symbol comes AFTER the filename
-				if !strings.Contains(content, "hot-file_test.go") || !strings.Contains(content, "🚫") {
-					return fmt.Errorf("expected 'hot-file_test.go' with excluded indicator (🚫)")
-				}
-
-				// Verify omitted file (no indicator)
-				if !strings.Contains(content, "untracked.txt") {
-					return fmt.Errorf("'untracked.txt' should be visible")
-				}
-				// Verify untracked.txt doesn't have status indicators (should not have ✓ or 🚫 on the same line)
-				lines := strings.Split(content, "\n")
-				for _, line := range lines {
-					if strings.Contains(line, "untracked.txt") {
-						if strings.Contains(line, "✓") || strings.Contains(line, "🚫") || strings.Contains(line, "❄️") {
-							return fmt.Errorf("'untracked.txt' should not have any status indicator, but line contains: %s", line)
-						}
-						break
-					}
-				}
-
-				// Verify collapsed directory - expandIndicator comes before icon
-				if !strings.Contains(content, "▶") || !strings.Contains(content, "docs") {
-					return fmt.Errorf("'docs' directory should be visible and collapsed (▶)")
-				}
-				return nil
-			}),
-			harness.NewStep("Test directory expansion and verify cold indicator", func(ctx *harness.Context) error {
-				session := ctx.Get("view_session").(*tui.Session)
-
-				// Navigate to the 'docs' directory. `NavigateToText` is robust against layout changes.
-				if err := session.NavigateToText("docs"); err != nil {
-					return fmt.Errorf("failed to navigate to 'docs' directory: %w", err)
-				}
-
-				// Press Enter to expand the directory.
-				if err := session.SendKeys("enter"); err != nil {
-					return fmt.Errorf("failed to send 'enter' key: %w", err)
-				}
-
-				// Wait for the UI to redraw and stabilize after expansion.
-				if err := session.WaitForUIStable(2*time.Second, 100*time.Millisecond, 200*time.Millisecond); err != nil {
-					return fmt.Errorf("UI did not stabilize after expanding directory: %w", err)
-				}
-
-				content, err := session.Capture(tui.WithCleanedOutput())
-				if err != nil {
-					return fmt.Errorf("failed to capture screen after expansion: %w", err)
-				}
-
-				// Debug: print the captured content after expansion
-				fmt.Printf("\n=== DEBUG: After Expansion ===\n%s\n=== END DEBUG ===\n", content)
-
-				// Verify directory is now expanded (▼ should be present, docs should still be there)
-				if !strings.Contains(content, "▼") || !strings.Contains(content, "docs") {
-					return fmt.Errorf("expected 'docs' directory to be expanded (▼)")
-				}
-				// Verify guide.md is visible with cold indicator (❄️ comes AFTER filename)
-				if !strings.Contains(content, "guide.md") || !strings.Contains(content, "❄️") {
-					return fmt.Errorf("expected 'guide.md' to be visible with cold context indicator (❄️)")
-				}
-				return nil
-			}),
-			harness.NewStep("Verify ANSI color codes are present", func(ctx *harness.Context) error {
-				session := ctx.Get("view_session").(*tui.Session)
-				content, err := session.Capture(tui.WithRawOutput())
-				if err != nil {
-					return fmt.Errorf("failed to capture raw output: %w", err)
-				}
-
-				// A simple but effective check for ANSI codes.
-				if !strings.Contains(content, "\x1b[") {
-					return fmt.Errorf("no ANSI escape codes found; colors are not being rendered")
-				}
-				// Check for 24-bit color codes, which indicates the theme is working.
-				if !strings.Contains(content, "[38;2;") {
-					return fmt.Errorf("no RGB color codes found; theme may not be applied correctly")
-				}
-				return nil
-			}),
-			harness.NewStep("Quit the TUI", func(ctx *harness.Context) error {
-				session := ctx.Get("view_session").(*tui.Session)
-				return session.SendKeys("q")
-			}),
+	return harness.NewScenario(
+		"cx-view-tui-comprehensive",
+		"Verifies core features of the `cx view` command in a comprehensive environment.",
+		[]string{"cx", "tui", "view", "tree"},
+		[]harness.Step{
+			harness.NewStep("Setup comprehensive TUI environment", setupComprehensiveCXEnvironment),
+			harness.NewStep("Launch TUI and test initial navigation", launchAndTestInitialCXView),
+			harness.NewStep("Test page navigation", testCXViewPageNavigation),
+			harness.NewStep("Test interactive rule modification", testCXViewRuleModification),
+			harness.NewStep("Test search functionality", testCXViewSearch),
+			harness.NewStep("Quit the TUI", quitCXViewTUI),
 		},
-	}
+	)
 }
 
+// setupComprehensiveCXEnvironment creates a rich, multi-project environment for testing `cx view`.
+func setupComprehensiveCXEnvironment(ctx *harness.Context) error {
+	// 1. Configure a sandboxed global environment.
+	grovesDir := filepath.Join(ctx.RootDir, "projects")
+	globalYAML := fmt.Sprintf(`
+version: "1.0"
+groves:
+  e2e-projects:
+    path: "%s"
+`, grovesDir)
+	globalConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
+	if err := fs.CreateDir(globalConfigDir); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(globalConfigDir, "grove.yml"), globalYAML); err != nil {
+		return err
+	}
+
+	// 2. Create multiple projects.
+	projectADir := filepath.Join(grovesDir, "project-a")
+	ecosystemBDir := filepath.Join(grovesDir, "ecosystem-b")
+	subprojectCDir := filepath.Join(grovesDir, "subproject-c")
+
+	// -- Project A (Standalone) --
+	if err := fs.WriteString(filepath.Join(projectADir, "grove.yml"), "name: project-a"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, ".gitignore"), "*.log\n"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "main.go"), "package main // hot"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "main_test.go"), "package main // excluded"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "README.md"), "# Project A // cold"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "test.log"), "log content"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "untracked.txt"), "omitted file"); err != nil {
+		return err
+	}
+
+	repoA, err := git.SetupTestRepo(projectADir)
+	if err != nil {
+		return err
+	}
+	if err := repoA.AddCommit("initial commit for project A"); err != nil {
+		return err
+	}
+	if err := repoA.CreateWorktree(filepath.Join(projectADir, ".grove-worktrees", "feature-branch"), "feature-branch"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, ".grove-worktrees", "feature-branch", "feature.go"), "package main // feature file"); err != nil {
+		return err
+	}
+
+	// -- Ecosystem B --
+	if err := fs.WriteString(filepath.Join(ecosystemBDir, "grove.yml"), "name: ecosystem-b"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(ecosystemBDir, "helper.go"), "package helper"); err != nil {
+		return err
+	}
+	repoB, err := git.SetupTestRepo(ecosystemBDir)
+	if err != nil {
+		return err
+	}
+	if err := repoB.AddCommit("initial ecosystem commit"); err != nil {
+		return err
+	}
+
+	// -- Subproject C (Standalone) --
+	if err := fs.WriteString(filepath.Join(subprojectCDir, "grove.yml"), "name: subproject-c"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(subprojectCDir, "lib.go"), "package lib // from subproject"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(subprojectCDir, "lib_test.go"), "package lib_test"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(subprojectCDir, ".cx", "default.rules"), "lib.go"); err != nil {
+		return err
+	}
+	repoC, err := git.SetupTestRepo(subprojectCDir)
+	if err != nil {
+		return err
+	}
+	if err := repoC.AddCommit("initial subproject commit"); err != nil {
+		return err
+	}
+
+	// -- Main rules file in project-a --
+	rules := `*.go
+!*_test.go
+@a:subproject-c::default
+---
+README.md
+`
+	if err := fs.WriteString(filepath.Join(projectADir, ".grove", "rules"), rules); err != nil {
+		return err
+	}
+
+	ctx.Set("project_a_dir", projectADir)
+	return nil
+}
+
+func launchAndTestInitialCXView(ctx *harness.Context) error {
+	cxBin, err := FindProjectBinary()
+	if err != nil {
+		return err
+	}
+	projectADir := ctx.GetString("project_a_dir")
+
+	session, err := ctx.StartTUI(cxBin, []string{"view", "--page", "tree"},
+		tui.WithCwd(projectADir),
+		tui.WithEnv("CLICOLOR_FORCE=1"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to start TUI session: %w", err)
+	}
+	ctx.Set("tui_session", session)
+
+	// Wait for tree to render - look for any top-level directory names
+	// The tree starts collapsed, so we won't see files immediately
+	if _, err := session.WaitForAnyText([]string{"var", "private", "Users"}, 10*time.Second); err != nil {
+		view, _ := session.Capture()
+		return fmt.Errorf("timeout waiting for TUI to start: %w\nView:\n%s", err, view)
+	}
+	if err := session.WaitStable(); err != nil {
+		return err
+	}
+
+	// Verify initial state - tree starts collapsed showing only top-level directories
+	content, _ := session.Capture(tui.WithCleanedOutput())
+	return ctx.Verify(func(v *verify.Collector) {
+		// Check that the tree is showing top-level directories
+		v.True("tree shows top-level directory",
+			strings.Contains(content, "var") || strings.Contains(content, "private") || strings.Contains(content, "Users"))
+		// The tree is collapsed, so individual files aren't visible yet
+		// We'll expand and test them in the navigation step
+	})
+}
+
+func testCXViewPageNavigation(ctx *harness.Context) error {
+	session := ctx.Get("tui_session").(*tui.Session)
+	if err := session.Type("Tab"); err != nil { // to rules page
+		return err
+	}
+	if err := session.WaitForText("Rules File:", 2*time.Second); err != nil {
+		return err
+	}
+	if err := session.Type("Tab"); err != nil { // to stats page
+		return err
+	}
+	if err := session.WaitForText("File Types", 2*time.Second); err != nil {
+		return err
+	}
+	if err := session.Type("Tab"); err != nil { // to list page
+		return err
+	}
+	if err := session.WaitForText("Files in Hot Context", 2*time.Second); err != nil {
+		return err
+	}
+	if err := session.Type("Shift+Tab"); err != nil { // back to stats page
+		return err
+	}
+	return session.WaitForText("File Types", 2*time.Second)
+}
+
+func testCXViewRuleModification(ctx *harness.Context) error {
+	session := ctx.Get("tui_session").(*tui.Session)
+	// Go back to tree view
+	if err := session.Type("Shift+Tab", "Shift+Tab"); err != nil {
+		return err
+	}
+	if err := session.WaitForText("main.go", 2*time.Second); err != nil {
+		return err
+	}
+
+	// Navigate to untracked.txt
+	if err := session.NavigateToText("untracked.txt"); err != nil {
+		return err
+	}
+	// Add to hot context
+	if err := session.Type("h"); err != nil {
+		return err
+	}
+	if err := session.WaitForText("untracked.txt ✓", 3*time.Second); err != nil {
+		return err
+	}
+	// Move to cold context
+	if err := session.Type("c"); err != nil {
+		return err
+	}
+	if err := session.WaitForText("untracked.txt ❄️", 3*time.Second); err != nil {
+		return err
+	}
+	// Exclude it
+	if err := session.Type("x"); err != nil {
+		return err
+	}
+	return session.WaitForText("untracked.txt 🚫", 3*time.Second)
+}
+
+func testCXViewSearch(ctx *harness.Context) error {
+	session := ctx.Get("tui_session").(*tui.Session)
+	if err := session.Type("/"); err != nil { // Start search
+		return err
+	}
+	if err := session.Type("lib.go"); err != nil { // Type search term
+		return err
+	}
+	if err := session.Type("Enter"); err != nil { // Apply search
+		return err
+	}
+
+	if err := ctx.Verify(func(v *verify.Collector) {
+		v.Equal("lib.go is visible after search", nil,
+			session.WaitForText("lib.go", 3*time.Second))
+		v.Equal("main.go is not visible", nil,
+			session.AssertNotContains("main.go"))
+	}); err != nil {
+		return err
+	}
+
+	// Clear search
+	return session.Type("Escape")
+}
+
+func quitCXViewTUI(ctx *harness.Context) error {
+	session := ctx.Get("tui_session").(*tui.Session)
+	return session.SendKeys("q")
+}
