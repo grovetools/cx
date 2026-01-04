@@ -3,124 +3,96 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/mattsolo1/grove-tend/pkg/fs"
 	"github.com/mattsolo1/grove-tend/pkg/harness"
 	"github.com/mattsolo1/grove-tend/pkg/tui"
+	"github.com/mattsolo1/grove-tend/pkg/verify"
 )
 
-// TUIViewRulesScenario tests launching `cx view` directly on the rules page.
+// TUIViewRulesScenario tests the interactive features of the `cx view` rules page.
 func TUIViewRulesScenario() *harness.Scenario {
-	return &harness.Scenario{
-		Name:        "cx-view-rules-tui",
-		Description: "Tests starting the 'cx view' TUI on the rules page and verifying its content.",
-		Tags:        []string{"cx", "tui", "view", "rules"},
-		Steps: []harness.Step{
-			harness.NewStep("Create a detailed rules file and some test files", func(ctx *harness.Context) error {
-				// Create test files so stats page has content
-				fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# README")
-
-				rules := `# This is a comment
-*.go
-!*_test.go
----
-# Cold context starts here
-*.md
-config.yml`
-				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
-			}),
+	return harness.NewScenario(
+		"cx-view-rules-interactive",
+		"Tests starting the TUI on the rules page, verifying syntax highlighting and navigation.",
+		[]string{"cx", "tui", "view", "rules"},
+		[]harness.Step{
+			harness.NewStep("Setup comprehensive environment", setupComprehensiveCXEnvironment),
 			harness.NewStep("Launch 'cx view' on rules page", func(ctx *harness.Context) error {
 				cxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
+				projectADir := ctx.GetString("project_a_dir")
 
 				session, err := ctx.StartTUI(cxBinary, []string{"view", "--page", "rules"},
+					tui.WithCwd(projectADir),
 					tui.WithEnv("CLICOLOR_FORCE=1"),
 				)
 				if err != nil {
 					return fmt.Errorf("failed to start 'cx view' TUI: %w", err)
 				}
-				ctx.Set("rules_session", session)
+				ctx.Set("tui_session", session)
 
 				// Wait for UI to load
-				time.Sleep(2 * time.Second)
-				return nil
-			}),
-			harness.NewStep("Verify rules content is displayed", func(ctx *harness.Context) error {
-				session := ctx.Get("rules_session").(*tui.Session)
-
-				// Wait for either rules content or error message
-				result, err := session.WaitForAnyText([]string{
-					".grove/rules content:",
-					"*.go",
-					"Error:",
-				}, 8*time.Second)
-
-				if err != nil {
-					// Capture to see what's actually there
-					content, _ := session.Capture()
-					fmt.Printf("\n=== TUI Content (no expected text found) ===\n%s\n=== END ===\n", content)
-					return fmt.Errorf("TUI did not load the rules page: %w", err)
+				if err := session.WaitForText("Rules File:", 5*time.Second); err != nil {
+					view, _ := session.Capture()
+					return fmt.Errorf("timeout waiting for rules page: %w\nView:\n%s", err, view)
 				}
-
-				// If we found an error, capture and display it
-				if result == "Error:" {
-					content, _ := session.Capture()
-					fmt.Printf("\n=== TUI showing error ===\n%s\n=== END ===\n", content)
-					return fmt.Errorf("TUI is showing an error")
-				}
-
-				fmt.Printf("\n✓ Found text: %s\n", result)
-
-				// Let UI stabilize
-				if err := session.WaitForUIStable(2*time.Second, 100*time.Millisecond, 200*time.Millisecond); err != nil {
-					fmt.Printf("   ⚠️  UI stability warning: %v\n", err)
-				}
-
-				content, err := session.Capture(tui.WithCleanedOutput())
-				if err != nil {
-					return fmt.Errorf("failed to capture screen: %w", err)
-				}
-
-				if !strings.Contains(content, "# This is a comment") {
-					return fmt.Errorf("rules view is missing comment from rules file")
-				}
-				if !strings.Contains(content, "*.go") {
-					return fmt.Errorf("rules view is missing hot pattern '*.go'")
-				}
-				if !strings.Contains(content, "---") {
-					return fmt.Errorf("rules view is missing cold context separator '---'")
-				}
-				if !strings.Contains(content, "*.md") {
-					return fmt.Errorf("rules view is missing cold pattern '*.md'")
-				}
-
-				fmt.Printf("\n✓ Rules page loaded with expected content\n")
-				return nil
-			}),
-			harness.NewStep("Test navigation to next page", func(ctx *harness.Context) error {
-				session := ctx.Get("rules_session").(*tui.Session)
-				// Press Tab to switch from 'rules' to 'stats' page
-				if err := session.SendKeys("Tab"); err != nil {
+				if err := session.WaitStable(); err != nil {
 					return err
 				}
-				// Wait for the stats page content to appear
-				// Look for "File Types" which should appear on stats page
-				_, err := session.WaitForAnyText([]string{
-					"File Types",
-					"No files in hot context",
-				}, 3*time.Second)
-				return err
+
+				view, _ := session.Capture()
+				ctx.ShowCommandOutput("Rules Page - Initial View", view, "")
+				return nil
 			}),
-			harness.NewStep("Quit the TUI", func(ctx *harness.Context) error {
-				session := ctx.Get("rules_session").(*tui.Session)
-				return session.SendKeys("q")
+			harness.NewStep("Verify rules content and syntax highlighting", func(ctx *harness.Context) error {
+				session := ctx.Get("tui_session").(*tui.Session)
+
+				// Verify content with clean output (ANSI stripped)
+				cleanContent, err := session.Capture(tui.WithCleanedOutput())
+				if err != nil {
+					return err
+				}
+
+				if err := ctx.Verify(func(v *verify.Collector) {
+					v.True("shows alias rule", strings.Contains(cleanContent, "@a:subproject-c::default"))
+					v.True("shows exclusion rule", strings.Contains(cleanContent, "!*_test.go"))
+					v.True("shows cold context separator", strings.Contains(cleanContent, "---"))
+					v.True("shows cold context rule", strings.Contains(cleanContent, "README.md"))
+				}); err != nil {
+					return err
+				}
+
+				// Verify syntax highlighting with raw output
+				rawContent, err := session.Capture(tui.WithRawOutput())
+				if err != nil {
+					return err
+				}
+
+				return ctx.Verify(func(v *verify.Collector) {
+					v.True("contains ANSI escape codes", strings.Contains(rawContent, "\x1b["))
+					v.True("contains bold formatting codes", strings.Contains(rawContent, "[1m"))
+					v.True("contains RGB color codes", strings.Contains(rawContent, "[38;2;"))
+				})
 			}),
+			harness.NewStep("Test page navigation", func(ctx *harness.Context) error {
+				session := ctx.Get("tui_session").(*tui.Session)
+				// Navigate to stats page
+				if err := session.Type("Tab"); err != nil {
+					return err
+				}
+				if err := session.WaitForText("File Types", 2*time.Second); err != nil {
+					return err
+				}
+
+				view, _ := session.Capture()
+				ctx.ShowCommandOutput("After Tab to Stats Page", view, "")
+				return nil
+			}),
+			harness.NewStep("Quit the TUI", quitCXViewTUI),
 		},
-	}
+	)
 }

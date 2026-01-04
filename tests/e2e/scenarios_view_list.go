@@ -3,98 +3,74 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/mattsolo1/grove-tend/pkg/fs"
 	"github.com/mattsolo1/grove-tend/pkg/harness"
 	"github.com/mattsolo1/grove-tend/pkg/tui"
+	"github.com/mattsolo1/grove-tend/pkg/verify"
 )
 
-// TUIViewListScenario tests launching `cx view` directly on the list page.
+// TUIViewListScenario tests the `cx view` list page.
 func TUIViewListScenario() *harness.Scenario {
-	return &harness.Scenario{
-		Name:        "cx-view-list-tui",
-		Description: "Tests starting the 'cx view' TUI on the list page and verifying its content.",
-		Tags:        []string{"cx", "tui", "view", "list"},
-		Steps: []harness.Step{
-			harness.NewStep("Setup project with hybrid rules", func(ctx *harness.Context) error {
-				fs.WriteString(filepath.Join(ctx.RootDir, "hot.go"), "package main // hot")
-				fs.WriteString(filepath.Join(ctx.RootDir, "cold.md"), "# Cold")
-				rules := `*.go
----
-*.md`
-				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
-			}),
-			harness.NewStep("Launch 'cx view' on list page", func(ctx *harness.Context) error {
-				cxBinary, err := FindProjectBinary()
+	return harness.NewScenario(
+		"cx-view-list-interactive",
+		"Tests the `cx view` list page display and basic navigation.",
+		[]string{"cx", "tui", "view", "list"},
+		[]harness.Step{
+			harness.NewStep("Setup comprehensive environment", setupComprehensiveCXEnvironment),
+			harness.NewStep("Launch TUI and verify list page", func(ctx *harness.Context) error {
+				cxBin, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
+				projectADir := ctx.GetString("project_a_dir")
 
-				session, err := ctx.StartTUI(cxBinary, []string{"view", "--page", "list"},
+				session, err := ctx.StartTUI(cxBin, []string{"view", "--page", "list"},
+					tui.WithCwd(projectADir),
 					tui.WithEnv("CLICOLOR_FORCE=1"),
 				)
 				if err != nil {
-					return fmt.Errorf("failed to start 'cx view' TUI: %w", err)
+					return fmt.Errorf("failed to start TUI session: %w", err)
 				}
-				ctx.Set("list_session", session)
+				ctx.Set("tui_session", session)
 
-				// Wait for UI to load
-				time.Sleep(2 * time.Second)
-				return nil
+				// Wait for hot context files to appear
+				if _, err := session.WaitForAnyText([]string{"main.go", "lib.go"}, 5*time.Second); err != nil {
+					view, _ := session.Capture()
+					return fmt.Errorf("timeout waiting for list content: %w\nView:\n%s", err, view)
+				}
+
+				view, _ := session.Capture()
+				ctx.ShowCommandOutput("List Page - Initial View", view, "")
+
+				content, _ := session.Capture(tui.WithCleanedOutput())
+				return ctx.Verify(func(v *verify.Collector) {
+					v.True("shows hot file from main project", strings.Contains(content, "main.go"))
+					v.True("shows hot file from aliased project", strings.Contains(content, "lib.go"))
+					v.True("does not show cold file", !strings.Contains(content, "README.md"))
+					v.True("does not show excluded file", !strings.Contains(content, "main_test.go"))
+				})
 			}),
-			harness.NewStep("Verify only hot context files are listed", func(ctx *harness.Context) error {
-				session := ctx.Get("list_session").(*tui.Session)
-
-				// Wait for either list content or error message
-				result, err := session.WaitForAnyText([]string{
-					"Files in Hot Context",
-					"hot.go",
-					"Error:",
-				}, 8*time.Second)
-
-				if err != nil {
-					// Capture to see what's actually there
-					content, _ := session.Capture()
-					fmt.Printf("\n=== TUI Content (no expected text found) ===\n%s\n=== END ===\n", content)
-					return fmt.Errorf("TUI did not load the list page: %w", err)
+			harness.NewStep("Test page navigation", func(ctx *harness.Context) error {
+				session := ctx.Get("tui_session").(*tui.Session)
+				// Navigate to tree page
+				if err := session.Type("Tab"); err != nil {
+					return err
 				}
+				// Wait for tree view (directory indicators)
+				time.Sleep(500 * time.Millisecond)
 
-				// If we found an error, capture and display it
-				if result == "Error:" {
-					content, _ := session.Capture()
-					fmt.Printf("\n=== TUI showing error ===\n%s\n=== END ===\n", content)
-					return fmt.Errorf("TUI is showing an error")
-				}
+				view, _ := session.Capture()
+				ctx.ShowCommandOutput("After Tab to Tree Page", view, "")
 
-				fmt.Printf("\n✓ Found text: %s\n", result)
-
-				// Let UI stabilize
-				if err := session.WaitForUIStable(2*time.Second, 100*time.Millisecond, 200*time.Millisecond); err != nil {
-					fmt.Printf("   ⚠️  UI stability warning: %v\n", err)
-				}
-
-				content, err := session.Capture(tui.WithCleanedOutput())
-				if err != nil {
-					return fmt.Errorf("failed to capture screen: %w", err)
-				}
-
-				if !strings.Contains(content, "hot.go") {
-					return fmt.Errorf("list view is missing hot context file 'hot.go'")
-				}
-				if strings.Contains(content, "cold.md") {
-					return fmt.Errorf("list view should not contain cold context file 'cold.md'")
-				}
-
-				fmt.Printf("\n✓ List page loaded with expected content\n")
-				return nil
+				content, _ := session.Capture(tui.WithCleanedOutput())
+				// Tree view shows directory icons
+				return ctx.Verify(func(v *verify.Collector) {
+					v.True("navigated to tree page", strings.Contains(content, "var") || strings.Contains(content, "private"))
+				})
 			}),
-			harness.NewStep("Quit the TUI", func(ctx *harness.Context) error {
-				session := ctx.Get("list_session").(*tui.Session)
-				return session.SendKeys("q")
-			}),
+			harness.NewStep("Quit the TUI", quitCXViewTUI),
 		},
-	}
+	)
 }

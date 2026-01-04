@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/mattsolo1/grove-tend/pkg/fs"
+	"github.com/mattsolo1/grove-tend/pkg/git"
+	"github.com/mattsolo1/grove-tend/pkg/harness"
 	"github.com/mattsolo1/grove-tend/pkg/project"
 )
 
@@ -73,5 +77,116 @@ func CleanupExistingTestSessions() error {
 		fmt.Printf("   Cleaned %d existing test session(s)\n", cleanedCount)
 	}
 
+	return nil
+}
+
+// setupComprehensiveCXEnvironment creates a rich, multi-project environment for testing `cx view`.
+func setupComprehensiveCXEnvironment(ctx *harness.Context) error {
+	// 1. Configure a sandboxed global environment.
+	grovesDir := filepath.Join(ctx.RootDir, "projects")
+	globalYAML := fmt.Sprintf(`
+version: "1.0"
+groves:
+  e2e-projects:
+    path: "%s"
+`, grovesDir)
+	globalConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
+	if err := fs.CreateDir(globalConfigDir); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(globalConfigDir, "grove.yml"), globalYAML); err != nil {
+		return err
+	}
+
+	// 2. Create multiple projects.
+	projectADir := filepath.Join(grovesDir, "project-a")
+	ecosystemBDir := filepath.Join(grovesDir, "ecosystem-b")
+	subprojectCDir := filepath.Join(grovesDir, "subproject-c")
+
+	// -- Project A (Standalone) --
+	if err := fs.WriteString(filepath.Join(projectADir, "grove.yml"), "name: project-a"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, ".gitignore"), "*.log\n"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "main.go"), "package main // hot"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "main_test.go"), "package main // excluded"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "README.md"), "# Project A // cold"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "test.log"), "log content"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, "untracked.txt"), "omitted file"); err != nil {
+		return err
+	}
+
+	repoA, err := git.SetupTestRepo(projectADir)
+	if err != nil {
+		return err
+	}
+	if err := repoA.AddCommit("initial commit for project A"); err != nil {
+		return err
+	}
+	if err := repoA.CreateWorktree(filepath.Join(projectADir, ".grove-worktrees", "feature-branch"), "feature-branch"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(projectADir, ".grove-worktrees", "feature-branch", "feature.go"), "package main // feature file"); err != nil {
+		return err
+	}
+
+	// -- Ecosystem B --
+	if err := fs.WriteString(filepath.Join(ecosystemBDir, "grove.yml"), "name: ecosystem-b"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(ecosystemBDir, "helper.go"), "package helper"); err != nil {
+		return err
+	}
+	repoB, err := git.SetupTestRepo(ecosystemBDir)
+	if err != nil {
+		return err
+	}
+	if err := repoB.AddCommit("initial ecosystem commit"); err != nil {
+		return err
+	}
+
+	// -- Subproject C (Standalone) --
+	if err := fs.WriteString(filepath.Join(subprojectCDir, "grove.yml"), "name: subproject-c"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(subprojectCDir, "lib.go"), "package lib // from subproject"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(subprojectCDir, "lib_test.go"), "package lib_test"); err != nil {
+		return err
+	}
+	if err := fs.WriteString(filepath.Join(subprojectCDir, ".cx", "default.rules"), "lib.go"); err != nil {
+		return err
+	}
+	repoC, err := git.SetupTestRepo(subprojectCDir)
+	if err != nil {
+		return err
+	}
+	if err := repoC.AddCommit("initial subproject commit"); err != nil {
+		return err
+	}
+
+	// -- Main rules file in project-a --
+	rules := `*.go
+!*_test.go
+@a:subproject-c::default
+---
+README.md
+`
+	if err := fs.WriteString(filepath.Join(projectADir, ".grove", "rules"), rules); err != nil {
+		return err
+	}
+
+	ctx.Set("project_a_dir", projectADir)
 	return nil
 }
