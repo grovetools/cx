@@ -475,16 +475,12 @@ func newRulesPrintPathCmd() *cobra.Command {
 		Short: "Print the absolute path to the active rules file",
 		Long:  `Prints the absolute path to the currently active rules file. Useful for scripting and integration with external tools.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := stdctx.Background()
 			mgr := context.NewManager("")
 			rulesPath, err := mgr.EnsureAndGetRulesPath()
 			if err != nil {
 				return fmt.Errorf("failed to get rules path: %w", err)
 			}
-			ulog.Info("Active rules path").
-				Field("path", rulesPath).
-				Pretty(rulesPath).
-				Log(ctx)
+			fmt.Println(rulesPath)
 			return nil
 		},
 	}
