@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	ctx "context"
+	stdctx "context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -62,8 +62,11 @@ func newRepoListCmd() *cobra.Command {
 			}
 
 			if len(repos) == 0 {
-				prettyLog.InfoPretty("No repositories tracked yet.")
-				prettyLog.InfoPretty("Add a Git URL to your rules file to start tracking repositories.")
+				ctx := stdctx.Background()
+				ulog.Info("No repositories tracked yet").Log(ctx)
+				ulog.Info("Add Git URL to rules file").
+					Pretty("Add a Git URL to your rules file to start tracking repositories.").
+					Log(ctx)
 				return nil
 			}
 
@@ -136,18 +139,19 @@ func newRepoSyncCmd() *cobra.Command {
 		Short: "Sync all tracked repositories",
 		Long:  `Fetch the latest changes for all tracked repositories and checkout their pinned versions.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			manager, err := repo.NewManager()
 			if err != nil {
 				return fmt.Errorf("failed to create repository manager: %w", err)
 			}
 
-			prettyLog.InfoPretty("Syncing all tracked repositories...")
+			ulog.Progress("Syncing all tracked repositories").Log(ctx)
 
 			if err := manager.Sync(); err != nil {
 				return fmt.Errorf("failed to sync repositories: %w", err)
 			}
 
-			prettyLog.Success("All bare repositories synced successfully.")
+			ulog.Success("All bare repositories synced successfully").Log(ctx)
 
 			return nil
 		},
@@ -190,12 +194,17 @@ func newRepoAuditCmd() *cobra.Command {
 				return fmt.Errorf("--status flag requires a commit hash, not a repository URL")
 			}
 
-			prettyLog.InfoPretty("Preparing repository for audit...")
+			ctx := stdctx.Background()
+			ulog.Progress("Preparing repository for audit").Log(ctx)
 			localPath, currentCommit, err := manager.EnsureVersion(repoURL, version)
 			if err != nil {
 				return fmt.Errorf("failed to ensure repository version is checked out: %w", err)
 			}
-			prettyLog.InfoPretty(fmt.Sprintf("Auditing %s at commit %s", repoURL, currentCommit[:7]))
+			ulog.Info("Auditing repository").
+				Field("repo", repoURL).
+				Field("commit", currentCommit[:7]).
+				Pretty(fmt.Sprintf("Auditing %s at commit %s", repoURL, currentCommit[:7])).
+				Log(ctx)
 
 			// Change directory to the repository for the audit.
 			originalDir, _ := os.Getwd()
@@ -208,15 +217,17 @@ func newRepoAuditCmd() *cobra.Command {
 				return fmt.Errorf("failed to set up default audit rules: %w", err)
 			}
 
-			prettyLog.Blank()
-			prettyLog.InfoPretty("Launching interactive context viewer (`cx view`)...")
-			prettyLog.InfoPretty("Use a/c/x to add/cool/exclude files. Press 'q' to exit and continue.")
+			ulog.Info("Launching interactive context viewer").
+				Pretty("Launching interactive context viewer (`cx view`)...").
+				Log(ctx)
+			ulog.Info("Usage instructions").
+				Pretty("Use a/c/x to add/cool/exclude files. Press 'q' to exit and continue.").
+				Log(ctx)
 			if err := runInteractiveView(); err != nil {
 				return fmt.Errorf("error during interactive context view: %w", err)
 			}
 
-			prettyLog.Blank()
-			prettyLog.InfoPretty("Generating context and running LLM security analysis...")
+			ulog.Progress("Generating context and running LLM security analysis").Log(ctx)
 			reportContent, err := runLLMAnalysis()
 			if err != nil {
 				return fmt.Errorf("LLM analysis failed: %w", err)
@@ -226,12 +237,16 @@ func newRepoAuditCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to save audit report: %w", err)
 			}
-			prettyLog.Success(fmt.Sprintf("Audit report saved to: %s", reportPath))
+			ulog.Success("Audit report saved").
+				Field("path", reportPath).
+				Pretty(fmt.Sprintf("Audit report saved to: %s", reportPath)).
+				Log(ctx)
 
-			prettyLog.Blank()
-			prettyLog.InfoPretty("Please review the generated audit report in your editor.")
+			ulog.Info("Please review the generated audit report in your editor").Log(ctx)
 			if err := openInEditor(reportPath); err != nil {
-				prettyLog.WarnPretty(fmt.Sprintf("Could not open report in editor: %v", err))
+				ulog.Warn("Could not open report in editor").
+					Err(err).
+					Log(ctx)
 			}
 
 			approved, err := promptForApproval()
@@ -250,8 +265,10 @@ func newRepoAuditCmd() *cobra.Command {
 				return fmt.Errorf("failed to update manifest with audit result: %w", err)
 			}
 
-			prettyLog.Blank()
-			prettyLog.Success(fmt.Sprintf("Audit complete. Repository status updated to '%s'.", status))
+			ulog.Success("Audit complete").
+				Field("status", status).
+				Pretty(fmt.Sprintf("Audit complete. Repository status updated to '%s'.", status)).
+				Log(ctx)
 			return nil
 		},
 	}
@@ -297,30 +314,47 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 				return fmt.Errorf("failed to create repository manager: %w", err)
 			}
 
-			prettyLog.InfoPretty(fmt.Sprintf("Adding repository %s...", repoURL))
+			ctx := stdctx.Background()
+			ulog.Progress("Adding repository").
+				Field("repo", repoURL).
+				Pretty(fmt.Sprintf("Adding repository %s...", repoURL)).
+				Log(ctx)
 
 			err = manager.Ensure(repoURL)
 			if err != nil {
 				return fmt.Errorf("failed to add repository: %w", err)
 			}
 
-			prettyLog.Success(fmt.Sprintf("Successfully added repository: %s", repoURL))
-			prettyLog.InfoPretty("Bare clone created.")
+			ulog.Success("Successfully added repository").
+				Field("repo", repoURL).
+				Pretty(fmt.Sprintf("Successfully added repository: %s", repoURL)).
+				Log(ctx)
+			ulog.Info("Bare clone created").Log(ctx)
 
 			// Create worktree for the specified version or default branch
 			versionForLog := "default branch"
 			if version != "" {
 				versionForLog = version
 			}
-			prettyLog.InfoPretty(fmt.Sprintf("Creating worktree for %s...", versionForLog))
+			ulog.Progress("Creating worktree").
+				Field("version", versionForLog).
+				Pretty(fmt.Sprintf("Creating worktree for %s...", versionForLog)).
+				Log(ctx)
 
 			localPath, commitHash, err := manager.EnsureVersion(repoURL, version)
 			if err != nil {
 				return fmt.Errorf("failed to create worktree for version '%s': %w", versionForLog, err)
 			}
 
-			prettyLog.Success(fmt.Sprintf("Worktree for commit %s created at:", commitHash[:7]))
-			prettyLog.Path("  ", localPath)
+			ulog.Success("Worktree created").
+				Field("commit", commitHash[:7]).
+				Field("path", localPath).
+				Pretty(fmt.Sprintf("Worktree for commit %s created at:", commitHash[:7])).
+				Log(ctx)
+			ulog.Info("Worktree location").
+				Field("path", localPath).
+				Pretty("  " + localPath).
+				Log(ctx)
 
 			return nil
 		},
@@ -398,12 +432,16 @@ func runLLMAnalysis() (string, error) {
 	// Load the model from grove.yml configuration
 	model := "gemini-2.0-flash" // default model
 
+	ctx := stdctx.Background()
 	coreCfg, err := config.LoadFrom(".")
 	if err == nil {
 		var llmCfg LLMConfig
 		if err := coreCfg.UnmarshalExtension("llm", &llmCfg); err == nil && llmCfg.DefaultModel != "" {
 			model = llmCfg.DefaultModel
-			prettyLog.InfoPretty(fmt.Sprintf("Using model from grove.yml: %s", model))
+			ulog.Info("Using model from config").
+				Field("model", model).
+				Pretty(fmt.Sprintf("Using model from grove.yml: %s", model)).
+				Log(ctx)
 		}
 	}
 
@@ -560,22 +598,30 @@ If no ruleset name is provided, it defaults to 'default'.`,
 			}
 
 			// If rules file doesn't exist, create it with a default pattern
+			ctx := stdctx.Background()
 			if _, err := os.Stat(rulesFile); os.IsNotExist(err) {
-				prettyLog.InfoPretty(fmt.Sprintf("Creating new ruleset '%s' for %s", rulesetName, repoURL))
+				ulog.Info("Creating new ruleset").
+					Field("name", rulesetName).
+					Field("repo", repoURL).
+					Pretty(fmt.Sprintf("Creating new ruleset '%s' for %s", rulesetName, repoURL)).
+					Log(ctx)
 				content := []byte("*\n\n# Add glob patterns to include files from this repository.\n# Use '!' to exclude.\n")
 				if err := os.WriteFile(rulesFile, content, 0o644); err != nil {
 					return fmt.Errorf("failed to create initial rules file: %w", err)
 				}
 			}
 
-			prettyLog.InfoPretty(fmt.Sprintf("Opening tmux session for %s...", repoURL))
+			ulog.Progress("Opening tmux session").
+				Field("repo", repoURL).
+				Pretty(fmt.Sprintf("Opening tmux session for %s...", repoURL)).
+				Log(ctx)
 
 			// Create a tmux session for the repository workspace
 			tmuxClient, err := tmux.NewClient()
 			if err != nil {
 				return fmt.Errorf("failed to create tmux client: %w", err)
 			}
-			background := ctx.Background()
+			background := stdctx.Background()
 
 			// Generate a sanitized session name from the repo URL
 			sessionName := sanitize.SanitizeForTmuxSession(filepath.Base(localPath))
@@ -587,7 +633,10 @@ If no ruleset name is provided, it defaults to 'default'.`,
 			}
 
 			if exists {
-				prettyLog.InfoPretty(fmt.Sprintf("Session '%s' already exists, switching to it...", sessionName))
+				ulog.Info("Session already exists, switching").
+					Field("session", sessionName).
+					Pretty(fmt.Sprintf("Session '%s' already exists, switching to it...", sessionName)).
+					Log(ctx)
 				// Just switch to the existing session
 				if err := tmuxClient.SwitchClientToSession(background, sessionName); err != nil {
 					// If we're not in tmux, try to attach instead
@@ -616,12 +665,15 @@ If no ruleset name is provided, it defaults to 'default'.`,
 				return fmt.Errorf("failed to launch tmux session: %w", err)
 			}
 
-			prettyLog.Success(fmt.Sprintf("Created session '%s'", sessionName))
+			ulog.Success("Created session").
+				Field("session", sessionName).
+				Pretty(fmt.Sprintf("Created session '%s'", sessionName)).
+				Log(ctx)
 
 			// Switch to the new session (if we're in tmux) or attach (if we're not)
 			if err := tmuxClient.SwitchClientToSession(background, sessionName); err != nil {
 				// If we're not in tmux, try to attach instead
-				prettyLog.InfoPretty("Attaching to session...")
+				ulog.Info("Attaching to session").Log(ctx)
 				attachCmd := exec.Command("tmux", "attach-session", "-t", sessionName)
 				attachCmd.Stdin = os.Stdin
 				attachCmd.Stdout = os.Stdout

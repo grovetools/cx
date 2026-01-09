@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	stdctx "context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -176,8 +177,12 @@ func NewResolveCmd() *cobra.Command {
 			}
 
 			// Print the list of files to stdout, one per line.
+			ctx := stdctx.Background()
 			for _, file := range files {
-				fmt.Println(file)
+				ulog.Info("Resolved file").
+					Field("file", file).
+					Pretty(file).
+					Log(ctx)
 			}
 
 			return nil

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	stdctx "context"
 	"fmt"
 	"os"
 	"runtime"
@@ -16,6 +17,7 @@ func NewEditCmd() *cobra.Command {
 		Short: "Open the rules file in your editor or print its path",
 		Long:  `Opens .grove/rules in your system's default editor (specified by $EDITOR environment variable), or prints the path if --print-path is used.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			mgr := context.NewManager("")
 
 			if printPath {
@@ -23,7 +25,10 @@ func NewEditCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("failed to get rules path: %w", err)
 				}
-				fmt.Println(rulesPath)
+				ulog.Info("Rules file path").
+					Field("path", rulesPath).
+					Pretty(rulesPath).
+					Log(ctx)
 				return nil
 			}
 

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	stdctx "context"
 	"strings"
 
 	"github.com/mattsolo1/grove-context/pkg/context"
@@ -23,6 +23,7 @@ It is recommended to enclose the command in quotes to ensure it is passed correc
   cx from-cmd "rg -il tmux | xargs realpath | grep -Ev '(node_modules|vendor|\.git)' | sort"`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			// Join all arguments into a single command string
 			command := strings.Join(args, " ")
 
@@ -37,9 +38,14 @@ It is recommended to enclose the command in quotes to ensure it is passed correc
 			// Show what was added
 			files, err := mgr.ListFiles()
 			if err == nil && len(files) > 0 {
-				fmt.Printf("\nFiles added to context:\n")
+				ulog.Info("Files added to context").
+					Field("count", len(files)).
+					Log(ctx)
 				for _, file := range files {
-					fmt.Printf("  %s\n", file)
+					ulog.Info("Added file").
+						Field("file", file).
+						Pretty("  " + file).
+						Log(ctx)
 				}
 			}
 

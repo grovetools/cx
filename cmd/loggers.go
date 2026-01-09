@@ -5,6 +5,6 @@ import (
 )
 
 var (
-	log       = logging.NewLogger("grove-context")
-	prettyLog = logging.NewPrettyLogger()
+	log  = logging.NewLogger("grove-context")
+	ulog = logging.NewUnifiedLogger("grove-context")
 )

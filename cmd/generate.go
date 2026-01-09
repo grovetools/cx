@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	stdctx "context"
+
 	"github.com/spf13/cobra"
 	"github.com/mattsolo1/grove-context/pkg/context"
 )
@@ -15,24 +17,25 @@ func NewGenerateCmd() *cobra.Command {
 		Short: "Generate .grove/context from .grove/context-files",
 		Long:  `Reads the .grove/context-files list and generates a concatenated .grove/context file with all specified files.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			mgr := context.NewManager(".")
-			
-			prettyLog.InfoPretty("Generating context file...")
-			
+
+			ulog.Progress("Generating context file").Log(ctx)
+
 			if err := mgr.GenerateContext(useXMLFormat); err != nil {
 				return err
 			}
-			
-			prettyLog.Success("Context file generated successfully")
-			
+
+			ulog.Success("Context file generated successfully").Log(ctx)
+
 			// Also generate cached context
-			prettyLog.InfoPretty("Generating cached context file...")
-			
+			ulog.Progress("Generating cached context file").Log(ctx)
+
 			if err := mgr.GenerateCachedContext(); err != nil {
 				return err
 			}
-			
-			prettyLog.Success("Cached context file generated successfully")
+
+			ulog.Success("Cached context file generated successfully").Log(ctx)
 			return nil
 		},
 	}

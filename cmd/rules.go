@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	stdctx "context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -53,11 +54,15 @@ func newRulesUnsetCmd() *cobra.Command {
 		Use:   "unset",
 		Short: "Unset the active rule set and fall back to .grove/rules",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			if err := state.Delete(context.StateSourceKey); err != nil {
 				return fmt.Errorf("failed to update state: %w", err)
 			}
-			prettyLog.Success("Active rule set unset.")
-			prettyLog.InfoPretty(fmt.Sprintf("Now using fallback file: %s (if it exists).", context.ActiveRulesFile))
+			ulog.Success("Active rule set unset").Log(ctx)
+			ulog.Info("Now using fallback file").
+				Field("file", context.ActiveRulesFile).
+				Pretty(fmt.Sprintf("Now using fallback file: %s (if it exists).", context.ActiveRulesFile)).
+				Log(ctx)
 			return nil
 		},
 	}
@@ -79,6 +84,7 @@ Examples:
   cx rules load /path/to/plan/rules/file.rules  # Copy from absolute path`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			nameOrPath := args[0]
 			var sourcePath string
 
@@ -115,12 +121,21 @@ Examples:
 			// Unset any active rule set state so .grove/rules becomes active
 			if err := state.Delete(context.StateSourceKey); err != nil {
 				// Non-fatal, just warn
-				prettyLog.WarnPretty(fmt.Sprintf("Warning: could not unset active rule set in state: %v", err))
+				ulog.Warn("Could not unset active rule set in state").
+					Err(err).
+					Log(ctx)
 			}
 
-			prettyLog.Success(fmt.Sprintf("Loaded '%s' into .grove/rules as working copy", nameOrPath))
-			prettyLog.InfoPretty(fmt.Sprintf("Source: %s", sourcePath))
-			prettyLog.InfoPretty("You can now edit .grove/rules freely without affecting the original.")
+			ulog.Success("Loaded rule set into working copy").
+				Field("name", nameOrPath).
+				Field("source", sourcePath).
+				Pretty(fmt.Sprintf("Loaded '%s' into .grove/rules as working copy", nameOrPath)).
+				Log(ctx)
+			ulog.Info("Source location").
+				Field("source", sourcePath).
+				Pretty(fmt.Sprintf("Source: %s", sourcePath)).
+				Log(ctx)
+			ulog.Info("You can now edit .grove/rules freely without affecting the original").Log(ctx)
 			return nil
 		},
 	}
@@ -224,11 +239,14 @@ func newRulesListCmd() *cobra.Command {
 			}
 
 			// New: Collect plan rules
+			ctx := stdctx.Background()
 			mgr := context.NewManager("")
 			planRules, err := mgr.ListPlanRules()
 			if err != nil {
 				// Non-fatal, just warn
-				prettyLog.WarnPretty(fmt.Sprintf("Warning: could not list plan rules: %v", err))
+				ulog.Warn("Could not list plan rules").
+					Err(err).
+					Log(ctx)
 			}
 
 			// Combine all rules
@@ -241,9 +259,9 @@ func newRulesListCmd() *cobra.Command {
 			}
 
 			// Human-readable output
-			prettyLog.InfoPretty("Available Rule Sets:")
+			ulog.Info("Available Rule Sets").Log(ctx)
 			if len(ruleNames) == 0 && len(planRules) == 0 {
-				prettyLog.InfoPretty("  No rule sets found.")
+				ulog.Info("No rule sets found").Pretty("  No rule sets found.").Log(ctx)
 			} else {
 				for _, name := range ruleNames {
 					// Find the path for this ruleset (errors are ignored for display purposes)
@@ -253,26 +271,39 @@ func newRulesListCmd() *cobra.Command {
 					if path == activeSource {
 						indicator = "✓ "
 					}
-					prettyLog.InfoPretty(fmt.Sprintf("%s%s", indicator, name))
+					ulog.Info("Rule set").
+						Field("name", name).
+						Field("path", path).
+						Field("active", path == activeSource).
+						Pretty(fmt.Sprintf("%s%s", indicator, name)).
+						Log(ctx)
 				}
 
 				// New: Display plan rules
 				if len(planRules) > 0 {
-					prettyLog.Blank()
-					prettyLog.InfoPretty("Plan-Specific Rules:")
+					ulog.Info("Plan-Specific Rules").Log(ctx)
 					for _, rule := range planRules {
 						indicator := "  "
 						if rule.Path == activeSource {
 							indicator = "✓ "
 						}
 						sourceInfo := fmt.Sprintf("plan:%s (ws:%s)", rule.PlanName, rule.WorkspaceName)
-						prettyLog.InfoPretty(fmt.Sprintf("%s%s (%s)", indicator, rule.Name, sourceInfo))
+						ulog.Info("Plan rule").
+							Field("name", rule.Name).
+							Field("plan", rule.PlanName).
+							Field("workspace", rule.WorkspaceName).
+							Field("path", rule.Path).
+							Field("active", rule.Path == activeSource).
+							Pretty(fmt.Sprintf("%s%s (%s)", indicator, rule.Name, sourceInfo)).
+							Log(ctx)
 					}
 				}
 			}
 
-			prettyLog.Blank()
-			prettyLog.InfoPretty(fmt.Sprintf("Active Source: %s", activeSource))
+			ulog.Info("Active source").
+				Field("source", activeSource).
+				Pretty(fmt.Sprintf("Active Source: %s", activeSource)).
+				Log(ctx)
 			return nil
 		},
 	}
@@ -293,6 +324,7 @@ This makes the context read-only from that file. To create a modifiable copy, us
 You can also provide a direct file path to a rules file (including plan-specific rules).`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			nameOrPath := args[0]
 			var sourcePath string
 
@@ -316,10 +348,16 @@ You can also provide a direct file path to a rules file (including plan-specific
 
 			// Warn user if a .grove/rules file exists, as it will now be ignored.
 			if _, err := os.Stat(context.ActiveRulesFile); err == nil {
-				prettyLog.WarnPretty(fmt.Sprintf("Warning: %s exists but will be ignored while active source is set.", context.ActiveRulesFile))
+				ulog.Warn("Existing rules file will be ignored").
+					Field("file", context.ActiveRulesFile).
+					Pretty(fmt.Sprintf("Warning: %s exists but will be ignored while active source is set.", context.ActiveRulesFile)).
+					Log(ctx)
 			}
 
-			prettyLog.Success(fmt.Sprintf("Active context rules set to: %s", sourcePath))
+			ulog.Success("Active context rules set").
+				Field("source", sourcePath).
+				Pretty(fmt.Sprintf("Active context rules set to: %s", sourcePath)).
+				Log(ctx)
 			return nil
 		},
 	}
@@ -336,6 +374,7 @@ By default, saves to .cx/ for version-controlled rule sets.
 Use the --work flag to save to .cx.work/ for temporary, untracked sets.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			name := args[0]
 
 			mgr := context.NewManager("")
@@ -361,7 +400,12 @@ Use the --work flag to save to .cx.work/ for temporary, untracked sets.`,
 				return fmt.Errorf("failed to save rule set: %w", err)
 			}
 
-			prettyLog.Success(fmt.Sprintf("Saved current rules as '%s' in %s/", name, destDir))
+			ulog.Success("Saved current rules").
+				Field("name", name).
+				Field("directory", destDir).
+				Field("path", destPath).
+				Pretty(fmt.Sprintf("Saved current rules as '%s' in %s/", name, destDir)).
+				Log(ctx)
 			return nil
 		},
 	}
@@ -379,6 +423,7 @@ Rule sets in .cx/ are considered version-controlled and require the --force flag
 Rule sets in .cx.work/ can be deleted without force.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			name := args[0]
 
 			// Find the ruleset file
@@ -401,7 +446,10 @@ Rule sets in .cx.work/ can be deleted without force.`,
 			if activeSource == rulesPath {
 				// Unset it first before deleting
 				if err := state.Delete(context.StateSourceKey); err != nil {
-					prettyLog.WarnPretty(fmt.Sprintf("Warning: could not unset active state for '%s' before deleting: %v", name, err))
+					ulog.Warn("Could not unset active state before deleting").
+						Field("name", name).
+						Err(err).
+						Log(ctx)
 				}
 			}
 
@@ -409,7 +457,11 @@ Rule sets in .cx.work/ can be deleted without force.`,
 				return fmt.Errorf("failed to remove rule set '%s': %w", name, err)
 			}
 
-			prettyLog.Success(fmt.Sprintf("Removed rule set '%s' from %s", name, rulesPath))
+			ulog.Success("Removed rule set").
+				Field("name", name).
+				Field("path", rulesPath).
+				Pretty(fmt.Sprintf("Removed rule set '%s' from %s", name, rulesPath)).
+				Log(ctx)
 			return nil
 		},
 	}
@@ -423,12 +475,16 @@ func newRulesPrintPathCmd() *cobra.Command {
 		Short: "Print the absolute path to the active rules file",
 		Long:  `Prints the absolute path to the currently active rules file. Useful for scripting and integration with external tools.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
 			mgr := context.NewManager("")
 			rulesPath, err := mgr.EnsureAndGetRulesPath()
 			if err != nil {
 				return fmt.Errorf("failed to get rules path: %w", err)
 			}
-			fmt.Println(rulesPath)
+			ulog.Info("Active rules path").
+				Field("path", rulesPath).
+				Pretty(rulesPath).
+				Log(ctx)
 			return nil
 		},
 	}

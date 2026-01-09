@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	stdctx "context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -195,7 +196,10 @@ Examples:
 					// Return empty array for JSON
 					fmt.Println("[]")
 				} else {
-					prettyLog.WarnPretty("No files in context. Check your rules file.")
+					ctx := stdctx.Background()
+					ulog.Warn("No files in context").
+						Pretty("No files in context. Check your rules file.").
+						Log(ctx)
 				}
 				return nil
 			}
