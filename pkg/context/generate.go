@@ -1,6 +1,7 @@
 package context
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -228,7 +229,10 @@ func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) er
 		"output_path": contextPath,
 	}).Info("Generated hot context file")
 
-	fmt.Printf("Generated %s with %d files\n", ContextFile, len(files))
+	m.ulog.Success("Generated context file").
+		Field("path", ContextFile).
+		Field("file_count", len(files)).
+		Log(context.Background())
 
 	return nil
 }
@@ -288,11 +292,17 @@ func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
 		"list_path":   cachedListPath,
 	}).Info("Generated cold context artifacts")
 
-	fmt.Printf("Generated %s with %d cold files\n", CachedContextFile, len(coldFiles))
+	m.ulog.Success("Generated cached context").
+		Field("path", CachedContextFile).
+		Field("file_count", len(coldFiles)).
+		Log(context.Background())
 
 	// Provide user feedback
 	if len(coldFiles) > 0 {
-		fmt.Printf("Generated %s with %d files for cached context\n", CachedContextFilesListFile, len(coldFiles))
+		m.ulog.Success("Generated cached context files list").
+			Field("path", CachedContextFilesListFile).
+			Field("file_count", len(coldFiles)).
+			Log(context.Background())
 	}
 
 	return nil

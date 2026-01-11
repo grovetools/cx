@@ -72,6 +72,7 @@ type Manager struct {
 	skippedRules    []SkippedRule // Rules that were skipped during parsing with reasons
 	skippedMutex    sync.Mutex    // Protects skippedRules
 	log             *logrus.Entry
+	ulog            *grovelogging.UnifiedLogger
 }
 
 // NewManager creates a new context manager
@@ -89,6 +90,7 @@ func NewManager(workDir string) *Manager {
 		gitIgnoredCache: make(map[string]map[string]bool),
 		aliasResolver:   nil, // Lazily initialized
 		log:             grovelogging.NewLogger("grove-context"),
+		ulog:            grovelogging.NewUnifiedLogger("cx.context"),
 	}
 }
 
