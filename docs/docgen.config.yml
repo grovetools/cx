@@ -1,81 +1,77 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/mattsolo1/grove-docgen/main/schema/docgen.config.schema.json
-title: "Grove Context"
-description: "A rule-based tool for dynamically managing the file-based context provided to Large Language Models (LLMs)."
-category: "Developer Tools"
 enabled: true
+title: Grove Context
+description: A rule-based tool for dynamically managing the file-based context provided to Large Language Models (LLMs).
+category: Developer Tools
 settings:
-  output_dir: docs
-  rules_file: docs.rules
-  structured_output_file: pkg/docs/docs.json
-  system_prompt: default
-  model: gemini-2.5-pro
-  regeneration_mode: scratch
-  # temperature: 0.5
-readme:
-  generate_toc: true
-  template: docs/README.md.tpl
-  output: README.md
-  source_section: overview
-  strip_lines: 0
+    model: gemini-2.5-pro
+    regeneration_mode: scratch
+    rules_file: docs.rules
+    structured_output_file: pkg/docs/docs.json
+    system_prompt: default
+    output_dir: docs
 sections:
-  - name: overview
-    order: 1
-    output: 01-overview.md
-    prompt: prompts/01-overview.md
-    title: Overview
-    agg_strip_lines: 0
-  - name: examples
-    order: 2
-    output: 02-examples.md
-    prompt: prompts/02-examples.md
-    title: Examples
-  - name: rules-and-patterns
-    order: 3
-    output: 03-rules-and-patterns.md
-    prompt: prompts/03-rules-and-patterns.md
-    title: Rules & Patterns
-  - name: context-generation
-    order: 4
-    output: 04-context-generation.md
-    prompt: prompts/04-context-generation.md
-    title: Context Generation
-  - name: loading-rules
-    order: 5
-    output: 05-loading-rules.md
-    prompt: prompts/05-loading-rules.md
-    title: Loading Rules
-  - name: context-tui
-    order: 6
-    output: 06-context-tui.md
-    prompt: prompts/06-context-tui.md
-    title: Context TUI
-  - name: git-workflows
-    order: 7
-    output: 07-git-workflows.md
-    prompt: prompts/07-git-workflows.md
-    title: Git Workflows
-  - name: external-repositories
-    order: 8
-    output: 08-external-repositories.md
-    prompt: prompts/08-external-repositories.md
-    title: External Repositories
-  - name: experimental
-    order: 9
-    output: 09-experimental.md
-    prompt: prompts/09-experimental.md
-    title: Experimental Features
-  - name: command-reference
-    order: 10
-    output: 10-command-reference.md
-    prompt: prompts/10-command-reference.md
-    title: Command Reference
-  - name: editor-integration
-    order: 11
-    output: 11-editor-integration.md
-    prompt: prompts/11-editor-integration.md
-    title: Editor Integration
-  - name: ecosystem-integration
-    order: 12
-    output: 12-ecosystem-integration.md
-    prompt: prompts/12-ecosystem-integration.md
-    title: Ecosystem Integration
+    - name: overview
+      title: Overview
+      order: 1
+      prompt: 01-overview.md
+      output: 01-overview.md
+    - name: examples
+      title: Examples
+      order: 2
+      prompt: 02-examples.md
+      output: 02-examples.md
+    - name: rules-and-patterns
+      title: Rules & Patterns
+      order: 3
+      prompt: 03-rules-and-patterns.md
+      output: 03-rules-and-patterns.md
+    - name: context-generation
+      title: Context Generation
+      order: 4
+      prompt: 04-context-generation.md
+      output: 04-context-generation.md
+    - name: loading-rules
+      title: Loading Rules
+      order: 5
+      prompt: 05-loading-rules.md
+      output: 05-loading-rules.md
+    - name: context-tui
+      title: Context TUI
+      order: 6
+      prompt: 06-context-tui.md
+      output: 06-context-tui.md
+    - name: git-workflows
+      title: Git Workflows
+      order: 7
+      prompt: 07-git-workflows.md
+      output: 07-git-workflows.md
+    - name: external-repositories
+      title: External Repositories
+      order: 8
+      prompt: 08-external-repositories.md
+      output: 08-external-repositories.md
+    - name: experimental
+      title: Experimental Features
+      order: 9
+      prompt: 09-experimental.md
+      output: 09-experimental.md
+    - name: command-reference
+      title: Command Reference
+      order: 10
+      prompt: 10-command-reference.md
+      output: 10-command-reference.md
+    - name: editor-integration
+      title: Editor Integration
+      order: 11
+      prompt: 11-editor-integration.md
+      output: 11-editor-integration.md
+    - name: ecosystem-integration
+      title: Ecosystem Integration
+      order: 12
+      prompt: 12-ecosystem-integration.md
+      output: 12-ecosystem-integration.md
+readme:
+    template: docs/README.md.tpl
+    output: README.md
+    source_section: overview
+    generate_toc: true
