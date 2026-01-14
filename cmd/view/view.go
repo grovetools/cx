@@ -3,7 +3,6 @@ package view
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -14,6 +13,7 @@ import (
 	"github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/tui/components/nvim"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/mattsolo1/grove-core/util/delegation"
 	"github.com/spf13/cobra"
 )
 
@@ -243,7 +243,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.SelectRules):
 			if m.pages[m.activePage].Name() == "rules" {
-				cxCmd := exec.Command("grove", "cx", "rules")
+				cxCmd := delegation.Command("cx", "rules")
 				cxCmd.Stdin = os.Stdin
 				cxCmd.Stdout = os.Stdout
 				cxCmd.Stderr = os.Stderr

@@ -15,6 +15,7 @@ import (
 	"github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/util/delegation"
 	"github.com/mattsolo1/grove-core/util/sanitize"
 	"github.com/spf13/cobra"
 )
@@ -415,7 +416,7 @@ func setupDefaultAuditRules(repoPath string) error {
 
 // runInteractiveView executes the 'grove cx view' command as a subprocess.
 func runInteractiveView() error {
-	cxCmd := exec.Command("grove", "cx", "view")
+	cxCmd := delegation.Command("cx", "view")
 	cxCmd.Stdin = os.Stdin
 	cxCmd.Stdout = os.Stdout
 	cxCmd.Stderr = os.Stderr
@@ -464,13 +465,13 @@ func runLLMAnalysis() (string, error) {
 	// Construct the gemapi command
 	// We are already in the correct directory, so gemapi will pick up the context automatically.
 	args := []string{
-		"request",
 		"--model", model,
 		"--file", tmpFile.Name(),
 		"--yes", // Skip any confirmations
 	}
 	// Use 'grove llm request' to ensure workspace-aware context is used
-	gemapiCmd := exec.Command("grove", append([]string{"llm", "request"}, args...)...)
+	cmdArgs := append([]string{"llm", "request"}, args...)
+	gemapiCmd := delegation.Command(cmdArgs[0], cmdArgs[1:]...)
 	gemapiCmd.Stderr = os.Stderr // Pipe stderr to see progress from llm
 
 	// Execute the command and capture stdout
