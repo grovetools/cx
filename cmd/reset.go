@@ -21,6 +21,15 @@ func NewResetCmd() *cobra.Command {
 		Long:  `Resets the .grove/rules file to the default rules defined in grove.yml. If no default is configured, creates a basic rules file with sensible defaults.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
+
+			// Check for zombie worktree - refuse to create rules in deleted worktrees
+			if context.IsZombieWorktreeCwd() {
+				ulog.Warn("Zombie worktree detected").
+					Pretty("Refusing to create rules file in deleted worktree").
+					Log(ctx)
+				return fmt.Errorf("cannot create rules file: worktree has been deleted")
+			}
+
 			mgr := context.NewManager("")
 
 			// Get ONLY the default rules content (not the current rules)

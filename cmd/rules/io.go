@@ -138,6 +138,12 @@ func setRuleCmd(item ruleItem) tea.Cmd {
 
 func loadRuleCmd(item ruleItem) tea.Cmd {
 	return func() tea.Msg {
+		// Check for zombie worktree - refuse to create rules in deleted worktrees
+		if context.IsZombieWorktreeCwd() {
+			fmt.Fprintf(os.Stderr, "Error: Cannot create rules file in deleted worktree\n")
+			return tea.Quit()
+		}
+
 		sourcePath := item.path
 
 		// Can't load .grove/rules into itself
@@ -177,6 +183,11 @@ func loadRuleCmd(item ruleItem) tea.Cmd {
 
 func performLoadCmd(item ruleItem) tea.Cmd {
 	return func() tea.Msg {
+		// Check for zombie worktree - refuse to create rules in deleted worktrees
+		if context.IsZombieWorktreeCwd() {
+			return loadCompleteMsg{err: fmt.Errorf("cannot create rules file: worktree has been deleted")}
+		}
+
 		sourcePath := item.path
 
 		// Read the source file

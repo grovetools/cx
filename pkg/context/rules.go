@@ -1165,6 +1165,11 @@ func (m *Manager) removeGitRulesForRepo(repoURL string) error {
 // AppendRule adds a rule to the active rules file in the specified context
 // contextType can be "hot", "cold", or "exclude".
 func (m *Manager) AppendRule(rulePath, contextType string) error {
+	// Check for zombie worktree - refuse to create rules in deleted worktrees
+	if IsZombieWorktree(m.workDir) {
+		return fmt.Errorf("cannot create rules file: worktree has been deleted")
+	}
+
 	// Validate the rule safety before adding
 	if err := m.validateRuleSafety(rulePath); err != nil {
 		return fmt.Errorf("safety validation failed: %w", err)
@@ -1255,6 +1260,11 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 
 // ToggleViewDirective adds or removes a `@view:` directive from the rules file.
 func (m *Manager) ToggleViewDirective(path string) error {
+	// Check for zombie worktree - refuse to create rules in deleted worktrees
+	if IsZombieWorktree(m.workDir) {
+		return fmt.Errorf("cannot create rules file: worktree has been deleted")
+	}
+
 	rulesFilePath := m.findActiveRulesFile()
 	if rulesFilePath == "" {
 		// Create .grove/rules file if it doesn't exist
