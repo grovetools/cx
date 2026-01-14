@@ -89,9 +89,9 @@ https://github.com/charmbracelet/lipgloss@v0.13.0
 						result.ExitCode, result.Stdout, result.Stderr)
 				}
 				
-				// Check that it reports files were generated
-				if !strings.Contains(result.Stdout, "Generated .grove/context with") {
-					return fmt.Errorf("expected 'Generated .grove/context with' in output, got: %s", result.Stdout)
+				// Check that it reports files were generated (success message goes to stderr via unified logger)
+				if !strings.Contains(result.Stderr, "Generated context file") {
+					return fmt.Errorf("expected 'Generated context file' in stderr, got: %s", result.Stderr)
 				}
 				
 				return nil

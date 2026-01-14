@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	stdctx "context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -15,7 +14,6 @@ func NewListCacheCmd() *cobra.Command {
 		Short: "List cached cold context files",
 		Long:  `Lists the absolute paths of all files in the cached cold context.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := stdctx.Background()
 			mgr := context.NewManager("")
 
 			coldFiles, err := mgr.ResolveColdContextFiles()
@@ -24,10 +22,7 @@ func NewListCacheCmd() *cobra.Command {
 			}
 
 			for _, file := range coldFiles {
-				ulog.Info("Cached cold context file").
-					Field("file", file).
-					Pretty(file).
-					Log(ctx)
+				fmt.Println(file)
 			}
 
 			return nil

@@ -62,8 +62,9 @@ func main() {
 						result.ExitCode, result.Stdout, result.Stderr)
 				}
 
-				if !strings.Contains(result.Stdout, "Generated .grove/context with") {
-					return fmt.Errorf("expected 'Generated .grove/context with' in output, got: %s", result.Stdout)
+				// Success message goes to stderr via unified logger
+				if !strings.Contains(result.Stderr, "Generated context file") {
+					return fmt.Errorf("expected 'Generated context file' in stderr, got: %s", result.Stderr)
 				}
 
 				return nil
