@@ -183,7 +183,7 @@ dist/
 					return fmt.Errorf("totalTokens is %.0f, expected < 10000 (should exclude gitignored files)\nFull stats: %v", totalTokens, line1Stats)
 				}
 
-				fmt.Printf("✓ Stats correctly show %d files with %.0f tokens (gitignored files excluded)\n", int(fileCount), totalTokens)
+				fmt.Printf("Stats correctly show %d files with %.0f tokens (gitignored files excluded)\n", int(fileCount), totalTokens)
 				return nil
 			}),
 		},
@@ -236,7 +236,7 @@ node_modules/
 						return err
 					}
 				}
-				fmt.Println("✓ Created 10,000 gitignored files")
+				fmt.Println("Created 10,000 gitignored files")
 
 				return nil
 			}),
@@ -301,8 +301,8 @@ node_modules/
 					return fmt.Errorf("cache should contain 'data' and 'node_modules' directory entries, but got: %v", ignoredPaths)
 				}
 
-				fmt.Printf("✓ Gitignore cache has %d entries (directories only, not individual files)\n", len(ignoredPaths))
-				fmt.Printf("✓ Cache contains directory-level entries: data/, node_modules/\n")
+				fmt.Printf("Gitignore cache has %d entries (directories only, not individual files)\n", len(ignoredPaths))
+				fmt.Printf("Cache contains directory-level entries: data/, node_modules/\n")
 				return nil
 			}),
 		},
@@ -318,9 +318,9 @@ node_modules/
 // Reported issue:
 // *                                                  ~45.0k tokens (78 files)
 //
-// !node_modules                                      ⚠ no matches
-// !coverage                                          ⚠ no matches
-// !dist                                              ⚠ no matches
+// !node_modules                                      (no matches)
+// !coverage                                          (no matches)
+// !dist                                              (no matches)
 //
 // The `*` pattern was matching files before gitignore filtering, causing incorrect stats.
 func StarPatternRespectsGitignoreScenario() *harness.Scenario {
@@ -445,7 +445,7 @@ coverage
 					return fmt.Errorf("* pattern shows %d files, expected around 3-4 (should exclude gitignored dirs)\nFull stats: %v", int(fileCount), line1Stats)
 				}
 
-				fmt.Printf("✓ * pattern correctly shows %d files (gitignored dirs excluded)\n", int(fileCount))
+				fmt.Printf("* pattern correctly shows %d files (gitignored dirs excluded)\n", int(fileCount))
 				return nil
 			}),
 		},

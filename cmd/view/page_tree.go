@@ -723,7 +723,7 @@ func (p *treePage) View() string {
 	// Show confirmation prompt if present
 	if p.pendingConfirm != nil {
 		confirmStyle := core_theme.DefaultTheme.Warning
-		content += "\n" + confirmStyle.Render(fmt.Sprintf("⚠️  %s - Press 'y' to confirm, 'n' to cancel", p.pendingConfirm.warning))
+		content += "\n" + confirmStyle.Render(fmt.Sprintf("%s - Press 'y' to confirm, 'n' to cancel", p.pendingConfirm.warning))
 	}
 
 	// Show ruleset selector overlay if active
@@ -940,7 +940,7 @@ func (p *treePage) renderNode(index int) string {
 	isDangerous, _ := p.isPathPotentiallyDangerous(relPath)
 	dangerSymbol := ""
 	if isDangerous && node.Status == context.StatusOmittedNoMatch {
-		dangerSymbol = " ⚠️"
+		dangerSymbol = " [!]"
 	}
 
 	// Token count with color based on size
@@ -1149,7 +1149,7 @@ func (p *treePage) handleRuleAction(relPath string, action string, isDir bool) t
 			isDirectory: isDir,
 			warning:     warning,
 		}
-		p.statusMessage = fmt.Sprintf("⚠️  %s - Press 'y' to confirm, 'n' to cancel", warning)
+		p.statusMessage = fmt.Sprintf("%s - Press 'y' to confirm, 'n' to cancel", warning)
 		return nil
 	}
 

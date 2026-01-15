@@ -40,7 +40,7 @@ func RulesWorkflowScenario() *harness.Scenario {
 				if !strings.Contains(output, "dev") || !strings.Contains(output, "docs") {
 					return fmt.Errorf("list output missing rule sets")
 				}
-				if strings.Contains(output, "✓") {
+				if strings.Contains(output, "*") {
 					return fmt.Errorf("no rule set should be active initially")
 				}
 				if !strings.Contains(output, "Active Source: (default)") {
@@ -61,7 +61,7 @@ func RulesWorkflowScenario() *harness.Scenario {
 				listCmd := command.New(cx, "rules", "list").Dir(ctx.RootDir)
 				listResult := listCmd.Run()
 				listOutput := listResult.Stdout + listResult.Stderr
-				if !strings.Contains(listOutput, "✓ dev") {
+				if !strings.Contains(listOutput, "* dev") {
 					return fmt.Errorf("'dev' is not marked as active in rules list")
 				}
 

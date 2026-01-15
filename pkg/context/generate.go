@@ -36,11 +36,11 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 	}
 
 	// Print rules file info to stderr
-	fmt.Fprintf(os.Stderr, "📋 Using rules file: %s\n", absRulesFilePath)
+	fmt.Fprintf(os.Stderr, "Using rules file: %s\n", absRulesFilePath)
 	content := strings.TrimSpace(string(rulesContent))
 	if content != "" {
 		lines := strings.Split(content, "\n")
-		fmt.Fprintf(os.Stderr, "📋 Rules content (%d lines):\n", len(lines))
+		fmt.Fprintf(os.Stderr, "Rules content (%d lines):\n", len(lines))
 
 		// Display with indentation, limit to first 10 lines
 		maxLines := 10
@@ -153,9 +153,9 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		rulesContent, _, _ := m.LoadRulesContent()
 		if rulesContent == nil {
 			// Print visible warning to stderr
-			fmt.Fprintf(os.Stderr, "\n⚠️  WARNING: No rules file found!\n")
-			fmt.Fprintf(os.Stderr, "⚠️  Create %s with patterns to include files in the context.\n", ActiveRulesFile)
-			fmt.Fprintf(os.Stderr, "⚠️  Generating empty context file.\n\n")
+			fmt.Fprintf(os.Stderr, "\nWARNING: No rules file found!\n")
+			fmt.Fprintf(os.Stderr, "Create %s with patterns to include files in the context.\n", ActiveRulesFile)
+			fmt.Fprintf(os.Stderr, "Generating empty context file.\n\n")
 		}
 	}
 

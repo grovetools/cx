@@ -111,7 +111,7 @@ func setRuleCmd(item ruleItem) tea.Cmd {
 				fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
 				return tea.Quit()
 			}
-			fmt.Println(theme.DefaultTheme.Success.Render("✓ Using .grove/rules (default)"))
+			fmt.Println(theme.DefaultTheme.Success.Render("Using .grove/rules (default)"))
 			return tea.Quit()
 		}
 
@@ -131,7 +131,7 @@ func setRuleCmd(item ruleItem) tea.Cmd {
 			fmt.Fprintf(os.Stderr, "Warning: %s exists but will be ignored while '%s' is active.\n", context.ActiveRulesFile, item.name)
 		}
 
-		fmt.Println(theme.DefaultTheme.Success.Render(fmt.Sprintf("✓ Active context rules set to '%s'", item.name)))
+		fmt.Println(theme.DefaultTheme.Success.Render(fmt.Sprintf("Active context rules set to '%s'", item.name)))
 		return tea.Quit()
 	}
 }
@@ -176,7 +176,7 @@ func loadRuleCmd(item ruleItem) tea.Cmd {
 			fmt.Fprintf(os.Stderr, "Warning: could not unset active rule set in state: %v\n", err)
 		}
 
-		fmt.Println(theme.DefaultTheme.Success.Render(fmt.Sprintf("✓ Loaded '%s' into .grove/rules as working copy", item.name)))
+		fmt.Println(theme.DefaultTheme.Success.Render(fmt.Sprintf("Loaded '%s' into .grove/rules as working copy", item.name)))
 		return tea.Quit()
 	}
 }

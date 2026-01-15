@@ -113,7 +113,7 @@ func testCXViewRuleModification(ctx *harness.Context) error {
 	if err := session.Type("h"); err != nil {
 		return err
 	}
-	if err := session.WaitForText("untracked.txt ✓", 3*time.Second); err != nil {
+	if err := session.WaitForText("untracked.txt *", 3*time.Second); err != nil {
 		return err
 	}
 	// Move to cold context

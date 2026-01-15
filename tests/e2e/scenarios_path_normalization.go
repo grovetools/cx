@@ -89,7 +89,7 @@ func main() {
 					return fmt.Errorf("cx list is missing README.md:\n%s", output)
 				}
 
-				fmt.Printf("\n✓ cx list shows expected files\n")
+				fmt.Printf("\ncx list shows expected files\n")
 				return nil
 			}),
 
@@ -136,7 +136,7 @@ func main() {
 
 				// Let UI stabilize
 				if err := session.WaitForUIStable(2*time.Second, 100*time.Millisecond, 200*time.Millisecond); err != nil {
-					fmt.Printf("   ⚠️  UI stability warning: %v\n", err)
+					fmt.Printf("   UI stability warning: %v\n", err)
 				}
 
 				content, err := session.Capture(tui.WithCleanedOutput())
@@ -155,7 +155,7 @@ func main() {
 					return fmt.Errorf("cx view shows unexpected relative paths")
 				}
 
-				fmt.Printf("\n✓ View correctly displays paths\n")
+				fmt.Printf("\nView correctly displays paths\n")
 				return nil
 			}),
 
@@ -350,7 +350,7 @@ func main() {
 
 				// Let UI stabilize
 				if err := session.WaitForUIStable(2*time.Second, 100*time.Millisecond, 200*time.Millisecond); err != nil {
-					fmt.Printf("   ⚠️  UI stability warning: %v\n", err)
+					fmt.Printf("   UI stability warning: %v\n", err)
 				}
 
 				content, err := session.Capture(tui.WithCleanedOutput())
@@ -363,7 +363,7 @@ func main() {
 					return fmt.Errorf("cx view is missing main.go")
 				}
 
-				fmt.Printf("\n✓ View correctly displays normalized paths from symlink\n")
+				fmt.Printf("\nView correctly displays normalized paths from symlink\n")
 				return nil
 			}),
 

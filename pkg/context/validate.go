@@ -99,7 +99,7 @@ func (r *ValidationResult) Print() {
 
 	// Missing files
 	if len(r.MissingFiles) > 0 {
-		fmt.Printf("✗ Missing files (%d):\n", len(r.MissingFiles))
+		fmt.Printf("Missing files (%d):\n", len(r.MissingFiles))
 		for _, file := range r.MissingFiles {
 			fmt.Printf("  - %s", file)
 			if strings.HasSuffix(file, " (is a directory)") {
@@ -114,7 +114,7 @@ func (r *ValidationResult) Print() {
 
 	// Permission issues
 	if len(r.PermissionIssues) > 0 {
-		fmt.Printf("✗ Permission denied (%d):\n", len(r.PermissionIssues))
+		fmt.Printf("Permission denied (%d):\n", len(r.PermissionIssues))
 		for _, file := range r.PermissionIssues {
 			fmt.Printf("  - %s (check file permissions)\n", file)
 		}
@@ -123,7 +123,7 @@ func (r *ValidationResult) Print() {
 
 	// Duplicates
 	if len(r.Duplicates) > 0 {
-		fmt.Printf("⚠ Duplicates found (%d):\n", len(r.Duplicates))
+		fmt.Printf("Duplicates found (%d):\n", len(r.Duplicates))
 		for file, count := range r.Duplicates {
 			fmt.Printf("  - %s appears %d times\n", file, count)
 		}
@@ -131,15 +131,15 @@ func (r *ValidationResult) Print() {
 	}
 
 	// Summary
-	fmt.Printf("✓ Accessible files: %d/%d\n", r.AccessibleFiles, r.TotalFiles)
+	fmt.Printf("Accessible files: %d/%d\n", r.AccessibleFiles, r.TotalFiles)
 
 	// Total issues
 	totalIssues := len(r.MissingFiles) + len(r.Duplicates) + len(r.PermissionIssues)
 	if totalIssues > 0 {
-		fmt.Printf("✗ Issues found: %d\n", totalIssues)
+		fmt.Printf("Issues found: %d\n", totalIssues)
 		fmt.Println("\nCheck your rules file and ensure all referenced files exist.")
 	} else {
-		fmt.Printf("\n✓ All %d files are valid and accessible\n", r.TotalFiles)
+		fmt.Printf("\nAll %d files are valid and accessible\n", r.TotalFiles)
 	}
 }
 

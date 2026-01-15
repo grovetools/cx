@@ -275,7 +275,7 @@ func newRulesListCmd() *cobra.Command {
 
 					indicator := "  "
 					if path == activeSource {
-						indicator = "✓ "
+						indicator = "* "
 					}
 					ulog.Info("Rule set").
 						Field("name", name).
@@ -291,7 +291,7 @@ func newRulesListCmd() *cobra.Command {
 					for _, rule := range planRules {
 						indicator := "  "
 						if rule.Path == activeSource {
-							indicator = "✓ "
+							indicator = "* "
 						}
 						sourceInfo := fmt.Sprintf("plan:%s (ws:%s)", rule.PlanName, rule.WorkspaceName)
 						ulog.Info("Plan rule").
