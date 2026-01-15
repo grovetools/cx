@@ -59,7 +59,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewWorkspaceCmd())
 	rootCmd.AddCommand(cmd.NewResolveCmd())
 
-	if err := rootCmd.Execute(); err != nil {
+	if err := cli.Execute(rootCmd); err != nil {
 		os.Exit(1)
 	}
 }
