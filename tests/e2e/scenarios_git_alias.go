@@ -62,9 +62,9 @@ func main() {
 						result.ExitCode, result.Stdout, result.Stderr)
 				}
 
-				// Success message goes to stderr via unified logger
-				if !strings.Contains(result.Stderr, "Generated context file") {
-					return fmt.Errorf("expected 'Generated context file' in stderr, got: %s", result.Stderr)
+				// Success message goes to stdout
+				if !strings.Contains(result.Stdout, "Generated context file") {
+					return fmt.Errorf("expected 'Generated context file' in stdout, got: %s", result.Stdout)
 				}
 
 				return nil
