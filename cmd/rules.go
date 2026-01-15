@@ -85,6 +85,12 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
+
+			// Check for zombie worktree - refuse to create rules in deleted worktrees
+			if context.IsZombieWorktreeCwd() {
+				return fmt.Errorf("cannot create rules file: worktree has been deleted")
+			}
+
 			nameOrPath := args[0]
 			var sourcePath string
 

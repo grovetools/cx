@@ -1068,6 +1068,11 @@ func (m *Manager) ShouldDisableCache() (bool, error) {
 
 // SetActiveRules copies a rules file to the active rules location
 func (m *Manager) SetActiveRules(sourcePath string) error {
+	// Check for zombie worktree - refuse to create rules in deleted worktrees
+	if IsZombieWorktree(m.workDir) {
+		return fmt.Errorf("cannot create rules file: worktree has been deleted")
+	}
+
 	// Check if source file exists
 	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
 		return fmt.Errorf("source rules file not found: %s", sourcePath)
@@ -1097,6 +1102,11 @@ func (m *Manager) SetActiveRules(sourcePath string) error {
 
 // WriteRulesTo writes the current active rules to a specified file path
 func (m *Manager) WriteRulesTo(destPath string) error {
+	// Check for zombie worktree - refuse to create rules in deleted worktrees
+	if IsZombieWorktree(destPath) {
+		return fmt.Errorf("cannot create rules file: worktree has been deleted")
+	}
+
 	// Find the active rules file
 	rulesFilePath := m.findActiveRulesFile()
 	if rulesFilePath == "" {

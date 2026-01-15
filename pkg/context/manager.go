@@ -1126,6 +1126,11 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 
 	// If the rules file doesn't exist, create it
 	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
+		// Check for zombie worktree - refuse to create rules in deleted worktrees
+		if IsZombieWorktree(rulesPath) {
+			return "", fmt.Errorf("cannot create rules file: worktree has been deleted")
+		}
+
 		// Ensure parent directory exists
 		groveDir := filepath.Dir(rulesPath)
 		if err := os.MkdirAll(groveDir, 0755); err != nil {

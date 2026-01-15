@@ -393,6 +393,11 @@ func formatTimeSince(t time.Time) string {
 
 // setupDefaultAuditRules creates a default .grove/rules file for auditing.
 func setupDefaultAuditRules(repoPath string) error {
+	// Check for zombie worktree - refuse to create rules in deleted worktrees
+	if context.IsZombieWorktree(repoPath) {
+		return fmt.Errorf("cannot create rules file: worktree has been deleted")
+	}
+
 	rulesPath := filepath.Join(repoPath, ".grove", "rules")
 
 	mgr := context.NewManager(repoPath)
