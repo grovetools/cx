@@ -1,5 +1,5 @@
 enabled: true
-title: Grove Context
+title: cx
 description: A rule-based tool for dynamically managing the file-based context provided to Large Language Models (LLMs).
 category: Developer Tools
 settings:
