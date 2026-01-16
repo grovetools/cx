@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattsolo1/grove-context/cmd/rules"
-	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/pkg/alias"
-	"github.com/mattsolo1/grove-core/state"
+	"github.com/grovetools/cx/cmd/rules"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/pkg/alias"
+	"github.com/grovetools/core/state"
 	"github.com/spf13/cobra"
 )
 

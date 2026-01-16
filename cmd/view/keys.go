@@ -2,7 +2,7 @@ package view
 
 import (
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/mattsolo1/grove-core/tui/keymap"
+	"github.com/grovetools/core/tui/keymap"
 )
 
 // pagerKeyMap defines the key bindings for the main pager view.

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattsolo1/grove-core/pkg/profiling"
+	"github.com/grovetools/core/pkg/profiling"
 )
 
 // RuleInfo holds a parsed rule with its line number and origin.

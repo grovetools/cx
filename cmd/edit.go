@@ -7,7 +7,7 @@ import (
 	"runtime"
 
 	"github.com/spf13/cobra"
-	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 func NewEditCmd() *cobra.Command {

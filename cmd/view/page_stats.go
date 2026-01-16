@@ -11,8 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattsolo1/grove-context/pkg/context"
-	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/grovetools/cx/pkg/context"
+	core_theme "github.com/grovetools/core/tui/theme"
 )
 
 // focus constants

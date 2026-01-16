@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/state"
-	"github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/state"
+	"github.com/grovetools/core/tui/theme"
 )
 
 // --- TUI Commands ---

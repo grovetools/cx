@@ -4,7 +4,7 @@ import (
 	stdctx "context"
 	"strings"
 
-	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
 )
 

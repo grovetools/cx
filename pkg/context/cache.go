@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mattsolo1/grove-core/pkg/repo"
+	"github.com/grovetools/core/pkg/repo"
 )
 
 const StatsCacheDirName = "stats-cache"

@@ -11,12 +11,12 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/config"
-	"github.com/mattsolo1/grove-core/pkg/repo"
-	"github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-core/util/delegation"
-	"github.com/mattsolo1/grove-core/util/sanitize"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/config"
+	"github.com/grovetools/core/pkg/repo"
+	"github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/util/delegation"
+	"github.com/grovetools/core/util/sanitize"
 	"github.com/spf13/cobra"
 )
 

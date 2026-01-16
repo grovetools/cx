@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 	"github.com/spf13/cobra"
-	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/logging"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/logging"
 )
 
 var (

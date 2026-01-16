@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/mattsolo1/grove-core/tui/components/help"
+	"github.com/grovetools/core/tui/components/help"
 )
 
 type ruleItem struct {

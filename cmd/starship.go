@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/starship"
-	"github.com/mattsolo1/grove-core/state"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/starship"
+	"github.com/grovetools/core/state"
 )
 
 func init() {

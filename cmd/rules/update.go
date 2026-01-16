@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 type loadCompleteMsg struct {

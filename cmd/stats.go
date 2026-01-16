@@ -11,9 +11,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/cli"
-	"github.com/mattsolo1/grove-core/pkg/repo"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/cli"
+	"github.com/grovetools/core/pkg/repo"
 	"github.com/spf13/cobra"
 )
 

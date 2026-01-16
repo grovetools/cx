@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattsolo1/grove-tend/pkg/harness"
-	"github.com/mattsolo1/grove-tend/pkg/tui"
-	"github.com/mattsolo1/grove-tend/pkg/verify"
+	"github.com/grovetools/tend/pkg/harness"
+	"github.com/grovetools/tend/pkg/tui"
+	"github.com/grovetools/tend/pkg/verify"
 )
 
 // TUIViewRulesScenario tests the interactive features of the `cx view` rules page.

@@ -1,7 +1,7 @@
 package context
 
 import (
-	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/grovetools/core/pkg/workspace"
 )
 
 // IsZombieWorktree checks if the given path is inside a deleted git worktree.
