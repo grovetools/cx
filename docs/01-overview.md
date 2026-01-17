@@ -1,6 +1,4 @@
-# grove-context (cx)
-
-## Introduction
+![grove cx](./images/cx-logo.svg#themed)
 
 `grove-context` (`cx`) is a CLI tool for assembling multi-repository context for LLMs. It shifts context discovery from ad-hoc agent searching to upfront developer curation, enabling 100k-700k token contexts that produce comprehensive implementation plans. It supports a planning → execution workflow: define what files, repos, and content are relevant to a feature, send that context to a large-context LLM via API (e.g., `gemapi request` with Gemini 2M tokens) to generate an implementation plan, then execute that plan with smaller, focused contexts.
 
@@ -24,17 +22,10 @@ graph TD
     F -->|"Continue"| G["Incomplete implementation"]
     G --> H["Manual cleanup required"]
 
-    style A fill:#f0f0f0
-    style B fill:#ffe1e1
-    style C fill:#ffe1e1
-    style D fill:#fff3e1
-    style U1 fill:#e1e8ff
-    style U2 fill:#e1e8ff
-    style U3 fill:#e1e8ff
-    style E fill:#e1ffe1
-    style F fill:#f0f0f0
-    style G fill:#ffe1e1
-    style H fill:#ffe1e1
+    class B,C,G,H errorNode
+    class D warningNode
+    class U1,U2,U3 blueNode
+    class E greenNode
 ```
 *Figure 1: Traditional agent-only approach with manual context discovery*
 
@@ -58,16 +49,10 @@ graph TD
     H --> E
     F -->|"Done"| I["Complete implementation"]
 
-    style A fill:#e1f5ff
-    style B fill:#e1f5ff
-    style C fill:#fff3e1
-    style D fill:#fff3e1
-    style R fill:#f0f0f0
-    style E fill:#e1ffe1
-    style F fill:#f0f0f0
-    style G fill:#e1e8ff
-    style H fill:#fff3e1
-    style I fill:#e1ffe1
+    class A,B cyanNode
+    class C,D,H yellowNode
+    class E,I successNode
+    class G blueNode
 ```
 *Figure 2: Grove-context approach with upfront context curation and feedback loops*
 
