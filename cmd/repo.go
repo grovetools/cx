@@ -646,7 +646,7 @@ If no ruleset name is provided, it defaults to 'default'.`,
 				// Just switch to the existing session
 				if err := tmuxClient.SwitchClientToSession(background, sessionName); err != nil {
 					// If we're not in tmux, try to attach instead
-					attachCmd := exec.Command("tmux", "attach-session", "-t", sessionName)
+					attachCmd := tmux.Command("attach-session", "-t", sessionName)
 					attachCmd.Stdin = os.Stdin
 					attachCmd.Stdout = os.Stdout
 					attachCmd.Stderr = os.Stderr
@@ -680,7 +680,7 @@ If no ruleset name is provided, it defaults to 'default'.`,
 			if err := tmuxClient.SwitchClientToSession(background, sessionName); err != nil {
 				// If we're not in tmux, try to attach instead
 				ulog.Info("Attaching to session").Log(ctx)
-				attachCmd := exec.Command("tmux", "attach-session", "-t", sessionName)
+				attachCmd := tmux.Command("attach-session", "-t", sessionName)
 				attachCmd.Stdin = os.Stdin
 				attachCmd.Stdout = os.Stdout
 				attachCmd.Stderr = os.Stderr

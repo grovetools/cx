@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/tend/pkg/fs"
 	"github.com/grovetools/tend/pkg/git"
 	"github.com/grovetools/tend/pkg/harness"
@@ -35,7 +36,7 @@ func FindProjectBinary() (string, error) {
 // This helps ensure a clean test environment and avoids port conflicts or session collisions.
 func CleanupExistingTestSessions() error {
 	// List all tmux sessions
-	cmd := exec.Command("tmux", "list-sessions", "-F", "#{session_name}")
+	cmd := tmux.Command("list-sessions", "-F", "#{session_name}")
 	output, err := cmd.Output()
 	if err != nil {
 		// If tmux returns an error, it might mean no server is running
@@ -63,7 +64,7 @@ func CleanupExistingTestSessions() error {
 		   strings.Contains(session, "cx-view") ||
 		   strings.Contains(session, "grove-tend") {
 			// Kill the session
-			killCmd := exec.Command("tmux", "kill-session", "-t", session)
+			killCmd := tmux.Command("kill-session", "-t", session)
 			if err := killCmd.Run(); err != nil {
 				// Log but don't fail - session might have already ended
 				fmt.Printf("   Note: Could not kill session %s: %v\n", session, err)
