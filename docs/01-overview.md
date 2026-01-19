@@ -1,5 +1,3 @@
-![grove cx](./images/cx-logo.svg#themed)
-
 `grove-context` (`cx`) is a CLI tool for assembling multi-repository context for LLMs. It shifts context discovery from ad-hoc agent searching to upfront developer curation, enabling 100k-700k token contexts that produce comprehensive implementation plans. It supports a planning → execution workflow: define what files, repos, and content are relevant to a feature, send that context to a large-context LLM via API (e.g., `gemapi request` with Gemini 2M tokens) to generate an implementation plan, then execute that plan with smaller, focused contexts.
 
 The typical approach today is letting agents discover context on their own - either in "plan mode" or directly during implementation, where the agent greps and inspects the codebase from scratch each time. Many editors and CLI-based agents allow referencing context, but this is ad-hoc: context references scattered across chat history, not reproducible across runs, not shareable with team members. Agent-driven discovery is inefficient (wastes tokens searching), incomplete (misses context in other repos), and lacks architectural understanding that developers have.
