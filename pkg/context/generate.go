@@ -29,35 +29,22 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 		return fmt.Errorf("failed to get absolute path for rules file: %w", err)
 	}
 
-	// Read and display the rules file content
+	// Read the rules file content
 	rulesContent, err := os.ReadFile(absRulesFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read rules file: %w", err)
 	}
 
-	// Print rules file info to stderr
-	fmt.Fprintf(os.Stderr, "Using rules file: %s\n", absRulesFilePath)
+	// Log rules file info using structured logging (respects TUI mode)
 	content := strings.TrimSpace(string(rulesContent))
+	lineCount := 0
 	if content != "" {
-		lines := strings.Split(content, "\n")
-		fmt.Fprintf(os.Stderr, "Rules content (%d lines):\n", len(lines))
-
-		// Display with indentation, limit to first 10 lines
-		maxLines := 10
-		displayLines := lines
-		if len(lines) > maxLines {
-			displayLines = lines[:maxLines]
-		}
-
-		for _, line := range displayLines {
-			fmt.Fprintf(os.Stderr, "   %s\n", line)
-		}
-
-		if len(lines) > maxLines {
-			fmt.Fprintf(os.Stderr, "   ... (%d more lines)\n", len(lines)-maxLines)
-		}
-		fmt.Fprintln(os.Stderr)
+		lineCount = len(strings.Split(content, "\n"))
 	}
+	m.ulog.Info("Using custom rules file").
+		Field("path", absRulesFilePath).
+		Field("lines", lineCount).
+		Log(context.Background())
 
 	hotRules, coldRules, _, err := m.expandAllRules(absRulesFilePath, make(map[string]bool), 0)
 	if err != nil {
@@ -152,10 +139,10 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 	if len(filesToInclude) == 0 {
 		rulesContent, _, _ := m.LoadRulesContent()
 		if rulesContent == nil {
-			// Print visible warning to stderr
-			fmt.Fprintf(os.Stderr, "\nWARNING: No rules file found!\n")
-			fmt.Fprintf(os.Stderr, "Create %s with patterns to include files in the context.\n", ActiveRulesFile)
-			fmt.Fprintf(os.Stderr, "Generating empty context file.\n\n")
+			// Log warning using structured logging (respects TUI mode)
+			m.ulog.Warn("No rules file found").
+				Field("hint", fmt.Sprintf("Create %s with patterns to include files", ActiveRulesFile)).
+				Log(context.Background())
 		}
 	}
 
@@ -193,7 +180,10 @@ func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) er
 		if useXMLFormat {
 			// Use the existing writeFileToXML method for consistency
 			if err := m.writeFileToXML(ctxFile, file, "    "); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: error writing file %s: %v\n", file, err)
+				m.ulog.Warn("Error writing file to context").
+					Field("file", file).
+					Err(err).
+					Log(context.Background())
 			}
 		} else {
 			// Classic delimiter style
@@ -273,7 +263,10 @@ func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
 	// Write cold context files
 	for _, file := range coldFiles {
 		if err := m.writeFileToXML(cachedFile, file, "    "); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: error writing file %s: %v\n", file, err)
+			m.ulog.Warn("Error writing file to cached context").
+				Field("file", file).
+				Err(err).
+				Log(context.Background())
 		}
 	}
 
