@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/core/pkg/repo"
 )
 
@@ -35,12 +36,8 @@ type RepoCache struct {
 // getStatsCacheDir returns the path to the centralized stats cache directory.
 // It is now a sibling of the 'repos' directory for better organization.
 func getStatsCacheDir() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
 	// Place stats-cache next to repos, not inside it
-	cacheDir := filepath.Join(homeDir, ".grove", "cx", StatsCacheDirName)
+	cacheDir := filepath.Join(paths.CacheDir(), "cx", StatsCacheDirName)
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
