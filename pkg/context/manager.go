@@ -17,6 +17,7 @@ import (
 	"github.com/grovetools/core/config"
 	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/alias"
+	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/core/pkg/profiling"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
@@ -940,16 +941,22 @@ func (m *Manager) initAllowedRoots() {
 			}
 		}
 
-		// Add ~/.grove as an explicit exception
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			groveHome := filepath.Join(homeDir, ".grove")
-			// Canonicalize grove home path
-			canonicalGroveHome, err := pathutil.NormalizeForLookup(groveHome)
-			if err != nil {
-				canonicalGroveHome = groveHome
+		// Add Grove XDG directories as explicit exceptions
+		groveDirs := []string{
+			paths.ConfigDir(),
+			paths.DataDir(),
+			paths.StateDir(),
+			paths.CacheDir(),
+		}
+		for _, groveDir := range groveDirs {
+			if groveDir != "" {
+				// Canonicalize grove directory path
+				canonicalGroveDir, err := pathutil.NormalizeForLookup(groveDir)
+				if err != nil {
+					canonicalGroveDir = groveDir
+				}
+				allowed = append(allowed, canonicalGroveDir)
 			}
-			allowed = append(allowed, canonicalGroveHome)
 		}
 
 		// Also add notebook root directories to allowed paths
