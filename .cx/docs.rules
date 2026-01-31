@@ -1,8 +1,13 @@
 *.go
 !tests
 
-@a:grovetools:grove.nvim::dev-no-tests
-@a:grovetools:core::workspace-only
-@a:grovetools:flow::dev-no-tests @grep: "grove-gemini"
-@a:grovetools:grove-gemini::dev-no-tests
+# @a:grovetools:grove.nvim::dev-no-tests
+# @a:grovetools:core::workspace-only
+# @a:grovetools:flow::dev-no-tests @grep: "grove-gemini"
+# @a:grovetools:grove-gemini::dev-no-tests
 
+
+@a:grovetools:hooks/README.md
+@a:grovetools:nav/README.md
+@a:grovetools:grove/README.md
+@a:grovetools:flow/README.md
