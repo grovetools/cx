@@ -1,44 +1,27 @@
+<p align="center">
+  <img src="https://grovetools.ai/docs/cx/images/cx-logo-with-text-dark.svg" alt="Grove Cx" width=200>
+</p>
+
 <!-- DOCGEN:OVERVIEW:START -->
 
-<img src="docs/images/grove-context-readme.svg" width="60%" />
+`cx` is a command-line tool for defining and managing file-based context for Large Language Models (LLMs). It uses `.gitignore`-style rules to assemble a precise set of files from local and remotely-cloned sources, which can then be analyzed, visualized, or provided to an LLM.
 
-`grove-context` (`cx`) is a command-line tool that generates file-based context for Large Language Models (LLMs) from a set of user-defined patterns. It reads files matching these patterns and concatenates their content into a structured format.
+## Use Cases
 
-<!-- placeholder for animated gif -->
+Many agents have a "Plan Mode" for designing changes. This process involves the agent searching for files, understanding the codebase, assembling its own context, and then formulating a plan. This can be time-consuming and may require iterative prompting to guide the agent to the correct files.
 
-### Key Features
+The `cx` tool facilitates a different approach. It enables a developer to curate a large, precise set of files from across a codebase and provide it directly to an LLM API along with a prompt. This often produces higher-quality plans in a fraction of the time compared to an agent's self-directed planning mode. The developer can have a rapid, back-and-forth chat with the model, with the exact required context present at every turn.
 
-*   **Pattern-Based File Selection**: Reads include/exclude patterns from a `.grove/rules` file using a `.gitignore`-style syntax.
-*   **Context Generation**: Generates a concatenated context file with XML delimiters.
-*   **Rules Editing**: Opens the `.grove/rules` file in the default editor via the `cx edit` command.
-*   **Context Inspection**: Lists included files (`cx list`) and displays token/file counts and language distribution (`cx stats`).
-*   **Interactive TUI**: Provides a terminal interface (`cx view`) to browse the file tree, view file statuses, and modify rules.
-*   **Rule Management**: Switches the active rules by copying an external file (`cx set-rules`), restores a project-defined default (`cx reset`), or saves/loads named rule configurations (`cx save`/`load`).
-*   **Git Integration**: Generates a temporary rules file from Git history (`cx from-git`), such as files changed on a branch or staged for commit.
-*   **External Repository Management**: Includes files from external Git repositories specified by URL in the rules file and manages local clones via the `cx repo` command, which includes an audit workflow.
+After a high-quality plan is developed, it can be passed to a coding agent for implementation. The agent's role shifts from discovery and planning to the execution of a detailed, pre-vetted plan.
 
-## Ecosystem Integration
+## Key Features
 
-`grove-context` is a foundational tool within the Grove ecosystem that provides context to other LLM-powered tools.
-
-*   **`grove-gemini` and `grove-openai`**: The `grove llm request` command calls the `cx` binary to generate context before sending a request to an LLM provider. The hot/cold context separation allows `grove-gemini` to send a stable "cold" context for caching, which is useful for large contexts.
-*   **`grove-docgen`**: The documentation generator uses `cx` to gather a codebase's files before generating documentation.
-
-This allows different tools in the ecosystem to operate on a consistent and reproducible set of files defined by a single `.grove/rules` file.
-
-## Installation
-
-Install via the Grove meta-CLI:
-```bash
-grove install context
-```
-
-Verify installation:
-```bash
-cx version
-```
-
-Requires the `grove` meta-CLI. See the [Grove Installation Guide](https://github.com/mattsolo1/grove-meta/blob/main/docs/02-installation.md) if you don't have it installed.
+*   **Rules-Based Context**: Defines context using `.gitignore`-style glob patterns in simple text files.
+*   **Interactive Viewer**: An integrated Terminal UI (`cx view`) for visualizing, analyzing, and navigating the file tree and its context status.
+*   **Cross-Repository Context**: Includes files from other local projects via aliases or from remote Git repositories by URL, tag, branch, or commit.
+*   **Context Analysis**: Provides detailed statistics (`cx stats`), comparisons between rule sets (`cx diff`), and validation (`cx validate`).
+*   **Reusable Rulesets**: Saves and manages named rule sets (`cx rules`) that can be shared, version-controlled, and imported across projects.
+*   **Editor Integration**: Supports editor plugins like `grove.nvim` with features for alias completion and per-rule token analysis.
 
 <!-- DOCGEN:OVERVIEW:END -->
 
@@ -46,14 +29,5 @@ Requires the `grove` meta-CLI. See the [Grove Installation Guide](https://github
 
 See the [documentation](docs/) for detailed usage instructions:
 - [Overview](docs/01-overview.md)
-- [Examples](docs/02-examples.md)
-- [Rules & Patterns](docs/03-rules-and-patterns.md)
-- [Context Generation](docs/04-context-generation.md)
-- [Loading Rules](docs/05-loading-rules.md)
-- [Context TUI](docs/06-context-tui.md)
-- [Git Workflows](docs/07-git-workflows.md)
-- [External Repositories](docs/08-external-repositories.md)
-- [Experimental Features](docs/09-experimental.md)
-- [Command Reference](docs/10-command-reference.md)
 
 <!-- DOCGEN:TOC:END -->
