@@ -641,10 +641,10 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		// Load the config directly from the grove.yml file in that directory
-		configFile := filepath.Join(realPath, "grove.yml")
-		if _, err := os.Stat(configFile); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Warning: no grove.yml found at %s for @default path %s\n", configFile, defaultPath)
+		// Load the config from the grove config file in that directory
+		configFile, err := config.FindConfigFile(realPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: no grove config found at %s for @default path %s\n", realPath, defaultPath)
 			continue
 		}
 
@@ -731,10 +731,10 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		// Load the config directly from the grove.yml file in that directory
-		configFile := filepath.Join(realPath, "grove.yml")
-		if _, err := os.Stat(configFile); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Warning: no grove.yml found at %s for @default path %s\n", configFile, defaultPath)
+		// Load the config from the grove config file in that directory
+		configFile, err := config.FindConfigFile(realPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: no grove config found at %s for @default path %s\n", realPath, defaultPath)
 			continue
 		}
 
