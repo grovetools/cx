@@ -1,0 +1,10 @@
+name = "cx"
+description = "LLM context management"
+managed = true
+
+[binary]
+name = "cx"
+path = "./bin/cx"
+
+[context]
+default_rules_path = ".cx/dev-no-tests.rules"
