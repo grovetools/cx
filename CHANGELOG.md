@@ -1,3 +1,66 @@
+## v0.6.0 (2026-02-02)
+
+This release enforces adherence to XDG standards for configuration and state paths (921e894, c015693). It also introduces support for `grove.toml` configuration files (88fa736). Functionality for `tmux` integration has been improved to respect socket isolation (a9b53d9), resolving issues with `cx repo rules edit` in nested environments. The build process now correctly injects version information (6034527), replacing generic "dev" labels with commit hashes. 
+
+### Features
+
+- Add support for TOML configuration files alongside YAML (88fa736)
+- Add new snow-covered tree design logo (3da5960)
+
+### Bug Fixes
+
+- Use `tmux.Command` to respect `GROVE_TMUX_SOCKET` environment variable (a9b53d9)
+- Migrate stats cache and manifest to XDG-compliant paths (921e894)
+- Allow all XDG directories in context allowlist (c015693)
+- Fix version injection during build to show correct commit hash (6034527)
+- Remove stdout noise when using custom rules file (bf9c5bd)
+
+### Documentation & Chores
+
+- Migrate module dependencies to `grovetools` organization (8973f76)
+- Add MIT License (2d707f1)
+- Remove legacy documentation and move docgen files to notebooks (3c24f85)
+- Move README template to notebook (abee4f2)
+- Add concept lookup instructions to developer docs (bc6cbf0)
+
+### File Changes
+
+```
+ .cx/docs.rules                   |  13 +
+ .github/workflows/release.yml    |  75 +-----
+ CLAUDE.md                        |  15 +-
+ LICENSE                          |  21 ++
+ Makefile                         |   2 +-
+ README.md                        |  58 ++--
+ cmd/repo.go                      |  18 +-
+ docs/01-overview.md              | 288 +-------------------
+ docs/02-examples.md              | 254 -----------------
+ docs/03-rules-and-patterns.md    | 199 --------------
+ docs/04-context-generation.md    | 104 -------
+ docs/05-loading-rules.md         | 137 ----------
+ docs/06-context-tui.md           | 133 ---------
+ docs/07-git-workflows.md         |  91 -------
+ docs/08-external-repositories.md | 113 --------
+ docs/09-experimental.md          | 162 -----------
+ docs/10-command-reference.md     | 570 ---------------------------------------
+ docs/11-editor-integration.md    |  89 ------
+ docs/README.md.tpl               |   6 -
+ docs/docgen.config.yml           |  77 ------
+ docs/docs.rules                  |   7 -
+ go.mod                           |   5 +
+ go.sum                           |  41 ++-
+ grove.toml                       |  10 +
+ grove.yml                        |   9 -
+ pkg/context/cache.go             |   7 +-
+ pkg/context/generate.go          |  47 ++--
+ pkg/context/manager.go           |  25 +-
+ pkg/context/resolve.go           |  16 +-
+ pkg/docs/docs.json               | 294 +-------------------
+ tests/e2e/scenarios_git_repo.go  | 112 ++++----
+ tests/e2e/test_utils.go          |   5 +-
+ 32 files changed, 262 insertions(+), 2741 deletions(-)
+```
+
 ## v0.5.1-nightly.97e3155 (2025-10-03)
 
 ## v0.5.0 (2025-10-01)
