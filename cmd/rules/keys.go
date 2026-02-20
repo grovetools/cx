@@ -66,3 +66,14 @@ var defaultPickerKeyMap = pickerKeyMap{
 		key.WithHelp("d", "delete"),
 	),
 }
+
+// KeymapInfo returns the keymap metadata for the cx rules picker TUI.
+// Used by the grove keys registry generator to aggregate all TUI keybindings.
+func KeymapInfo() keymap.TUIInfo {
+	return keymap.MakeTUIInfo(
+		"cx-rules",
+		"cx",
+		"Context rules picker and manager",
+		defaultPickerKeyMap,
+	)
+}
