@@ -43,6 +43,33 @@ func (k pagerKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the pager actually implements.
+func (k pagerKeyMap) Sections() []keymap.Section {
+	// Start with base sections we actually use
+	nav := k.Base.NavigationSection()
+	// Customize navigation to only show bindings we implement
+	nav.Bindings = []key.Binding{k.Up, k.Down, k.GotoTop, k.GotoBottom, k.HalfPageUp, k.HalfPageDown}
+
+	return []keymap.Section{
+		nav,
+		{
+			Name:     "Pages",
+			Bindings: []key.Binding{k.NextPage, k.PrevPage},
+		},
+		{
+			Name:     "Rules",
+			Bindings: []key.Binding{k.Edit, k.SelectRules, k.Exclude, k.ExcludeDir, k.Refresh},
+		},
+		{
+			Name:     "Display",
+			Bindings: []key.Binding{k.ToggleSort},
+		},
+		k.Base.FoldSection(),
+		k.Base.SystemSection(),
+	}
+}
+
 var pagerKeys = pagerKeyMap{
 	Base: keymap.NewBase(),
 	NextPage: key.NewBinding(
@@ -121,6 +148,22 @@ func (k statsKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{}
 }
 
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the stats page actually implements.
+func (k statsKeyMap) Sections() []keymap.Section {
+	return []keymap.Section{
+		{
+			Name:     "Navigation",
+			Bindings: []key.Binding{k.Up, k.Down, k.SwitchFocus, k.GotoTop, k.GotoBottom, k.HalfPageUp, k.HalfPageDown},
+		},
+		{
+			Name:     "Actions",
+			Bindings: []key.Binding{k.Exclude, k.Refresh},
+		},
+		k.Base.SystemSection(),
+	}
+}
+
 var statsKeys = statsKeyMap{
 	Base: keymap.NewBase(),
 	SwitchFocus: key.NewBinding(
@@ -168,7 +211,7 @@ func (k treeViewKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
 			key.NewBinding(key.WithHelp("", "Navigation:")),
-			key.NewBinding(key.WithKeys("up", "down", "j", "k"), key.WithHelp("↑/↓, j/k", "Move up/down")),
+			key.NewBinding(key.WithKeys("up", "down", "j", "k"), key.WithHelp("up/down, j/k", "Move up/down")),
 			key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter, space", "Toggle expand")),
 			key.NewBinding(key.WithKeys("g"), key.WithHelp("gg", "Go to top")),
 			key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "Go to bottom")),
@@ -192,6 +235,43 @@ func (k treeViewKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "Quit")),
 			key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "Toggle this help")),
 		},
+	}
+}
+
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the tree view actually implements.
+func (k treeViewKeyMap) Sections() []keymap.Section {
+	// Customize navigation for tree view
+	nav := k.Base.NavigationSection()
+	nav.Bindings = []key.Binding{k.Up, k.Down, k.Top, k.Bottom, k.PageUp, k.PageDown}
+
+	return []keymap.Section{
+		nav,
+		{
+			Name: "Tree",
+			Bindings: []key.Binding{
+				key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("enter/space", "toggle expand")),
+			},
+		},
+		{
+			Name: "Context",
+			Bindings: []key.Binding{
+				key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "toggle hot")),
+				key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "toggle cold")),
+				key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "toggle exclude")),
+				key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "toggle gitignored")),
+			},
+		},
+		k.Base.SearchSection(),
+		k.Base.FoldSection(),
+		{
+			Name: "Other",
+			Bindings: []key.Binding{
+				key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+				key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next page")),
+			},
+		},
+		k.Base.SystemSection(),
 	}
 }
 

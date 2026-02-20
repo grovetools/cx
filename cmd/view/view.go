@@ -5,15 +5,15 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/config"
+	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/components/nvim"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/delegation"
+	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
 )
 
@@ -105,7 +105,7 @@ func newPagerModel(startPage string) (*pagerModel, error) {
 		activePage:       activePage,
 		state:            state,
 		keys:             pagerKeys,
-		help:             help.New(),
+		help:             help.New(pagerKeys),
 		exitForNvimEdit:  false,
 		nvimEditPath:     "",
 		nvimEmbedEnabled: nvimEmbedEnabled,
@@ -168,12 +168,23 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.help.SetSize(m.width, m.height)
 		pageHeight := m.height - 6
 		for _, p := range m.pages {
 			p.SetSize(m.width, pageHeight)
 		}
 
 	case tea.KeyMsg:
+		// If help is showing, let it handle all keys except quit
+		if m.help.ShowAll {
+			if key.Matches(msg, m.keys.Quit) {
+				return m, tea.Quit
+			}
+			var cmd tea.Cmd
+			m.help, cmd = m.help.Update(msg)
+			return m, cmd
+		}
+
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -252,7 +263,8 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				})
 			}
 		case key.Matches(msg, m.keys.Help):
-			m.help.ShowAll = !m.help.ShowAll
+			m.help.Toggle()
+			return m, nil
 		}
 
 	case stateRefreshedMsg:
@@ -279,6 +291,11 @@ func (m *pagerModel) View() string {
 		return fmt.Sprintf("Error: %v", m.state.err)
 	}
 
+	// Show full help overlay if requested
+	if m.help.ShowAll {
+		return m.help.View()
+	}
+
 	header := m.renderTabs()
 
 	var pageContent string
@@ -292,7 +309,7 @@ func (m *pagerModel) View() string {
 	if m.isEditing && m.editorModel != nil {
 		footer = ""
 	} else {
-		footer = m.help.View(m.keys)
+		footer = m.help.View()
 	}
 
 	fullContent := lipgloss.JoinVertical(lipgloss.Left, header, pageContent, footer)

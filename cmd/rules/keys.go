@@ -27,6 +27,22 @@ func (k pickerKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the rules picker actually implements.
+func (k pickerKeyMap) Sections() []keymap.Section {
+	return []keymap.Section{
+		{
+			Name:     "Navigation",
+			Bindings: []key.Binding{k.Up, k.Down},
+		},
+		{
+			Name:     "Rules",
+			Bindings: []key.Binding{k.Select, k.Load, k.Save, k.Edit, k.Delete},
+		},
+		k.Base.SystemSection(),
+	}
+}
+
 var defaultPickerKeyMap = pickerKeyMap{
 	Base: keymap.NewBase(),
 	Select: key.NewBinding(
