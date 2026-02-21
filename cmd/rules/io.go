@@ -297,7 +297,7 @@ func performDeleteCmd(item ruleItem, force bool) tea.Cmd {
 		isVersionControlled := filepath.Dir(item.path) == context.RulesDir
 
 		if isVersionControlled && !force {
-			return deleteCompleteMsg{err: fmt.Errorf("rule set '%s' is in %s/ and is likely version-controlled. Press 'd' again to force delete", item.name, context.RulesDir)}
+			return deleteCompleteMsg{err: fmt.Errorf("rule set '%s' is in %s/ and is likely version-controlled. Press 'dd' again to force delete", item.name, context.RulesDir)}
 		}
 
 		// Check if this is the currently active rule set

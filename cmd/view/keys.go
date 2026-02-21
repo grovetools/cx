@@ -101,8 +101,8 @@ var pagerKeys = pagerKeyMap{
 		key.WithHelp("X", "exclude dir"),
 	),
 	Refresh: key.NewBinding(
-		key.WithKeys("r"),
-		key.WithHelp("r", "refresh"),
+		key.WithKeys("ctrl+r"),
+		key.WithHelp("ctrl+r", "refresh"),
 	),
 	FoldPrefix: key.NewBinding(
 		key.WithKeys("z"),
@@ -175,8 +175,8 @@ var statsKeys = statsKeyMap{
 		key.WithHelp("x", "exclude"),
 	),
 	Refresh: key.NewBinding(
-		key.WithKeys("r"),
-		key.WithHelp("r", "refresh"),
+		key.WithKeys("ctrl+r"),
+		key.WithHelp("ctrl+r", "refresh"),
 	),
 	GotoTop: key.NewBinding(
 		key.WithKeys("g"),
@@ -231,7 +231,7 @@ func (k treeViewKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "Toggle exclude")),
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "Next Page")),
 			key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "Toggle gitignored")),
-			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "Refresh view")),
+			key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "Refresh view")),
 			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "Quit")),
 			key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "Toggle this help")),
 		},
@@ -250,7 +250,7 @@ func (k treeViewKeyMap) Sections() []keymap.Section {
 		{
 			Name: "Tree",
 			Bindings: []key.Binding{
-				key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("enter/space", "toggle expand")),
+				key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "toggle expand")),
 			},
 		},
 		{
@@ -267,7 +267,7 @@ func (k treeViewKeyMap) Sections() []keymap.Section {
 		{
 			Name: "Other",
 			Bindings: []key.Binding{
-				key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+				key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "refresh")),
 				key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next page")),
 			},
 		},

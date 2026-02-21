@@ -62,8 +62,8 @@ var defaultPickerKeyMap = pickerKeyMap{
 		key.WithHelp("s", "save"),
 	),
 	Delete: key.NewBinding(
-		key.WithKeys("d"),
-		key.WithHelp("d", "delete"),
+		key.WithKeys("dd"),
+		key.WithHelp("dd", "delete"),
 	),
 }
 
