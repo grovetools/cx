@@ -278,3 +278,14 @@ func (k treeViewKeyMap) Sections() []keymap.Section {
 var (
 	treeKeys = treeViewKeyMap{Base: keymap.NewBase()}
 )
+
+// KeymapInfo returns the keymap metadata for the cx view TUI.
+// Used by the grove keys registry generator to aggregate all TUI keybindings.
+func KeymapInfo() keymap.TUIInfo {
+	return keymap.MakeTUIInfo(
+		"cx-view",
+		"cx",
+		"Context viewer with tree, stats, and list pages",
+		pagerKeys,
+	)
+}
