@@ -2,6 +2,7 @@ package rules
 
 import (
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/keymap"
 )
 
@@ -43,29 +44,39 @@ func (k pickerKeyMap) Sections() []keymap.Section {
 	}
 }
 
-var defaultPickerKeyMap = pickerKeyMap{
-	Base: keymap.NewBase(),
-	Select: key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "select"),
-	),
-	Load: key.NewBinding(
-		key.WithKeys("l"),
-		key.WithHelp("l", "load to .grove/rules"),
-	),
-	Edit: key.NewBinding(
-		key.WithKeys("e"),
-		key.WithHelp("e", "edit"),
-	),
-	Save: key.NewBinding(
-		key.WithKeys("s"),
-		key.WithHelp("s", "save"),
-	),
-	Delete: key.NewBinding(
-		key.WithKeys("dd"),
-		key.WithHelp("dd", "delete"),
-	),
+func newPickerKeyMap(cfg *config.Config) pickerKeyMap {
+	km := pickerKeyMap{
+		Base: keymap.Load(cfg, "cx.rules"),
+		Select: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "select"),
+		),
+		Load: key.NewBinding(
+			key.WithKeys("l"),
+			key.WithHelp("l", "load to .grove/rules"),
+		),
+		Edit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit"),
+		),
+		Save: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "save"),
+		),
+		Delete: key.NewBinding(
+			key.WithKeys("dd"),
+			key.WithHelp("dd", "delete"),
+		),
+	}
+
+	keymap.ApplyTUIOverrides(cfg, "cx", "rules", &km)
+	return km
 }
+
+var defaultPickerKeyMap = func() pickerKeyMap {
+	cfg, _ := config.LoadDefault()
+	return newPickerKeyMap(cfg)
+}()
 
 // KeymapInfo returns the keymap metadata for the cx rules picker TUI.
 // Used by the grove keys registry generator to aggregate all TUI keybindings.
@@ -74,6 +85,6 @@ func KeymapInfo() keymap.TUIInfo {
 		"cx-rules",
 		"cx",
 		"Context rules picker and manager",
-		defaultPickerKeyMap,
+		newPickerKeyMap(nil),
 	)
 }

@@ -2,6 +2,7 @@ package view
 
 import (
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/keymap"
 )
 
@@ -70,61 +71,70 @@ func (k pagerKeyMap) Sections() []keymap.Section {
 	}
 }
 
-var pagerKeys = pagerKeyMap{
-	Base: keymap.NewBase(),
-	NextPage: key.NewBinding(
-		key.WithKeys("tab"),
-		key.WithHelp("tab", "next page"),
-	),
-	PrevPage: key.NewBinding(
-		key.WithKeys("shift+tab"),
-		key.WithHelp("shift+tab", "prev page"),
-	),
-	Edit: key.NewBinding(
-		key.WithKeys("e"),
-		key.WithHelp("e", "edit rules"),
-	),
-	SelectRules: key.NewBinding(
-		key.WithKeys("s"),
-		key.WithHelp("s", "select rule set"),
-	),
-	ToggleSort: key.NewBinding(
-		key.WithKeys("t"),
-		key.WithHelp("t", "toggle sort"),
-	),
-	Exclude: key.NewBinding(
-		key.WithKeys("x"),
-		key.WithHelp("x", "exclude file"),
-	),
-	ExcludeDir: key.NewBinding(
-		key.WithKeys("X"),
-		key.WithHelp("X", "exclude dir"),
-	),
-	Refresh: key.NewBinding(
-		key.WithKeys("ctrl+r"),
-		key.WithHelp("ctrl+r", "refresh"),
-	),
-	FoldPrefix: key.NewBinding(
-		key.WithKeys("z"),
-		key.WithHelp("za/zo/zc/zR/zM", "fold operations"),
-	),
-	GotoTop: key.NewBinding(
-		key.WithKeys("g"),
-		key.WithHelp("gg", "go to top"),
-	),
-	GotoBottom: key.NewBinding(
-		key.WithKeys("G"),
-		key.WithHelp("G", "go to bottom"),
-	),
-	HalfPageUp: key.NewBinding(
-		key.WithKeys("ctrl+u"),
-		key.WithHelp("ctrl-u", "half page up"),
-	),
-	HalfPageDown: key.NewBinding(
-		key.WithKeys("ctrl+d"),
-		key.WithHelp("ctrl-d", "half page down"),
-	),
+func newPagerKeyMap(cfg *config.Config) pagerKeyMap {
+	km := pagerKeyMap{
+		Base: keymap.Load(cfg, "cx.view"),
+		NextPage: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "next page"),
+		),
+		PrevPage: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("shift+tab", "prev page"),
+		),
+		Edit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit rules"),
+		),
+		SelectRules: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "select rule set"),
+		),
+		ToggleSort: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "toggle sort"),
+		),
+		Exclude: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "exclude file"),
+		),
+		ExcludeDir: key.NewBinding(
+			key.WithKeys("X"),
+			key.WithHelp("X", "exclude dir"),
+		),
+		Refresh: key.NewBinding(
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("ctrl+r", "refresh"),
+		),
+		FoldPrefix: key.NewBinding(
+			key.WithKeys("z"),
+			key.WithHelp("za/zo/zc/zR/zM", "fold operations"),
+		),
+		GotoTop: key.NewBinding(
+			key.WithKeys("g"),
+			key.WithHelp("gg", "go to top"),
+		),
+		GotoBottom: key.NewBinding(
+			key.WithKeys("G"),
+			key.WithHelp("G", "go to bottom"),
+		),
+		HalfPageUp: key.NewBinding(
+			key.WithKeys("ctrl+u"),
+			key.WithHelp("ctrl-u", "half page up"),
+		),
+		HalfPageDown: key.NewBinding(
+			key.WithKeys("ctrl+d"),
+			key.WithHelp("ctrl-d", "half page down"),
+		),
+	}
+	keymap.ApplyTUIOverrides(cfg, "cx", "view", &km)
+	return km
 }
+
+var pagerKeys = func() pagerKeyMap {
+	cfg, _ := config.LoadDefault()
+	return newPagerKeyMap(cfg)
+}()
 
 // statsKeyMap defines the key bindings for the interactive stats page.
 type statsKeyMap struct {
@@ -164,37 +174,46 @@ func (k statsKeyMap) Sections() []keymap.Section {
 	}
 }
 
-var statsKeys = statsKeyMap{
-	Base: keymap.NewBase(),
-	SwitchFocus: key.NewBinding(
-		key.WithKeys("s", "left", "right"),
-		key.WithHelp("s/←/→", "switch list"),
-	),
-	Exclude: key.NewBinding(
-		key.WithKeys("x"),
-		key.WithHelp("x", "exclude"),
-	),
-	Refresh: key.NewBinding(
-		key.WithKeys("ctrl+r"),
-		key.WithHelp("ctrl+r", "refresh"),
-	),
-	GotoTop: key.NewBinding(
-		key.WithKeys("g"),
-		key.WithHelp("gg", "go to top"),
-	),
-	GotoBottom: key.NewBinding(
-		key.WithKeys("G"),
-		key.WithHelp("G", "go to bottom"),
-	),
-	HalfPageUp: key.NewBinding(
-		key.WithKeys("ctrl+u"),
-		key.WithHelp("ctrl-u", "half page up"),
-	),
-	HalfPageDown: key.NewBinding(
-		key.WithKeys("ctrl+d"),
-		key.WithHelp("ctrl-d", "half page down"),
-	),
+func newStatsKeyMap(cfg *config.Config) statsKeyMap {
+	km := statsKeyMap{
+		Base: keymap.Load(cfg, "cx.stats"),
+		SwitchFocus: key.NewBinding(
+			key.WithKeys("s", "left", "right"),
+			key.WithHelp("s/←/→", "switch list"),
+		),
+		Exclude: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "exclude"),
+		),
+		Refresh: key.NewBinding(
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("ctrl+r", "refresh"),
+		),
+		GotoTop: key.NewBinding(
+			key.WithKeys("g"),
+			key.WithHelp("gg", "go to top"),
+		),
+		GotoBottom: key.NewBinding(
+			key.WithKeys("G"),
+			key.WithHelp("G", "go to bottom"),
+		),
+		HalfPageUp: key.NewBinding(
+			key.WithKeys("ctrl+u"),
+			key.WithHelp("ctrl-u", "half page up"),
+		),
+		HalfPageDown: key.NewBinding(
+			key.WithKeys("ctrl+d"),
+			key.WithHelp("ctrl-d", "half page down"),
+		),
+	}
+	keymap.ApplyTUIOverrides(cfg, "cx", "stats", &km)
+	return km
 }
+
+var statsKeys = func() statsKeyMap {
+	cfg, _ := config.LoadDefault()
+	return newStatsKeyMap(cfg)
+}()
 
 // --- Keymaps from old view.go (to be used in Job 2 & 3) ---
 
@@ -271,33 +290,42 @@ func (k treeViewKeyMap) Sections() []keymap.Section {
 	}
 }
 
-var treeKeys = treeViewKeyMap{
-	Base: keymap.NewBase(),
-	ToggleExpand: key.NewBinding(
-		key.WithKeys("enter", " "),
-		key.WithHelp("enter/space", "toggle expand"),
-	),
-	ToggleHot: key.NewBinding(
-		key.WithKeys("h"),
-		key.WithHelp("h", "toggle hot"),
-	),
-	ToggleCold: key.NewBinding(
-		key.WithKeys("c"),
-		key.WithHelp("c", "toggle cold"),
-	),
-	ToggleExclude: key.NewBinding(
-		key.WithKeys("x"),
-		key.WithHelp("x", "toggle exclude"),
-	),
-	ToggleIgnored: key.NewBinding(
-		key.WithKeys("H", "."),
-		key.WithHelp("H/.", "toggle gitignored"),
-	),
-	Refresh: key.NewBinding(
-		key.WithKeys("r"),
-		key.WithHelp("r", "refresh"),
-	),
+func newTreeKeyMap(cfg *config.Config) treeViewKeyMap {
+	km := treeViewKeyMap{
+		Base: keymap.Load(cfg, "cx.tree"),
+		ToggleExpand: key.NewBinding(
+			key.WithKeys("enter", " "),
+			key.WithHelp("enter/space", "toggle expand"),
+		),
+		ToggleHot: key.NewBinding(
+			key.WithKeys("h"),
+			key.WithHelp("h", "toggle hot"),
+		),
+		ToggleCold: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "toggle cold"),
+		),
+		ToggleExclude: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "toggle exclude"),
+		),
+		ToggleIgnored: key.NewBinding(
+			key.WithKeys("H", "."),
+			key.WithHelp("H/.", "toggle gitignored"),
+		),
+		Refresh: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "refresh"),
+		),
+	}
+	keymap.ApplyTUIOverrides(cfg, "cx", "tree", &km)
+	return km
 }
+
+var treeKeys = func() treeViewKeyMap {
+	cfg, _ := config.LoadDefault()
+	return newTreeKeyMap(cfg)
+}()
 
 // KeymapInfo returns the keymap metadata for the cx view TUI.
 // Used by the grove keys registry generator to aggregate all TUI keybindings.
@@ -306,6 +334,6 @@ func KeymapInfo() keymap.TUIInfo {
 		"cx-view",
 		"cx",
 		"Context viewer with tree, stats, and list pages",
-		pagerKeys,
+		newPagerKeyMap(nil),
 	)
 }
