@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/grovetools/core/config"
@@ -37,6 +38,7 @@ type treePage struct {
 	width, height int
 	lastKey       string
 	statusMessage string
+	keys          treeViewKeyMap
 
 	// Confirmation state
 	pendingConfirm *confirmActionMsg
@@ -89,6 +91,7 @@ func NewTreePage(state *sharedState) Page {
 		sharedState:    state,
 		expandedPaths:  make(map[string]bool),
 		showGitIgnored: false,
+		keys:           treeKeys,
 	}
 }
 
@@ -97,7 +100,7 @@ func NewTreePage(state *sharedState) Page {
 func (p *treePage) Name() string { return "tree" }
 
 func (p *treePage) Keys() interface{} {
-	return treeKeys
+	return p.keys
 }
 
 func (p *treePage) Init() tea.Cmd {
@@ -449,122 +452,62 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 		}
 
-		// Normal mode logic
-		switch msg.String() {
-		case "up", "k":
-			if p.cursor > 0 {
-				p.cursor--
-				p.ensureCursorVisible()
-			}
-		case "down", "j":
-			if p.cursor < len(p.visibleNodes)-1 {
-				p.cursor++
-				p.ensureCursorVisible()
-			}
-		case "enter", " ":
-			p.toggleExpanded()
-		case "pgup":
-			p.cursor -= 10
-			if p.cursor < 0 {
-				p.cursor = 0
-			}
-			p.ensureCursorVisible()
-		case "pgdown":
-			p.cursor += 10
-			if p.cursor >= len(p.visibleNodes) {
-				p.cursor = len(p.visibleNodes) - 1
-			}
-			p.ensureCursorVisible()
-		case "home":
-			p.cursor = 0
-			p.scrollOffset = 0
-		case "end":
-			p.cursor = len(p.visibleNodes) - 1
-			p.ensureCursorVisible()
-		case "ctrl+d":
-			// Scroll down half a page
-			viewportHeight := p.height
-			if viewportHeight < 1 {
-				viewportHeight = 1
-			}
-			p.cursor += viewportHeight / 2
-			if p.cursor >= len(p.visibleNodes) {
-				p.cursor = len(p.visibleNodes) - 1
-			}
-			p.ensureCursorVisible()
-		case "ctrl+u":
-			// Scroll up half a page
-			viewportHeight := p.height
-			if viewportHeight < 1 {
-				viewportHeight = 1
-			}
-			p.cursor -= viewportHeight / 2
-			if p.cursor < 0 {
-				p.cursor = 0
-			}
-			p.ensureCursorVisible()
-		case "z":
-			p.lastKey = "z"
-		case "R":
-			if p.lastKey == "z" {
-				// zR - expand all directories (vim-style)
-				p.expandAll()
+		// Handle fold commands when lastKey is 'z'
+		if p.lastKey == "z" {
+			switch msg.String() {
+			case "a":
+				// za - toggle fold at cursor (vim-style)
+				p.toggleExpanded()
 				p.lastKey = ""
-			}
-		case "M":
-			if p.lastKey == "z" {
-				// zM - collapse all directories (vim-style)
-				p.collapseAll()
-				p.lastKey = ""
-			}
-		case "o":
-			if p.lastKey == "z" {
+				return p, nil
+			case "o":
 				// zo - open/expand current directory (vim-style)
 				p.expandCurrent()
 				p.lastKey = ""
-			}
-		case "c":
-			if p.lastKey == "z" {
+				return p, nil
+			case "c":
 				// zc - close/collapse current directory (vim-style)
 				p.collapseCurrent()
 				p.lastKey = ""
-			} else {
-				// Regular 'c' - Toggle cold context
-				if p.cursor >= len(p.visibleNodes) {
-					break
-				}
-				node := p.visibleNodes[p.cursor].node
-				p.pathToRestore = node.Path // Store the current item's path
-
-				// Check if we should show ruleset selector for workspace roots
-				if p.tryShowRulesetSelector(node, "cold") {
-					return p, nil
-				}
-
-				rule, err := p.getRulePath(node)
-				if err != nil {
-					p.statusMessage = fmt.Sprintf("Error: %v", err)
-					break
-				}
-				// Create appropriate status message for directories vs files
-				var itemType string
-				if node.IsDir {
-					itemType = "directory tree"
-				} else {
-					itemType = "file"
-				}
-				p.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
-				return p, p.handleRuleAction(rule, "cold", node.IsDir)
+				return p, nil
+			case "R":
+				// zR - expand all directories (vim-style)
+				p.expandAll()
+				p.lastKey = ""
+				return p, nil
+			case "M":
+				// zM - collapse all directories (vim-style)
+				p.collapseAll()
+				p.lastKey = ""
+				return p, nil
+			default:
+				p.lastKey = ""
+				return p, nil
 			}
-		case "h":
-			// Toggle hot context
+		}
+
+		// Handle 'g' prefix for gg (go to top)
+		if p.lastKey == "g" {
+			if msg.String() == "g" {
+				// gg - go to top
+				p.cursor = 0
+				p.scrollOffset = 0
+				p.lastKey = ""
+				return p, nil
+			}
+			p.lastKey = ""
+		}
+
+		// Normal mode logic using key.Matches
+		switch {
+		// Toggle hot context
+		case key.Matches(msg, p.keys.ToggleHot):
 			if p.cursor >= len(p.visibleNodes) {
-				break
+				return p, nil
 			}
 			node := p.visibleNodes[p.cursor].node
-			p.pathToRestore = node.Path // Store the current item's path
+			p.pathToRestore = node.Path
 
-			// Check if we should show ruleset selector for workspace roots
 			if p.tryShowRulesetSelector(node, "hot") {
 				return p, nil
 			}
@@ -572,7 +515,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			rule, err := p.getRulePath(node)
 			if err != nil {
 				p.statusMessage = fmt.Sprintf("Error: %v", err)
-				break
+				return p, nil
 			}
 			var itemType string
 			if node.IsDir {
@@ -582,24 +525,41 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 			p.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
 			return p, p.handleRuleAction(rule, "hot", node.IsDir)
-		case "a":
-			if p.lastKey == "z" {
-				// za - toggle fold at cursor (vim-style)
-				p.toggleExpanded()
-				p.lastKey = ""
-			} else {
-				// Clear lastKey if 'a' pressed without 'z'
-				p.lastKey = ""
-			}
-		case "x":
-			// Toggle exclude
+
+		// Toggle cold context
+		case key.Matches(msg, p.keys.ToggleCold):
 			if p.cursor >= len(p.visibleNodes) {
-				break
+				return p, nil
 			}
 			node := p.visibleNodes[p.cursor].node
-			p.pathToRestore = node.Path // Store the current item's path
+			p.pathToRestore = node.Path
 
-			// Check if we should show ruleset selector for workspace roots
+			if p.tryShowRulesetSelector(node, "cold") {
+				return p, nil
+			}
+
+			rule, err := p.getRulePath(node)
+			if err != nil {
+				p.statusMessage = fmt.Sprintf("Error: %v", err)
+				return p, nil
+			}
+			var itemType string
+			if node.IsDir {
+				itemType = "directory tree"
+			} else {
+				itemType = "file"
+			}
+			p.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
+			return p, p.handleRuleAction(rule, "cold", node.IsDir)
+
+		// Toggle exclude
+		case key.Matches(msg, p.keys.ToggleExclude):
+			if p.cursor >= len(p.visibleNodes) {
+				return p, nil
+			}
+			node := p.visibleNodes[p.cursor].node
+			p.pathToRestore = node.Path
+
 			if p.tryShowRulesetSelector(node, "exclude") {
 				return p, nil
 			}
@@ -607,9 +567,8 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			rule, err := p.getRulePath(node)
 			if err != nil {
 				p.statusMessage = fmt.Sprintf("Error: %v", err)
-				break
+				return p, nil
 			}
-			// Create appropriate status message for directories vs files
 			var itemType string
 			if node.IsDir {
 				itemType = "directory tree"
@@ -618,21 +577,9 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 			p.statusMessage = fmt.Sprintf("Checking %s %s...", itemType, node.Name)
 			return p, p.handleRuleAction(rule, "exclude", node.IsDir)
-		case "g":
-			if p.lastKey == "g" {
-				// gg - go to top
-				p.cursor = 0
-				p.scrollOffset = 0
-				p.lastKey = ""
-			} else {
-				p.lastKey = "g"
-			}
-		case "G":
-			// Go to bottom
-			p.cursor = len(p.visibleNodes) - 1
-			p.ensureCursorVisible()
-		case ".", "H":
-			// Toggle gitignored files visibility
+
+		// Toggle gitignored files visibility
+		case key.Matches(msg, p.keys.ToggleIgnored):
 			p.showGitIgnored = !p.showGitIgnored
 			if p.showGitIgnored {
 				p.statusMessage = "Showing gitignored files"
@@ -640,27 +587,89 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				p.statusMessage = "Hiding gitignored files"
 			}
 			return p, p.loadTreeCmd()
-		case "r":
-			// Refresh both tree and rules
+
+		// Refresh both tree and rules
+		case key.Matches(msg, p.keys.Refresh):
 			p.statusMessage = "Refreshing..."
 			return p, tea.Batch(refreshSharedStateCmd(), p.loadTreeCmd())
-		case "/":
-			// Enter search mode
+
+		// Toggle expand
+		case key.Matches(msg, p.keys.ToggleExpand):
+			p.toggleExpanded()
+			return p, nil
+
+		// Navigation: up
+		case key.Matches(msg, p.keys.Up):
+			if p.cursor > 0 {
+				p.cursor--
+				p.ensureCursorVisible()
+			}
+			return p, nil
+
+		// Navigation: down
+		case key.Matches(msg, p.keys.Down):
+			if p.cursor < len(p.visibleNodes)-1 {
+				p.cursor++
+				p.ensureCursorVisible()
+			}
+			return p, nil
+
+		// Navigation: page up (half page)
+		case key.Matches(msg, p.keys.PageUp):
+			viewportHeight := p.height
+			if viewportHeight < 1 {
+				viewportHeight = 1
+			}
+			p.cursor -= viewportHeight / 2
+			if p.cursor < 0 {
+				p.cursor = 0
+			}
+			p.ensureCursorVisible()
+			return p, nil
+
+		// Navigation: page down (half page)
+		case key.Matches(msg, p.keys.PageDown):
+			viewportHeight := p.height
+			if viewportHeight < 1 {
+				viewportHeight = 1
+			}
+			p.cursor += viewportHeight / 2
+			if p.cursor >= len(p.visibleNodes) {
+				p.cursor = len(p.visibleNodes) - 1
+			}
+			p.ensureCursorVisible()
+			return p, nil
+
+		// Navigation: go to top (first 'g' press)
+		case key.Matches(msg, p.keys.Top):
+			p.lastKey = "g"
+			return p, nil
+
+		// Navigation: go to bottom
+		case key.Matches(msg, p.keys.Bottom):
+			p.cursor = len(p.visibleNodes) - 1
+			p.ensureCursorVisible()
+			return p, nil
+
+		// Search: enter search mode
+		case key.Matches(msg, p.keys.Search):
 			p.isSearching = true
 			p.searchQuery = ""
 			p.searchResults = nil
 			p.searchCursor = 0
 			return p, nil
-		case "n":
-			// Navigate to next search result
+
+		// Search: next result
+		case key.Matches(msg, p.keys.SearchNext):
 			if len(p.searchResults) > 0 {
 				p.searchCursor = (p.searchCursor + 1) % len(p.searchResults)
 				p.cursor = p.searchResults[p.searchCursor]
 				p.ensureCursorVisible()
 			}
 			return p, nil
-		case "N":
-			// Navigate to previous search result
+
+		// Search: previous result
+		case key.Matches(msg, p.keys.SearchPrev):
 			if len(p.searchResults) > 0 {
 				p.searchCursor--
 				if p.searchCursor < 0 {
@@ -670,9 +679,16 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				p.ensureCursorVisible()
 			}
 			return p, nil
-		default:
-			p.lastKey = ""
 		}
+
+		// Handle 'z' prefix for fold commands
+		if msg.String() == "z" {
+			p.lastKey = "z"
+			return p, nil
+		}
+
+		// Clear lastKey on any other key
+		p.lastKey = ""
 	}
 
 	return p, nil

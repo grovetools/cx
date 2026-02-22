@@ -200,6 +200,12 @@ var statsKeys = statsKeyMap{
 
 type treeViewKeyMap struct {
 	keymap.Base
+	ToggleExpand   key.Binding
+	ToggleHot      key.Binding
+	ToggleCold     key.Binding
+	ToggleExclude  key.Binding
+	ToggleIgnored  key.Binding
+	Refresh        key.Binding
 }
 
 func (k treeViewKeyMap) ShortHelp() []key.Binding {
@@ -248,36 +254,50 @@ func (k treeViewKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
 		nav,
 		{
-			Name: "Tree",
-			Bindings: []key.Binding{
-				key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "toggle expand")),
-			},
+			Name:     "Tree",
+			Bindings: []key.Binding{k.ToggleExpand},
 		},
 		{
-			Name: "Context",
-			Bindings: []key.Binding{
-				key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "toggle hot")),
-				key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "toggle cold")),
-				key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "toggle exclude")),
-				key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "toggle gitignored")),
-			},
+			Name:     "Context",
+			Bindings: []key.Binding{k.ToggleHot, k.ToggleCold, k.ToggleExclude, k.ToggleIgnored},
 		},
 		k.Base.SearchSection(),
 		k.Base.FoldSection(),
 		{
-			Name: "Other",
-			Bindings: []key.Binding{
-				key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "refresh")),
-				key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next page")),
-			},
+			Name:     "Other",
+			Bindings: []key.Binding{k.Refresh, k.Base.SwitchView},
 		},
 		k.Base.SystemSection(),
 	}
 }
 
-var (
-	treeKeys = treeViewKeyMap{Base: keymap.NewBase()}
-)
+var treeKeys = treeViewKeyMap{
+	Base: keymap.NewBase(),
+	ToggleExpand: key.NewBinding(
+		key.WithKeys("enter", " "),
+		key.WithHelp("enter/space", "toggle expand"),
+	),
+	ToggleHot: key.NewBinding(
+		key.WithKeys("h"),
+		key.WithHelp("h", "toggle hot"),
+	),
+	ToggleCold: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "toggle cold"),
+	),
+	ToggleExclude: key.NewBinding(
+		key.WithKeys("x"),
+		key.WithHelp("x", "toggle exclude"),
+	),
+	ToggleIgnored: key.NewBinding(
+		key.WithKeys("H", "."),
+		key.WithHelp("H/.", "toggle gitignored"),
+	),
+	Refresh: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "refresh"),
+	),
+}
 
 // KeymapInfo returns the keymap metadata for the cx view TUI.
 // Used by the grove keys registry generator to aggregate all TUI keybindings.
