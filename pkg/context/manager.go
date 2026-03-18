@@ -2,11 +2,11 @@ package context
 
 import (
 	"bufio"
+	gocontext "context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +17,7 @@ import (
 	"github.com/grovetools/core/config"
 	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/alias"
+	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/core/pkg/profiling"
 	"github.com/grovetools/core/pkg/workspace"
@@ -74,6 +75,7 @@ type Manager struct {
 	skippedMutex    sync.Mutex    // Protects skippedRules
 	log             *logrus.Entry
 	ulog            *grovelogging.UnifiedLogger
+	daemonClient    daemon.Client // Daemon client for cached workspace/git data
 }
 
 // NewManager creates a new context manager
@@ -92,6 +94,7 @@ func NewManager(workDir string) *Manager {
 		aliasResolver:   nil, // Lazily initialized
 		log:             grovelogging.NewLogger("grove-context"),
 		ulog:            grovelogging.NewUnifiedLogger("cx.context"),
+		daemonClient:    daemon.NewWithAutoStart(),
 	}
 }
 
@@ -116,16 +119,13 @@ func (m *Manager) ListPlanRules() ([]PlanRule, error) {
 		}
 	}
 
-	// 2. Use grove-core's discovery service to find all projects and workspaces.
-	logger := logrus.New()
-	logger.SetOutput(io.Discard) // Suppress logs to keep CLI output clean.
-	discoveryService := workspace.NewDiscoveryService(logger)
-	discoveryResult, err := discoveryService.DiscoverAll()
+	// 2. Use daemon's cached workspace graph (falls back to local discovery via LocalClient).
+	workspaces, err := m.daemonClient.GetWorkspaces(gocontext.Background())
 	if err != nil {
 		// If discovery fails, we can't find workspaces, so return empty
 		return nil, nil
 	}
-	provider := workspace.NewProvider(discoveryResult)
+	provider := workspace.NewProviderFromNodes(workspaces)
 
 	// 3. Use the NotebookLocator to find all plan directories.
 	locator := workspace.NewNotebookLocator(cfg)
@@ -163,8 +163,13 @@ func (m *Manager) ListPlanRules() ([]PlanRule, error) {
 func (m *Manager) getAliasResolver() *alias.AliasResolver {
 	if m.aliasResolver == nil {
 		m.aliasResolver = alias.NewAliasResolverWithWorkDir(m.workDir)
+		// Try daemon's cached workspace graph first to avoid expensive disk scan
+		if workspaces, err := m.daemonClient.GetWorkspaces(gocontext.Background()); err == nil {
+			m.aliasResolver.InitProviderFromNodes(workspaces)
+			return m.aliasResolver
+		}
 	}
-	m.aliasResolver.InitProvider() // This is idempotent
+	m.aliasResolver.InitProvider() // Fallback to disk scan (idempotent via sync.Once)
 	return m.aliasResolver
 }
 

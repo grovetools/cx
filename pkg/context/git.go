@@ -3,12 +3,16 @@ package context
 import (
 	"bufio"
 	"bytes"
+	gocontext "context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/grovetools/core/pkg/daemon"
+	"github.com/grovetools/core/pkg/models"
 )
 
 // GitOptions contains options for git-based context generation
@@ -184,7 +188,29 @@ func parseGitFileList(output []byte) []string {
 
 // GetGitInfo returns information about the current git state
 func GetGitInfo() (branch string, hasChanges bool, err error) {
-	// Get current branch
+	// Try daemon's cached git status first
+	client := daemon.NewWithAutoStart()
+	if client.IsRunning() {
+		wd, _ := os.Getwd()
+		gitRootCmd := exec.Command("git", "-C", wd, "rev-parse", "--show-toplevel")
+		if gitRootOutput, gitErr := gitRootCmd.Output(); gitErr == nil {
+			gitRoot := strings.TrimSpace(string(gitRootOutput))
+			opts := &models.EnrichmentOptions{
+				FetchGitStatus: true,
+				GitStatusPaths: map[string]bool{gitRoot: true},
+			}
+			enriched, enrichErr := client.GetEnrichedWorkspaces(gocontext.Background(), opts)
+			if enrichErr == nil {
+				for _, ws := range enriched {
+					if ws.Path == gitRoot && ws.GitStatus != nil {
+						return ws.GitStatus.Branch, ws.GitStatus.IsDirty, nil
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback to shell-out
 	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {

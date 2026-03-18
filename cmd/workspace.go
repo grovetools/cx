@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	gocontext "context"
 	"encoding/json"
 	"fmt"
-	"io"
+
+	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/workspace"
-	"github.com/sirupsen/logrus"
 
 	"github.com/spf13/cobra"
 )
@@ -32,18 +33,8 @@ func newWorkspaceListCmd() *cobra.Command {
 		Short: "List all discovered workspaces",
 		Long:  `Outputs a list of all projects, ecosystems, and worktrees discovered from your Grove configuration.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Use a temporary logger for the discovery process.
-			logger := logrus.New()
-
-			// When JSON output is requested, completely silence the logger
-			// to ensure clean JSON output
-			if jsonOutput {
-				logger.SetOutput(io.Discard)
-			} else {
-				logger.SetLevel(logrus.WarnLevel)
-			}
-
-			projects, err := workspace.GetProjects(logger)
+			client := daemon.NewWithAutoStart()
+			projects, err := client.GetWorkspaces(gocontext.Background())
 			if err != nil {
 				return fmt.Errorf("failed to discover workspaces: %w", err)
 			}

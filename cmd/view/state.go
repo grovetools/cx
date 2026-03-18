@@ -1,16 +1,16 @@
 package view
 
 import (
-	"io"
+	gocontext "context"
 	"os"
 	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/pathutil"
 	"github.com/grovetools/cx/pkg/context"
-	"github.com/sirupsen/logrus"
 )
 
 // sharedState holds all the data that is shared across different pages of the TUI.
@@ -90,18 +90,16 @@ func refreshSharedStateCmd() tea.Cmd {
 			newState.coldStats = coldStats
 		}
 
-		// Load projects using full discovery to get a provider
-		logger := logrus.New()
-		logger.SetOutput(io.Discard) // Discard logs to not mess with TUI
-		discoveryService := workspace.NewDiscoveryService(logger)
-		discoveryResult, err := discoveryService.DiscoverAll()
+		// Load projects using daemon's cached workspace graph
+		client := daemon.NewWithAutoStart()
+		workspaces, err := client.GetWorkspaces(gocontext.Background())
 		if err != nil {
 			newState.err = err
 			// Continue, don't fail the whole TUI
 		} else {
-			provider := workspace.NewProvider(discoveryResult)
+			provider := workspace.NewProviderFromNodes(workspaces)
 			newState.projectProvider = provider
-			newState.projects = provider.All() // Get all nodes from the provider
+			newState.projects = provider.All()
 		}
 
 		return stateRefreshedMsg{state: newState}
