@@ -11,6 +11,7 @@ import (
 	"github.com/grovetools/cx/cmd/rules"
 	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/pkg/alias"
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
 	"github.com/spf13/cobra"
 )
@@ -95,7 +96,8 @@ Examples:
 			var sourcePath string
 
 			// First, try to find as a named ruleset.
-			path, err := context.FindRulesetFile(".", nameOrPath)
+			mgr := context.NewManager("")
+			path, err := mgr.FindRulesetFile(".", nameOrPath)
 			if err == nil {
 				sourcePath = path
 			} else {
@@ -156,28 +158,38 @@ func listRulesForProject(projectAlias string, jsonOutput bool) error {
 		return fmt.Errorf("failed to resolve project alias '%s': %w", projectAlias, err)
 	}
 
-	// Scan the .cx/ directory in the resolved project path
-	cxDir := filepath.Join(projectPath, context.RulesDir)
-	entries, err := os.ReadDir(cxDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			if jsonOutput {
-				fmt.Println("[]")
-				return nil
-			}
-			return fmt.Errorf("no %s directory found in project '%s' at %s", context.RulesDir, projectAlias, projectPath)
+	seen := make(map[string]bool)
+	var ruleNames []string
+
+	collectFromDir := func(dir string) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
 		}
-		return fmt.Errorf("error reading %s directory: %w", cxDir, err)
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), context.RulesExt) {
+				name := strings.TrimSuffix(entry.Name(), context.RulesExt)
+				if !seen[name] {
+					seen[name] = true
+					ruleNames = append(ruleNames, name)
+				}
+			}
+		}
 	}
 
-	// Collect rule set names
-	var ruleNames []string
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), context.RulesExt) {
-			name := strings.TrimSuffix(entry.Name(), context.RulesExt)
-			ruleNames = append(ruleNames, name)
+	// Scan notebook presets directories first
+	mgr := context.NewManager(projectPath)
+	if node, nodeErr := workspace.GetProjectByPath(projectPath); nodeErr == nil {
+		if presetsDir, locErr := mgr.Locator().GetContextPresetsDir(node); locErr == nil {
+			collectFromDir(presetsDir)
+		}
+		if workDir, locErr := mgr.Locator().GetContextPresetsWorkDir(node); locErr == nil {
+			collectFromDir(workDir)
 		}
 	}
+
+	// Scan legacy .cx/ directory
+	collectFromDir(filepath.Join(projectPath, context.RulesDir))
 
 	return outputJSON(ruleNames)
 }
@@ -232,21 +244,32 @@ func newRulesListCmd() *cobra.Command {
 				return names, nil
 			}
 
-			// Collect from .cx/
+			// New: Collect plan rules and notebook presets
+			ctx := stdctx.Background()
+			mgr := context.NewManager("")
+
+			// Collect from notebook presets directories first
+			var nbPresetRules, nbWorkRules []string
+			if node, nodeErr := workspace.GetProjectByPath(mgr.GetWorkDir()); nodeErr == nil {
+				if presetsDir, locErr := mgr.Locator().GetContextPresetsDir(node); locErr == nil {
+					nbPresetRules, _ = collectRules(presetsDir)
+				}
+				if workDir, locErr := mgr.Locator().GetContextPresetsWorkDir(node); locErr == nil {
+					nbWorkRules, _ = collectRules(workDir)
+				}
+			}
+
+			// Collect from legacy .cx/
 			cxRules, err := collectRules(context.RulesDir)
 			if err != nil {
 				return err
 			}
 
-			// Collect from .cx.work/
+			// Collect from legacy .cx.work/
 			cxWorkRules, err := collectRules(context.RulesWorkDir)
 			if err != nil {
 				return err
 			}
-
-			// New: Collect plan rules
-			ctx := stdctx.Background()
-			mgr := context.NewManager("")
 			planRules, err := mgr.ListPlanRules()
 			if err != nil {
 				// Non-fatal, just warn
@@ -255,10 +278,17 @@ func newRulesListCmd() *cobra.Command {
 					Log(ctx)
 			}
 
-			// Combine all rules
+			// Combine all rules, deduplicating notebook vs legacy
+			seen := make(map[string]bool)
 			var ruleNames []string
-			ruleNames = append(ruleNames, cxRules...)
-			ruleNames = append(ruleNames, cxWorkRules...)
+			for _, lists := range [][]string{nbPresetRules, nbWorkRules, cxRules, cxWorkRules} {
+				for _, name := range lists {
+					if !seen[name] {
+						seen[name] = true
+						ruleNames = append(ruleNames, name)
+					}
+				}
+			}
 
 			if jsonOutput {
 				return outputJSON(ruleNames)
@@ -271,7 +301,7 @@ func newRulesListCmd() *cobra.Command {
 			} else {
 				for _, name := range ruleNames {
 					// Find the path for this ruleset (errors are ignored for display purposes)
-					path, _ := context.FindRulesetFile(".", name)
+					path, _ := mgr.FindRulesetFile(".", name)
 
 					indicator := "  "
 					if path == activeSource {
@@ -335,7 +365,8 @@ You can also provide a direct file path to a rules file (including plan-specific
 			var sourcePath string
 
 			// First, try to find as a named ruleset.
-			path, err := context.FindRulesetFile(".", nameOrPath)
+			mgr := context.NewManager("")
+			path, err := mgr.FindRulesetFile(".", nameOrPath)
 			if err == nil {
 				sourcePath = path
 			} else {
@@ -397,6 +428,19 @@ Use the --work flag to save to .cx.work/ for temporary, untracked sets.`,
 				destDir = context.RulesWorkDir
 			}
 
+			// Prioritize notebook location
+			if node, nodeErr := workspace.GetProjectByPath(mgr.GetWorkDir()); nodeErr == nil {
+				if work {
+					if nbDir, locErr := mgr.Locator().GetContextPresetsWorkDir(node); locErr == nil {
+						destDir = nbDir
+					}
+				} else {
+					if nbDir, locErr := mgr.Locator().GetContextPresetsDir(node); locErr == nil {
+						destDir = nbDir
+					}
+				}
+			}
+
 			if err := os.MkdirAll(destDir, 0755); err != nil {
 				return fmt.Errorf("failed to create %s directory: %w", destDir, err)
 			}
@@ -433,7 +477,8 @@ Rule sets in .cx.work/ can be deleted without force.`,
 			name := args[0]
 
 			// Find the ruleset file
-			rulesPath, err := context.FindRulesetFile(".", name)
+			mgr := context.NewManager("")
+			rulesPath, err := mgr.FindRulesetFile(".", name)
 			if err != nil {
 				return err // Returns a helpful "not found" error
 			}

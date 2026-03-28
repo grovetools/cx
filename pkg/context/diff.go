@@ -44,7 +44,7 @@ func (m *Manager) DiffContext(rulesetName string) (*DiffResult, error) {
 		compareFiles = currentFiles
 	} else {
 		// Compare with a named rule set
-		rulesetPath, err := FindRulesetFile(m.workDir, rulesetName)
+		rulesetPath, err := m.FindRulesetFile(m.workDir, rulesetName)
 		if err != nil {
 			return nil, fmt.Errorf("could not find rule set '%s': %w", rulesetName, err)
 		}

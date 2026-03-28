@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
 	"github.com/grovetools/core/tui/theme"
 )
@@ -23,21 +24,44 @@ func loadRulesCmd() tea.Msg {
 	var items []ruleItem
 	activeSource, _ := state.GetString(context.StateSourceKey)
 
-	// Check if .grove/rules exists and add it as the first option
-	if _, err := os.Stat(context.ActiveRulesFile); err == nil {
-		content, err := os.ReadFile(context.ActiveRulesFile)
-		if err != nil {
-			content = []byte(theme.DefaultTheme.Error.Render(fmt.Sprintf("Error reading file: %v", err)))
+	mgr := context.NewManager("")
+	seen := make(map[string]bool)
+
+	// Check for active rules file: notebook location first, then legacy .grove/rules
+	rulesFileChecked := false
+	if node, err := workspace.GetProjectByPath(mgr.GetWorkDir()); err == nil {
+		if nbRulesFile, err := mgr.Locator().GetContextRulesFile(node); err == nil {
+			if _, statErr := os.Stat(nbRulesFile); statErr == nil {
+				content, err := os.ReadFile(nbRulesFile)
+				if err != nil {
+					content = []byte(theme.DefaultTheme.Error.Render(fmt.Sprintf("Error reading file: %v", err)))
+				}
+				items = append(items, ruleItem{
+					name:    "rules",
+					path:    nbRulesFile,
+					active:  activeSource == "" || activeSource == nbRulesFile,
+					content: string(content),
+				})
+				rulesFileChecked = true
+			}
 		}
-		items = append(items, ruleItem{
-			name:    ".grove/rules",
-			path:    context.ActiveRulesFile,
-			active:  activeSource == "" || activeSource == context.ActiveRulesFile,
-			content: string(content),
-		})
+	}
+	if !rulesFileChecked {
+		if _, err := os.Stat(context.ActiveRulesFile); err == nil {
+			content, err := os.ReadFile(context.ActiveRulesFile)
+			if err != nil {
+				content = []byte(theme.DefaultTheme.Error.Render(fmt.Sprintf("Error reading file: %v", err)))
+			}
+			items = append(items, ruleItem{
+				name:    ".grove/rules",
+				path:    context.ActiveRulesFile,
+				active:  activeSource == "" || activeSource == context.ActiveRulesFile,
+				content: string(content),
+			})
+		}
 	}
 
-	// Helper function to load rules from a directory
+	// Helper function to load rules from a directory, deduplicating by name
 	loadRulesFromDir := func(dir string) error {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -49,13 +73,18 @@ func loadRulesCmd() tea.Msg {
 
 		for _, entry := range entries {
 			if !entry.IsDir() && filepath.Ext(entry.Name()) == context.RulesExt {
+				name := entry.Name()[:len(entry.Name())-len(context.RulesExt)]
+				if seen[name] {
+					continue
+				}
+				seen[name] = true
 				path := filepath.Join(dir, entry.Name())
 				content, err := os.ReadFile(path)
 				if err != nil {
 					content = []byte(theme.DefaultTheme.Error.Render(fmt.Sprintf("Error reading file: %v", err)))
 				}
 				items = append(items, ruleItem{
-					name:    entry.Name()[:len(entry.Name())-len(context.RulesExt)],
+					name:    name,
 					path:    path,
 					active:  path == activeSource,
 					content: string(content),
@@ -65,18 +94,31 @@ func loadRulesCmd() tea.Msg {
 		return nil
 	}
 
-	// Load named rule sets from .cx/ directory
+	// Load from notebook presets directories first
+	if node, err := workspace.GetProjectByPath(mgr.GetWorkDir()); err == nil {
+		if presetsDir, err := mgr.Locator().GetContextPresetsDir(node); err == nil {
+			if err := loadRulesFromDir(presetsDir); err != nil {
+				return rulesLoadedMsg{err: err}
+			}
+		}
+		if workDir, err := mgr.Locator().GetContextPresetsWorkDir(node); err == nil {
+			if err := loadRulesFromDir(workDir); err != nil {
+				return rulesLoadedMsg{err: err}
+			}
+		}
+	}
+
+	// Load from legacy .cx/ directory
 	if err := loadRulesFromDir(context.RulesDir); err != nil {
 		return rulesLoadedMsg{err: err}
 	}
 
-	// Load named rule sets from .cx.work/ directory
+	// Load from legacy .cx.work/ directory
 	if err := loadRulesFromDir(context.RulesWorkDir); err != nil {
 		return rulesLoadedMsg{err: err}
 	}
 
-	// New: Load plan rules
-	mgr := context.NewManager("")
+	// Load plan rules
 	planRules, err := mgr.ListPlanRules()
 	if err != nil {
 		// Non-fatal error, just log to stderr for debugging
@@ -276,6 +318,19 @@ func performSaveCmd(name string, toWork bool) tea.Cmd {
 		destDir := context.RulesDir
 		if toWork {
 			destDir = context.RulesWorkDir
+		}
+
+		// Prioritize notebook location
+		if node, nodeErr := workspace.GetProjectByPath(mgr.GetWorkDir()); nodeErr == nil {
+			if toWork {
+				if nbDir, locErr := mgr.Locator().GetContextPresetsWorkDir(node); locErr == nil {
+					destDir = nbDir
+				}
+			} else {
+				if nbDir, locErr := mgr.Locator().GetContextPresetsDir(node); locErr == nil {
+					destDir = nbDir
+				}
+			}
 		}
 
 		if err := os.MkdirAll(destDir, 0755); err != nil {

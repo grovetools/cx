@@ -65,6 +65,7 @@ type PlanRule struct {
 // Manager handles context operations
 type Manager struct {
 	workDir         string
+	locator         *workspace.NotebookLocator // Notebook locator for centralized context paths
 	gitIgnoredCache map[string]map[string]bool // Cache for gitignored files by repository root
 	gitIgnoredMutex sync.RWMutex               // Mutex to protect gitIgnoredCache
 	aliasResolver   *alias.AliasResolver       // Lazily initialized alias resolver
@@ -88,8 +89,14 @@ func NewManager(workDir string) *Manager {
 	if err == nil {
 		workDir = absWorkDir
 	}
+	cfg, err := config.LoadFrom(workDir)
+	if err != nil {
+		cfg, _ = config.LoadDefault()
+	}
+
 	return &Manager{
 		workDir:         workDir,
+		locator:         workspace.NewNotebookLocator(cfg),
 		gitIgnoredCache: make(map[string]map[string]bool),
 		aliasResolver:   nil, // Lazily initialized
 		log:             grovelogging.NewLogger("grove-context"),
@@ -101,6 +108,11 @@ func NewManager(workDir string) *Manager {
 // GetWorkDir returns the current working directory
 func (m *Manager) GetWorkDir() string {
 	return m.workDir
+}
+
+// Locator returns the notebook locator for external use
+func (m *Manager) Locator() *workspace.NotebookLocator {
+	return m.locator
 }
 
 // ListPlanRules discovers and returns all rules files from grove-flow plans across all workspaces.
@@ -333,8 +345,8 @@ func (m *Manager) resolvePatternsFromRulesetImport(importRule string) ([]string,
 		return nil, fmt.Errorf("could not resolve project alias '%s': %w", projectAlias, err)
 	}
 
-	// 3. Find the ruleset file - check both .cx/ and .cx.work/
-	rulesFilePath, err := FindRulesetFile(projectPath, rulesetName)
+	// 3. Find the ruleset file - check notebook presets, .cx/ and .cx.work/
+	rulesFilePath, err := m.FindRulesetFile(projectPath, rulesetName)
 	if err != nil {
 		return nil, fmt.Errorf("could not find ruleset '%s' in project '%s': %w", rulesetName, projectAlias, err)
 	}
@@ -1068,9 +1080,46 @@ func (m *Manager) findGitRoot() string {
 	return "" // Not in a git repository
 }
 
-// FindRulesetFile searches for a ruleset file by name in both .cx.work/ and .cx/ directories.
+// FindRulesetFile searches for a ruleset file by name, checking notebook presets first,
+// then falling back to .cx.work/ and .cx/ directories.
 // It returns the absolute path to the file if found, or an error if not found.
-// This function checks .cx.work/ first for local overrides, then .cx/ as a fallback.
+func (m *Manager) FindRulesetFile(projectPath, rulesetName string) (string, error) {
+	// 1. Try notebook context directories first
+	if node, err := workspace.GetProjectByPath(projectPath); err == nil {
+		// Check notebook presets.work/ directory
+		if workDir, err := m.locator.GetContextPresetsWorkDir(node); err == nil {
+			nbWorkPath := filepath.Join(workDir, rulesetName+RulesExt)
+			if _, statErr := os.Stat(nbWorkPath); statErr == nil {
+				return nbWorkPath, nil
+			}
+		}
+
+		// Check notebook presets/ directory
+		if presetsDir, err := m.locator.GetContextPresetsDir(node); err == nil {
+			nbPresetsPath := filepath.Join(presetsDir, rulesetName+RulesExt)
+			if _, statErr := os.Stat(nbPresetsPath); statErr == nil {
+				return nbPresetsPath, nil
+			}
+		}
+	}
+
+	// 2. Fallback to legacy .cx.work/ directory first for local overrides
+	rulesFilePath := filepath.Join(projectPath, RulesWorkDir, rulesetName+RulesExt)
+	if _, err := os.Stat(rulesFilePath); err == nil {
+		return rulesFilePath, nil
+	}
+
+	// 3. Try legacy .cx/ as fallback
+	rulesFilePath = filepath.Join(projectPath, RulesDir, rulesetName+RulesExt)
+	if _, err := os.Stat(rulesFilePath); err == nil {
+		return rulesFilePath, nil
+	}
+
+	return "", fmt.Errorf("ruleset '%s' not found in notebook presets or %s/ or %s/", rulesetName, RulesWorkDir, RulesDir)
+}
+
+// FindRulesetFileStandalone searches for a ruleset file using only legacy .cx.work/ and .cx/ directories.
+// This is used for external project imports where notebook context is not available.
 func FindRulesetFile(projectPath, rulesetName string) (string, error) {
 	// Check .cx.work/ directory first for local overrides
 	rulesFilePath := filepath.Join(projectPath, RulesWorkDir, rulesetName+RulesExt)
@@ -1131,8 +1180,18 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 			// Use the active source path from state
 			rulesPath = filepath.Join(m.workDir, activeSource)
 		} else {
-			// Default to .grove/rules
-			rulesPath = filepath.Join(m.workDir, ActiveRulesFile)
+			// Default to notebook if centralized, else local
+			if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+				if nbRulesFile, locErr := m.locator.GetContextRulesFile(node); locErr == nil {
+					rulesPath = nbRulesFile
+				}
+			}
+
+			// Fallback if notebook locator failed
+			if rulesPath == "" {
+				// Default to .grove/rules
+				rulesPath = filepath.Join(m.workDir, ActiveRulesFile)
+			}
 		}
 	}
 

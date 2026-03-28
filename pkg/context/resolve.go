@@ -655,18 +655,28 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		}
 
 		var contextConfig struct {
+			DefaultRules     string `yaml:"default_rules"`
 			DefaultRulesPath string `yaml:"default_rules_path"`
 		}
 		if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to unmarshal context extension for @default path %s: %v\n", defaultPath, err)
 			continue
 		}
-		if contextConfig.DefaultRulesPath == "" {
-			fmt.Fprintf(os.Stderr, "Warning: no default_rules_path found for @default path %s\n", defaultPath)
+
+		var defaultRulesFile string
+		if contextConfig.DefaultRules != "" {
+			if resolved, findErr := m.FindRulesetFile(realPath, contextConfig.DefaultRules); findErr == nil {
+				defaultRulesFile = resolved
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s' for @default path %s\n", contextConfig.DefaultRules, defaultPath)
+				continue
+			}
+		} else if contextConfig.DefaultRulesPath != "" {
+			defaultRulesFile = filepath.Join(realPath, contextConfig.DefaultRulesPath)
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: no default_rules or default_rules_path found for @default path %s\n", defaultPath)
 			continue
 		}
-
-		defaultRulesFile := filepath.Join(realPath, contextConfig.DefaultRulesPath)
 
 		// Recursively resolve patterns from the default rules file
 		// ALL patterns from the default (hot and cold) are added to the current HOT context.
@@ -745,18 +755,28 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		}
 
 		var contextConfig struct {
+			DefaultRules     string `yaml:"default_rules"`
 			DefaultRulesPath string `yaml:"default_rules_path"`
 		}
 		if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to unmarshal context extension for @default path %s: %v\n", defaultPath, err)
 			continue
 		}
-		if contextConfig.DefaultRulesPath == "" {
-			fmt.Fprintf(os.Stderr, "Warning: no default_rules_path found for @default path %s\n", defaultPath)
+
+		var defaultRulesFile string
+		if contextConfig.DefaultRules != "" {
+			if resolved, findErr := m.FindRulesetFile(realPath, contextConfig.DefaultRules); findErr == nil {
+				defaultRulesFile = resolved
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s' for @default path %s\n", contextConfig.DefaultRules, defaultPath)
+				continue
+			}
+		} else if contextConfig.DefaultRulesPath != "" {
+			defaultRulesFile = filepath.Join(realPath, contextConfig.DefaultRulesPath)
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: no default_rules or default_rules_path found for @default path %s\n", defaultPath)
 			continue
 		}
-
-		defaultRulesFile := filepath.Join(realPath, contextConfig.DefaultRulesPath)
 
 		// Recursively resolve patterns from the default rules file
 		// ALL patterns from the default are added to the current COLD context.

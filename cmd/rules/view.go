@@ -28,9 +28,9 @@ func (m *rulesPickerModel) View() string {
 	// Save mode: show input prompt
 	if m.saveMode {
 		prompt := theme.DefaultTheme.Bold.Render("Save current rules as:")
-		destDir := ".cx/"
+		destDir := "presets/"
 		if m.saveToWork {
-			destDir = ".cx.work/"
+			destDir = "presets.work/"
 		}
 		hint := theme.DefaultTheme.Muted.Render(fmt.Sprintf("(will save to %s)", destDir))
 		cancel := theme.DefaultTheme.Muted.Render("Press q to cancel")

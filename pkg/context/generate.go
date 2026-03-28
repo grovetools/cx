@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/sirupsen/logrus"
 )
 
@@ -151,8 +152,15 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 
 // generateContextFromFiles is a private helper that writes a list of files to the hot context file.
 func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) error {
-	// Create context file
+	// Create context file path, routing to notebook if available
 	contextPath := filepath.Join(m.workDir, ContextFile)
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if genDir, locErr := m.locator.GetContextGeneratedDir(node); locErr == nil {
+			if mkErr := os.MkdirAll(genDir, 0755); mkErr == nil {
+				contextPath = filepath.Join(genDir, "context")
+			}
+		}
+	}
 	ctxFile, err := os.Create(contextPath)
 	if err != nil {
 		return fmt.Errorf("error creating %s: %w", contextPath, err)
@@ -220,7 +228,7 @@ func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) er
 	}).Info("Generated hot context file")
 
 	m.ulog.Success("Generated context file").
-		Field("path", ContextFile).
+		Field("path", contextPath).
 		Field("file_count", len(files)).
 		Log(context.Background())
 
@@ -246,8 +254,17 @@ func (m *Manager) GenerateCachedContext() error {
 
 // generateCachedContextFromFiles is a private helper that writes a list of files to the cold context files.
 func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
-	// Create cached context file
+	// Create cached context file path, routing to notebook if available
 	cachedPath := filepath.Join(m.workDir, CachedContextFile)
+	cachedListPath := filepath.Join(m.workDir, CachedContextFilesListFile)
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if cacheDir, locErr := m.locator.GetContextCacheDir(node); locErr == nil {
+			if mkErr := os.MkdirAll(cacheDir, 0755); mkErr == nil {
+				cachedPath = filepath.Join(cacheDir, "cached-context")
+				cachedListPath = filepath.Join(cacheDir, "cached-context-files")
+			}
+		}
+	}
 	cachedFile, err := os.Create(cachedPath)
 	if err != nil {
 		return fmt.Errorf("error creating %s: %w", cachedPath, err)
@@ -273,8 +290,7 @@ func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
 	fmt.Fprintf(cachedFile, "  </cold-context>\n")
 	fmt.Fprintf(cachedFile, "</context>\n")
 
-	// Write the list to .grove/cached-context-files
-	cachedListPath := filepath.Join(m.workDir, CachedContextFilesListFile)
+	// Write the list of cached context files
 	if err := m.WriteFilesList(cachedListPath, coldFiles); err != nil {
 		return err
 	}
@@ -286,14 +302,14 @@ func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
 	}).Info("Generated cold context artifacts")
 
 	m.ulog.Success("Generated cached context").
-		Field("path", CachedContextFile).
+		Field("path", cachedPath).
 		Field("file_count", len(coldFiles)).
 		Log(context.Background())
 
 	// Provide user feedback
 	if len(coldFiles) > 0 {
 		m.ulog.Success("Generated cached context files list").
-			Field("path", CachedContextFilesListFile).
+			Field("path", cachedListPath).
 			Field("file_count", len(coldFiles)).
 			Log(context.Background())
 	}
