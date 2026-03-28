@@ -36,6 +36,7 @@ func NewRulesCmd() *cobra.Command {
 	cmd.AddCommand(newRulesLoadCmd())
 	cmd.AddCommand(newRulesRmCmd())
 	cmd.AddCommand(newRulesPrintPathCmd())
+	cmd.AddCommand(newRulesWhereCmd())
 
 	return cmd
 }
@@ -517,6 +518,137 @@ Rule sets in .cx.work/ can be deleted without force.`,
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force delete a version-controlled rule set from .cx/")
+	return cmd
+}
+
+func newRulesWhereCmd() *cobra.Command {
+	var jsonOutput bool
+	cmd := &cobra.Command{
+		Use:   "where",
+		Short: "Show where context directories and files are located",
+		Long:  `Shows the resolved paths for all context-related directories: active rules, presets, generated context, and cache.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
+			mgr := context.NewManager("")
+
+			paths := make(map[string]string)
+
+			// Active rules file
+			if rulesPath, err := mgr.EnsureAndGetRulesPath(); err == nil {
+				paths["rules"] = rulesPath
+			}
+
+			// Notebook context directories
+			if node, err := workspace.GetProjectByPath(mgr.GetWorkDir()); err == nil {
+				if dir, err := mgr.Locator().GetContextDir(node); err == nil {
+					paths["context_dir"] = dir
+				}
+				if dir, err := mgr.Locator().GetContextPresetsDir(node); err == nil {
+					paths["presets"] = dir
+				}
+				if dir, err := mgr.Locator().GetContextPresetsWorkDir(node); err == nil {
+					paths["presets_work"] = dir
+				}
+				if dir, err := mgr.Locator().GetContextGeneratedDir(node); err == nil {
+					paths["generated"] = dir
+				}
+				if dir, err := mgr.Locator().GetContextCacheDir(node); err == nil {
+					paths["cache"] = dir
+				}
+			}
+
+			// Collect preset files with paths
+			type presetInfo struct {
+				Name string `json:"name"`
+				Path string `json:"path"`
+			}
+			var presetFiles []presetInfo
+			var workFiles []presetInfo
+			collectFiles := func(dir string) []presetInfo {
+				entries, err := os.ReadDir(dir)
+				if err != nil {
+					return nil
+				}
+				var items []presetInfo
+				for _, e := range entries {
+					if !e.IsDir() && strings.HasSuffix(e.Name(), context.RulesExt) {
+						items = append(items, presetInfo{
+							Name: strings.TrimSuffix(e.Name(), context.RulesExt),
+							Path: filepath.Join(dir, e.Name()),
+						})
+					}
+				}
+				return items
+			}
+			if p, ok := paths["presets"]; ok {
+				presetFiles = collectFiles(p)
+			}
+			if p, ok := paths["presets_work"]; ok {
+				workFiles = collectFiles(p)
+			}
+
+			if jsonOutput {
+				output := struct {
+					Paths       map[string]string `json:"paths"`
+					Presets     []presetInfo      `json:"presets,omitempty"`
+					PresetsWork []presetInfo      `json:"presets_work,omitempty"`
+				}{
+					Paths:       paths,
+					Presets:     presetFiles,
+					PresetsWork: workFiles,
+				}
+				jsonBytes, err := json.MarshalIndent(output, "", "  ")
+				if err != nil {
+					return fmt.Errorf("failed to marshal JSON: %w", err)
+				}
+				fmt.Println(string(jsonBytes))
+				return nil
+			}
+
+			ulog.Info("Context Locations").Log(ctx)
+			order := []struct{ key, label string }{
+				{"rules", "Active Rules"},
+				{"context_dir", "Context Dir"},
+				{"presets", "Presets"},
+				{"presets_work", "Presets (work)"},
+				{"generated", "Generated"},
+				{"cache", "Cache"},
+			}
+			for _, item := range order {
+				if p, ok := paths[item.key]; ok {
+					ulog.Info(item.label).
+						Field("path", p).
+						Pretty(fmt.Sprintf("  %-16s %s", item.label+":", p)).
+						Log(ctx)
+				}
+			}
+
+			if len(presetFiles) > 0 {
+				ulog.Info("").Pretty("").Log(ctx)
+				ulog.Info("Preset Rules").Log(ctx)
+				for _, p := range presetFiles {
+					ulog.Info("preset").
+						Field("name", p.Name).
+						Field("path", p.Path).
+						Pretty(fmt.Sprintf("  %-28s %s", p.Name, p.Path)).
+						Log(ctx)
+				}
+			}
+			if len(workFiles) > 0 {
+				ulog.Info("").Pretty("").Log(ctx)
+				ulog.Info("Work Presets").Log(ctx)
+				for _, p := range workFiles {
+					ulog.Info("work_preset").
+						Field("name", p.Name).
+						Field("path", p.Path).
+						Pretty(fmt.Sprintf("  %-28s %s", p.Name, p.Path)).
+						Log(ctx)
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	return cmd
 }
 
