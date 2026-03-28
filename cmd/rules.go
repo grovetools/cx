@@ -37,6 +37,7 @@ func NewRulesCmd() *cobra.Command {
 	cmd.AddCommand(newRulesRmCmd())
 	cmd.AddCommand(newRulesPrintPathCmd())
 	cmd.AddCommand(newRulesWhereCmd())
+	cmd.AddCommand(newRulesInitCmd())
 
 	return cmd
 }
@@ -649,6 +650,90 @@ func newRulesWhereCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
+	return cmd
+}
+
+func newRulesInitCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "init [preset]",
+		Short: "Initialize plan-scoped rules for the active plan",
+		Long: `Creates a plan-specific default.rules file using either the current shared rules or a specified preset.
+This isolates context edits to the current worktree/plan so they don't affect other branches.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := stdctx.Background()
+			mgr := context.NewManager("")
+
+			planName := mgr.GetActivePlanName()
+			if planName == "" {
+				return fmt.Errorf("no active plan detected (ensure you are on a plan branch or have used 'flow set')")
+			}
+
+			planRulesPath := mgr.GetPlanRulesPath(planName)
+			if planRulesPath == "" {
+				return fmt.Errorf("could not resolve rules path for plan %s", planName)
+			}
+
+			if _, err := os.Stat(planRulesPath); err == nil {
+				ulog.Warn("Plan-scoped rules already exist").
+					Field("path", planRulesPath).
+					Pretty(fmt.Sprintf("Plan-scoped rules already exist at: %s", planRulesPath)).
+					Log(ctx)
+				return nil
+			}
+
+			var content []byte
+
+			if len(args) > 0 {
+				// Copy from a named preset
+				presetName := args[0]
+				sourcePath, err := mgr.FindRulesetFile(".", presetName)
+				if err != nil {
+					return fmt.Errorf("preset not found: %w", err)
+				}
+				content, err = os.ReadFile(sourcePath)
+				if err != nil {
+					return fmt.Errorf("failed to read preset: %w", err)
+				}
+			} else {
+				// Copy from shared base rules (notebook context/rules)
+				if node, nodeErr := workspace.GetProjectByPath(mgr.GetWorkDir()); nodeErr == nil {
+					if nbRulesFile, locErr := mgr.Locator().GetContextRulesFile(node); locErr == nil {
+						if _, statErr := os.Stat(nbRulesFile); statErr == nil {
+							content, _ = os.ReadFile(nbRulesFile)
+						}
+					}
+				}
+				// Fallback to local .grove/rules
+				if content == nil {
+					localPath := filepath.Join(mgr.GetWorkDir(), context.ActiveRulesFile)
+					if _, statErr := os.Stat(localPath); statErr == nil {
+						content, _ = os.ReadFile(localPath)
+					}
+				}
+				// Empty boilerplate fallback
+				if content == nil {
+					content = []byte("# Context rules file\n# Plan-scoped rules for " + planName + "\n")
+				}
+			}
+
+			// Ensure directory exists
+			if err := os.MkdirAll(filepath.Dir(planRulesPath), 0755); err != nil {
+				return fmt.Errorf("failed to create directory: %w", err)
+			}
+
+			if err := os.WriteFile(planRulesPath, content, 0644); err != nil {
+				return fmt.Errorf("failed to write plan rules: %w", err)
+			}
+
+			ulog.Success("Initialized plan-scoped rules").
+				Field("plan", planName).
+				Field("path", planRulesPath).
+				Pretty(fmt.Sprintf("Initialized plan-scoped rules for '%s'", planName)).
+				Log(ctx)
+			return nil
+		},
+	}
 	return cmd
 }
 

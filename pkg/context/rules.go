@@ -344,7 +344,20 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		// A warning could be logged here in a future iteration.
 	}
 
-	// 2. Look for local .grove/rules
+	// 2. Check for plan-scoped rules
+	if planName := m.GetActivePlanName(); planName != "" {
+		if planRulesPath := m.GetPlanRulesPath(planName); planRulesPath != "" {
+			if _, err := os.Stat(planRulesPath); err == nil {
+				content, err := os.ReadFile(planRulesPath)
+				if err != nil {
+					return nil, "", fmt.Errorf("reading plan rules file %s: %w", planRulesPath, err)
+				}
+				return content, planRulesPath, nil
+			}
+		}
+	}
+
+	// 3. Look for local .grove/rules
 	localRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
 	if _, err := os.Stat(localRulesPath); err == nil {
 		content, err := os.ReadFile(localRulesPath)
@@ -1038,7 +1051,16 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 
 // findActiveRulesFile returns the path to the active rules file if it exists
 func (m *Manager) findActiveRulesFile() string {
-	// Check notebook location first
+	// Check plan-scoped rules first
+	if planName := m.GetActivePlanName(); planName != "" {
+		if planRulesPath := m.GetPlanRulesPath(planName); planRulesPath != "" {
+			if _, err := os.Stat(planRulesPath); err == nil {
+				return planRulesPath
+			}
+		}
+	}
+
+	// Check notebook location
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if nbRulesFile, err := m.locator.GetContextRulesFile(node); err == nil {
 			if _, statErr := os.Stat(nbRulesFile); statErr == nil {

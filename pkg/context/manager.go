@@ -19,6 +19,7 @@ import (
 	"github.com/grovetools/core/pkg/alias"
 	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/paths"
+	"github.com/grovetools/core/pkg/plan"
 	"github.com/grovetools/core/pkg/profiling"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
@@ -115,10 +116,31 @@ func (m *Manager) Locator() *workspace.NotebookLocator {
 	return m.locator
 }
 
+// GetActivePlanName returns the currently active flow plan name.
+// Delegates to core/pkg/plan for shared detection logic.
+func (m *Manager) GetActivePlanName() string {
+	return plan.ActivePlan(m.workDir)
+}
+
+// GetPlanRulesPath returns the absolute path to the default.rules file for a given plan.
+// Delegates to core/pkg/plan for shared path resolution.
+func (m *Manager) GetPlanRulesPath(planName string) string {
+	return plan.DefaultRulesPath(m.workDir, planName)
+}
+
 // ResolveRulesPath returns the path to the active rules file.
-// It checks for an existing file in order: notebook location, .grove/rules, .grovectx.
+// It checks for an existing file in order: plan-scoped rules, notebook location, .grove/rules, .grovectx.
 // If no file exists, returns the notebook path (preferred location for new files).
 func (m *Manager) ResolveRulesPath() string {
+	// Check plan-scoped rules first
+	if planName := m.GetActivePlanName(); planName != "" {
+		if planRulesPath := m.GetPlanRulesPath(planName); planRulesPath != "" {
+			if _, statErr := os.Stat(planRulesPath); statErr == nil {
+				return planRulesPath
+			}
+		}
+	}
+
 	// Check notebook location
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if nbRulesFile, err := m.locator.GetContextRulesFile(node); err == nil {
@@ -1252,10 +1274,19 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 			// Use the active source path from state
 			rulesPath = filepath.Join(m.workDir, activeSource)
 		} else {
-			// Default to notebook if centralized, else local
-			if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
-				if nbRulesFile, locErr := m.locator.GetContextRulesFile(node); locErr == nil {
-					rulesPath = nbRulesFile
+			// Default to plan-scoped if a plan is active
+			if planName := m.GetActivePlanName(); planName != "" {
+				if planRulesPath := m.GetPlanRulesPath(planName); planRulesPath != "" {
+					rulesPath = planRulesPath
+				}
+			}
+
+			if rulesPath == "" {
+				// Default to notebook if centralized, else local
+				if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+					if nbRulesFile, locErr := m.locator.GetContextRulesFile(node); locErr == nil {
+						rulesPath = nbRulesFile
+					}
 				}
 			}
 
@@ -1280,9 +1311,9 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 			return "", fmt.Errorf("error creating %s directory: %w", groveDir, err)
 		}
 
-		// Use default content if available, otherwise use boilerplate
+		// Use default content if available, otherwise use empty boilerplate
 		if rulesContent == nil {
-			rulesContent = []byte("# Context rules file\n# Add patterns to include files, one per line\n# Use ! prefix to exclude\n# Examples:\n#   *.go\n#   !*_test.go\n#   src/**/*.js\n\n*\n")
+			rulesContent = []byte("# Context rules file\n# Add patterns to include files, one per line\n# Use ! prefix to exclude\n# Examples:\n#   *.go\n#   !*_test.go\n#   src/**/*.js\n")
 		}
 
 		if err := os.WriteFile(rulesPath, rulesContent, 0644); err != nil {
