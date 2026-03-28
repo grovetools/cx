@@ -115,6 +115,58 @@ func (m *Manager) Locator() *workspace.NotebookLocator {
 	return m.locator
 }
 
+// ResolveRulesPath returns the preferred path to the active rules file,
+// checking the notebook location first and falling back to .grove/rules.
+func (m *Manager) ResolveRulesPath() string {
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if nbRulesFile, err := m.locator.GetContextRulesFile(node); err == nil {
+			return nbRulesFile
+		}
+	}
+	return filepath.Join(m.workDir, ActiveRulesFile)
+}
+
+// ResolveRulesWritePath returns the preferred path for writing the active rules file.
+// Same as ResolveRulesPath but ensures the parent directory exists.
+func (m *Manager) ResolveRulesWritePath() string {
+	p := m.ResolveRulesPath()
+	os.MkdirAll(filepath.Dir(p), 0755)
+	return p
+}
+
+// ResolveContextPath returns the path to the generated context file,
+// checking the notebook location first and falling back to .grove/context.
+func (m *Manager) ResolveContextPath() string {
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if genDir, err := m.locator.GetContextGeneratedDir(node); err == nil {
+			return filepath.Join(genDir, "context")
+		}
+	}
+	return filepath.Join(m.workDir, ContextFile)
+}
+
+// ResolveCachedContextPath returns the path to the cached context file,
+// checking the notebook location first and falling back to .grove/cached-context.
+func (m *Manager) ResolveCachedContextPath() string {
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
+			return filepath.Join(cacheDir, "cached-context")
+		}
+	}
+	return filepath.Join(m.workDir, CachedContextFile)
+}
+
+// ResolveCachedContextFilesListPath returns the path to the cached context files list,
+// checking the notebook location first and falling back to .grove/cached-context-files.
+func (m *Manager) ResolveCachedContextFilesListPath() string {
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
+			return filepath.Join(cacheDir, "cached-context-files")
+		}
+	}
+	return filepath.Join(m.workDir, CachedContextFilesListFile)
+}
+
 // ListPlanRules discovers and returns all rules files from grove-flow plans across all workspaces.
 func (m *Manager) ListPlanRules() ([]PlanRule, error) {
 	// 1. Load the default grove-core configuration to find notebook and plan locations.
