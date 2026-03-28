@@ -398,9 +398,9 @@ func setupDefaultAuditRules(repoPath string) error {
 		return fmt.Errorf("cannot create rules file: worktree has been deleted")
 	}
 
-	rulesPath := filepath.Join(repoPath, ".grove", "rules")
-
 	mgr := context.NewManager(repoPath)
+	rulesPath := mgr.ResolveRulesWritePath()
+
 	rulesContent, _, err := mgr.LoadRulesContent()
 	if err != nil {
 		// Non-fatal, just use a basic default
