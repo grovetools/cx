@@ -115,15 +115,35 @@ func (m *Manager) Locator() *workspace.NotebookLocator {
 	return m.locator
 }
 
-// ResolveRulesPath returns the preferred path to the active rules file,
-// checking the notebook location first and falling back to .grove/rules.
+// ResolveRulesPath returns the path to the active rules file.
+// It checks for an existing file in order: notebook location, .grove/rules, .grovectx.
+// If no file exists, returns the notebook path (preferred location for new files).
 func (m *Manager) ResolveRulesPath() string {
+	// Check notebook location
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if nbRulesFile, err := m.locator.GetContextRulesFile(node); err == nil {
+			if _, statErr := os.Stat(nbRulesFile); statErr == nil {
+				return nbRulesFile
+			}
+		}
+	}
+	// Check local .grove/rules
+	localPath := filepath.Join(m.workDir, ActiveRulesFile)
+	if _, err := os.Stat(localPath); err == nil {
+		return localPath
+	}
+	// Check legacy .grovectx
+	legacyPath := filepath.Join(m.workDir, RulesFile)
+	if _, err := os.Stat(legacyPath); err == nil {
+		return legacyPath
+	}
+	// Nothing exists — return notebook path as preferred for creation
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if nbRulesFile, err := m.locator.GetContextRulesFile(node); err == nil {
 			return nbRulesFile
 		}
 	}
-	return filepath.Join(m.workDir, ActiveRulesFile)
+	return localPath
 }
 
 // ResolveRulesWritePath returns the preferred path for writing the active rules file.
