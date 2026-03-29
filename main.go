@@ -58,6 +58,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewRepoCmd())
 	rootCmd.AddCommand(cmd.NewWorkspaceCmd())
 	rootCmd.AddCommand(cmd.NewResolveCmd())
+	rootCmd.AddCommand(cmd.NewMigrateRulesNbCmd())
 
 	if err := cli.Execute(rootCmd); err != nil {
 		os.Exit(1)
