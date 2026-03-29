@@ -401,8 +401,8 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		// Find the ruleset file in both .cx/ and .cx.work/ directories
-		rulesFilePath, err := FindRulesetFile(projectPath, rulesetName)
+		// Find the ruleset file (notebook presets, .cx.work/, .cx/)
+		rulesFilePath, err := m.FindRulesetFile(projectPath, rulesetName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not find ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
@@ -571,8 +571,8 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		// Find the ruleset file in both .cx/ and .cx.work/ directories
-		rulesFilePath, err := FindRulesetFile(projectPath, rulesetName)
+		// Find the ruleset file (notebook presets, .cx.work/, .cx/)
+		rulesFilePath, err := m.FindRulesetFile(projectPath, rulesetName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not find ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
