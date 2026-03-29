@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/grovetools/core/config"
+	"github.com/grovetools/core/pkg/workspace"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/cx/pkg/context/tree"
@@ -1243,23 +1244,43 @@ func (p *treePage) tryShowRulesetSelector(node *tree.FileNode, action string) bo
 
 // discoverRulesets finds all available .rules files in .cx/ and .grove/ directories
 func (p *treePage) discoverRulesets(wsPath string) []string {
+	seen := make(map[string]bool)
 	var rulesets []string
 
-	// Check both .cx/ and .grove/ directories
-	for _, dir := range []string{".cx", ".grove"} {
-		rulesDir := filepath.Join(wsPath, dir)
-		entries, err := os.ReadDir(rulesDir)
+	addFromDir := func(dir string) {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			continue
+			return
 		}
-
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".rules") {
-				// Extract ruleset name (remove .rules extension)
 				name := strings.TrimSuffix(entry.Name(), ".rules")
-				rulesets = append(rulesets, name)
+				if !seen[name] {
+					seen[name] = true
+					rulesets = append(rulesets, name)
+				}
 			}
 		}
+	}
+
+	// Check notebook presets first
+	if node, err := workspace.GetProjectByPath(wsPath); err == nil {
+		cfg, _ := config.LoadFrom(wsPath)
+		if cfg == nil {
+			cfg, _ = config.LoadDefault()
+		}
+		locator := workspace.NewNotebookLocator(cfg)
+		if presetsDir, err := locator.GetContextPresetsDir(node); err == nil {
+			addFromDir(presetsDir)
+		}
+		if presetsWorkDir, err := locator.GetContextPresetsWorkDir(node); err == nil {
+			addFromDir(presetsWorkDir)
+		}
+	}
+
+	// Fallback to legacy .cx/ and .grove/ directories
+	for _, dir := range []string{".cx", ".grove"} {
+		addFromDir(filepath.Join(wsPath, dir))
 	}
 
 	return rulesets
