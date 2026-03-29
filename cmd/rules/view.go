@@ -47,8 +47,17 @@ func (m *rulesPickerModel) View() string {
 		)
 	}
 
-	// Build table data
-	var rows [][]string
+	// Build table data - separate general and plan rules
+	var generalRows [][]string
+	var planRows [][]string
+
+	generalCount := 0
+	for _, item := range m.items {
+		if !item.isPlanRule {
+			generalCount++
+		}
+	}
+
 	for i, item := range m.items {
 		status := " "
 		if item.active {
@@ -90,25 +99,49 @@ func (m *rulesPickerModel) View() string {
 			source = item.planContext
 		}
 
-		rows = append(rows, []string{
-			status,
-			name,
-			source,
-		})
+		row := []string{status, name, source}
+
+		if item.isPlanRule {
+			planRows = append(planRows, row)
+		} else {
+			generalRows = append(generalRows, row)
+		}
+	}
+
+	// Determine cursor position for each table
+	generalCursor := -1
+	planCursor := -1
+	if m.selectedIndex < generalCount {
+		generalCursor = m.selectedIndex
+	} else {
+		planCursor = m.selectedIndex - generalCount
 	}
 
 	// Render header
 	header := theme.DefaultTheme.Header.Render("Select an Active Rule Set")
 
-	// Render table
+	// Render general rules table
 	tableView := table.SelectableTableWithOptions(
 		[]string{"", "Name", "Source"},
-		rows,
-		m.selectedIndex,
+		generalRows,
+		generalCursor,
 		table.SelectableTableOptions{
 			HighlightColumn: 1, // Highlight the Name column
 		},
 	)
+
+	// Render plan-specific rules table if any exist
+	if len(planRows) > 0 {
+		tableView += "\n\n" + theme.DefaultTheme.Header.Render("Current Plan Rules") + "\n"
+		tableView += table.SelectableTableWithOptions(
+			[]string{"", "Name", "Source"},
+			planRows,
+			planCursor,
+			table.SelectableTableOptions{
+				HighlightColumn: 1,
+			},
+		)
+	}
 
 	// Render preview pane
 	selectedItem := m.items[m.selectedIndex]

@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
 	"github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // --- TUI Commands ---
@@ -118,13 +118,18 @@ func loadRulesCmd() tea.Msg {
 		return rulesLoadedMsg{err: err}
 	}
 
-	// Load plan rules
+	// Load plan rules (only from the active plan)
 	planRules, err := mgr.ListPlanRules()
 	if err != nil {
 		// Non-fatal error, just log to stderr for debugging
 		fmt.Fprintf(os.Stderr, "Warning: could not load plan-specific rules: %v\n", err)
 	} else {
+		activePlan := mgr.GetActivePlanName()
 		for _, rule := range planRules {
+			// Only include rules from the active plan
+			if activePlan != "" && rule.PlanName != activePlan {
+				continue
+			}
 			content, readErr := os.ReadFile(rule.Path)
 			if readErr != nil {
 				content = []byte(theme.DefaultTheme.Error.Render(fmt.Sprintf("Error reading file: %v", readErr)))
