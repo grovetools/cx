@@ -79,8 +79,6 @@ func NewResetCmd() *cobra.Command {
 #   *.go
 #   !*_test.go
 #   src/**/*.js
-
-*
 `)
 				if err := os.WriteFile(rulesPath, boilerplate, 0644); err != nil {
 					return fmt.Errorf("error writing rules file: %w", err)
