@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grovetools/core/pkg/workspace"
 	"github.com/sirupsen/logrus"
 )
 
@@ -152,15 +151,8 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 
 // generateContextFromFiles is a private helper that writes a list of files to the hot context file.
 func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) error {
-	// Create context file path, routing to notebook if available
-	contextPath := filepath.Join(m.workDir, ContextFile)
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
-		if genDir, locErr := m.locator.GetContextGeneratedDir(node); locErr == nil {
-			if mkErr := os.MkdirAll(genDir, 0755); mkErr == nil {
-				contextPath = filepath.Join(genDir, "context")
-			}
-		}
-	}
+	// Resolve context file path (plan-scoped > notebook > local)
+	contextPath := m.ResolveContextWritePath()
 	ctxFile, err := os.Create(contextPath)
 	if err != nil {
 		return fmt.Errorf("error creating %s: %w", contextPath, err)
@@ -254,17 +246,9 @@ func (m *Manager) GenerateCachedContext() error {
 
 // generateCachedContextFromFiles is a private helper that writes a list of files to the cold context files.
 func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
-	// Create cached context file path, routing to notebook if available
-	cachedPath := filepath.Join(m.workDir, CachedContextFile)
-	cachedListPath := filepath.Join(m.workDir, CachedContextFilesListFile)
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
-		if cacheDir, locErr := m.locator.GetContextCacheDir(node); locErr == nil {
-			if mkErr := os.MkdirAll(cacheDir, 0755); mkErr == nil {
-				cachedPath = filepath.Join(cacheDir, "cached-context")
-				cachedListPath = filepath.Join(cacheDir, "cached-context-files")
-			}
-		}
-	}
+	// Resolve cached context file paths (plan-scoped > notebook > local)
+	cachedPath := m.ResolveCachedContextWritePath()
+	cachedListPath := m.ResolveCachedContextFilesListWritePath()
 	cachedFile, err := os.Create(cachedPath)
 	if err != nil {
 		return fmt.Errorf("error creating %s: %w", cachedPath, err)

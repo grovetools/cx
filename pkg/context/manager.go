@@ -176,9 +176,19 @@ func (m *Manager) ResolveRulesWritePath() string {
 	return p
 }
 
-// ResolveContextPath returns the path to the generated context file,
-// checking the notebook location first and falling back to .grove/context.
+// ResolveContextPath returns the path to the generated context file.
+// It checks for an existing file in order: plan-scoped, notebook, .grove/context.
+// If no file exists, returns the plan-scoped path (if plan active) or notebook path.
 func (m *Manager) ResolveContextPath() string {
+	// Check plan-scoped context first
+	if planName := m.GetActivePlanName(); planName != "" {
+		if p := plan.ContextPath(m.workDir, planName); p != "" {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if genDir, err := m.locator.GetContextGeneratedDir(node); err == nil {
 			return filepath.Join(genDir, "context")
@@ -187,9 +197,37 @@ func (m *Manager) ResolveContextPath() string {
 	return filepath.Join(m.workDir, ContextFile)
 }
 
-// ResolveCachedContextPath returns the path to the cached context file,
-// checking the notebook location first and falling back to .grove/cached-context.
+// ResolveContextWritePath returns the preferred path for writing the generated context file.
+// If a plan is active, returns the plan-scoped path (creating dirs as needed).
+func (m *Manager) ResolveContextWritePath() string {
+	if planName := m.GetActivePlanName(); planName != "" {
+		if p := plan.ContextPath(m.workDir, planName); p != "" {
+			os.MkdirAll(filepath.Dir(p), 0755)
+			return p
+		}
+	}
+
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if genDir, err := m.locator.GetContextGeneratedDir(node); err == nil {
+			os.MkdirAll(genDir, 0755)
+			return filepath.Join(genDir, "context")
+		}
+	}
+	return filepath.Join(m.workDir, ContextFile)
+}
+
+// ResolveCachedContextPath returns the path to the cached context file.
+// It checks for an existing file in order: plan-scoped, notebook, .grove/cached-context.
 func (m *Manager) ResolveCachedContextPath() string {
+	// Check plan-scoped context first
+	if planName := m.GetActivePlanName(); planName != "" {
+		if p := plan.CachedContextPath(m.workDir, planName); p != "" {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
 			return filepath.Join(cacheDir, "cached-context")
@@ -198,11 +236,58 @@ func (m *Manager) ResolveCachedContextPath() string {
 	return filepath.Join(m.workDir, CachedContextFile)
 }
 
-// ResolveCachedContextFilesListPath returns the path to the cached context files list,
-// checking the notebook location first and falling back to .grove/cached-context-files.
-func (m *Manager) ResolveCachedContextFilesListPath() string {
+// ResolveCachedContextWritePath returns the preferred path for writing the cached context file.
+// If a plan is active, returns the plan-scoped path (creating dirs as needed).
+func (m *Manager) ResolveCachedContextWritePath() string {
+	if planName := m.GetActivePlanName(); planName != "" {
+		if p := plan.CachedContextPath(m.workDir, planName); p != "" {
+			os.MkdirAll(filepath.Dir(p), 0755)
+			return p
+		}
+	}
+
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
+			os.MkdirAll(cacheDir, 0755)
+			return filepath.Join(cacheDir, "cached-context")
+		}
+	}
+	return filepath.Join(m.workDir, CachedContextFile)
+}
+
+// ResolveCachedContextFilesListPath returns the path to the cached context files list.
+// It checks for an existing file in order: plan-scoped, notebook, .grove/cached-context-files.
+func (m *Manager) ResolveCachedContextFilesListPath() string {
+	// Check plan-scoped context first
+	if planName := m.GetActivePlanName(); planName != "" {
+		if p := plan.CachedContextFilesListPath(m.workDir, planName); p != "" {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
+			return filepath.Join(cacheDir, "cached-context-files")
+		}
+	}
+	return filepath.Join(m.workDir, CachedContextFilesListFile)
+}
+
+// ResolveCachedContextFilesListWritePath returns the preferred path for writing the cached context files list.
+// If a plan is active, returns the plan-scoped path (creating dirs as needed).
+func (m *Manager) ResolveCachedContextFilesListWritePath() string {
+	if planName := m.GetActivePlanName(); planName != "" {
+		if p := plan.CachedContextFilesListPath(m.workDir, planName); p != "" {
+			os.MkdirAll(filepath.Dir(p), 0755)
+			return p
+		}
+	}
+
+	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
+			os.MkdirAll(cacheDir, 0755)
 			return filepath.Join(cacheDir, "cached-context-files")
 		}
 	}
