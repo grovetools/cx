@@ -6,7 +6,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
@@ -128,6 +131,11 @@ After migration, empty .cx/, .cx.work/, and .grove/ directories are removed.`,
 				}
 			}
 
+			// Migrate grove.toml: default_rules_path → default_rules
+			if updated := migrateGroveToml(ctx, workDir, dryRun); updated {
+				moved++
+			}
+
 			// Clean up empty directories
 			for _, dir := range []string{
 				filepath.Join(workDir, context.GroveDir),
@@ -213,6 +221,56 @@ func migrateRulesDir(ctx stdctx.Context, srcDir, destDir string, dryRun bool) in
 	}
 
 	return moved
+}
+
+// migrateGroveToml updates grove.toml to replace default_rules_path with default_rules.
+// e.g. default_rules_path = ".cx/dev-no-tests.rules" → default_rules = "dev-no-tests"
+func migrateGroveToml(ctx stdctx.Context, workDir string, dryRun bool) bool {
+	configPath, err := config.FindConfigFile(workDir)
+	if err != nil || configPath == "" {
+		return false
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return false
+	}
+
+	text := string(content)
+
+	// Match default_rules_path = "..." (with optional quotes)
+	re := regexp.MustCompile(`(?m)^(\s*)default_rules_path\s*=\s*"?([^"\n]+)"?[ \t]*$`)
+	match := re.FindStringSubmatch(text)
+	if match == nil {
+		return false
+	}
+
+	indent := match[1]
+	oldValue := match[2]
+
+	// Extract preset name: strip path and .rules extension
+	presetName := filepath.Base(oldValue)
+	presetName = strings.TrimSuffix(presetName, ".rules")
+
+	newLine := fmt.Sprintf("%sdefault_rules = %q", indent, presetName)
+
+	if dryRun {
+		ulog.Info("Would update grove.toml").
+			Pretty(fmt.Sprintf("  %s: default_rules_path → default_rules = %q", configPath, presetName)).
+			Log(ctx)
+		return true
+	}
+
+	updated := re.ReplaceAllString(text, newLine)
+	if err := os.WriteFile(configPath, []byte(updated), 0644); err != nil {
+		ulog.Warn("Failed to update grove.toml").Err(err).Log(ctx)
+		return false
+	}
+
+	ulog.Success("Updated grove.toml").
+		Pretty(fmt.Sprintf("  %s: default_rules_path → default_rules = %q", configPath, presetName)).
+		Log(ctx)
+	return true
 }
 
 // removeIfEmpty removes a directory if it contains no files.
