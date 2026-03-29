@@ -68,7 +68,7 @@ type SkippedRule struct {
 // LoadDefaultRulesContent loads only the default rules from grove.yml, ignoring any local rules files.
 // It returns the default rules content and the path where rules should be written.
 func (m *Manager) LoadDefaultRulesContent() (content []byte, rulesPath string) {
-	rulesPath = filepath.Join(m.workDir, ActiveRulesFile)
+	rulesPath = m.ResolveRulesWritePath()
 
 	// Load grove.yml to check for default rules
 	cfg, err := config.LoadFrom(m.workDir)
@@ -77,18 +77,11 @@ func (m *Manager) LoadDefaultRulesContent() (content []byte, rulesPath string) {
 		return nil, rulesPath
 	}
 
-	// Use custom extension approach since the Context field may not exist in grove-core yet
-	var contextConfig struct {
-		DefaultRules     string `yaml:"default_rules"`
-		DefaultRulesPath string `yaml:"default_rules_path"`
-	}
-
-	if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
-		// Extension doesn't exist or failed to unmarshal, no default rules
+	if cfg.Context == nil {
 		return nil, rulesPath
 	}
 
-	// Project root is where grove.yml is found
+	// Project root is where the config file is found
 	configPath, _ := config.FindConfigFile(m.workDir)
 	projectRoot := filepath.Dir(configPath)
 	if projectRoot == "" {
@@ -96,21 +89,21 @@ func (m *Manager) LoadDefaultRulesContent() (content []byte, rulesPath string) {
 	}
 
 	// Preferred: default_rules takes just a preset name (e.g., "dev-no-tests")
-	if contextConfig.DefaultRules != "" {
-		if resolvedPath, findErr := m.FindRulesetFile(projectRoot, contextConfig.DefaultRules); findErr == nil {
+	if cfg.Context.DefaultRules != "" {
+		if resolvedPath, findErr := m.FindRulesetFile(projectRoot, cfg.Context.DefaultRules); findErr == nil {
 			content, err := os.ReadFile(resolvedPath)
 			if err == nil {
 				return content, rulesPath
 			}
 		}
-		fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s'\n", contextConfig.DefaultRules)
+		fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s'\n", cfg.Context.DefaultRules)
 		return nil, rulesPath
 	}
 
 	// Legacy: default_rules_path takes a relative path (e.g., ".cx/dev-no-tests.rules")
-	if contextConfig.DefaultRulesPath != "" {
+	if cfg.Context.DefaultRulesPath != "" {
 		// Try resolving as a preset name first
-		base := filepath.Base(contextConfig.DefaultRulesPath)
+		base := filepath.Base(cfg.Context.DefaultRulesPath)
 		presetName := strings.TrimSuffix(base, RulesExt)
 		if resolvedPath, findErr := m.FindRulesetFile(projectRoot, presetName); findErr == nil {
 			content, err := os.ReadFile(resolvedPath)
@@ -120,7 +113,7 @@ func (m *Manager) LoadDefaultRulesContent() (content []byte, rulesPath string) {
 		}
 
 		// Fallback: try as a direct relative path from project root
-		defaultRulesPath := filepath.Join(projectRoot, contextConfig.DefaultRulesPath)
+		defaultRulesPath := filepath.Join(projectRoot, cfg.Context.DefaultRulesPath)
 		content, err := os.ReadFile(defaultRulesPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not read default_rules_path %s: %v\n", defaultRulesPath, err)
@@ -143,28 +136,19 @@ func (m *Manager) GetDefaultRuleName() string {
 		return ""
 	}
 
-	// Use custom extension approach
-	var contextConfig struct {
-		DefaultRules     string `yaml:"default_rules"`
-		DefaultRulesPath string `yaml:"default_rules_path"`
-	}
-
-	if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
+	if cfg.Context == nil {
 		return ""
 	}
 
 	// Preferred: default_rules is already just the name
-	if contextConfig.DefaultRules != "" {
-		return contextConfig.DefaultRules
+	if cfg.Context.DefaultRules != "" {
+		return cfg.Context.DefaultRules
 	}
 
 	// Legacy: extract name from default_rules_path
-	if contextConfig.DefaultRulesPath != "" {
-		// Extract just the filename without extension
-		base := filepath.Base(contextConfig.DefaultRulesPath)
-		// Remove .rules extension if present
-		name := strings.TrimSuffix(base, ".rules")
-		return name
+	if cfg.Context.DefaultRulesPath != "" {
+		base := filepath.Base(cfg.Context.DefaultRulesPath)
+		return strings.TrimSuffix(base, ".rules")
 	}
 
 	return ""
@@ -384,19 +368,11 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		return nil, "", nil
 	}
 
-	// Note: For now, we'll use a custom extension approach since the Context field
-	// may not exist in grove-core yet
-	var contextConfig struct {
-		DefaultRules     string `yaml:"default_rules"`
-		DefaultRulesPath string `yaml:"default_rules_path"`
-	}
-
-	if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
-		// Extension doesn't exist or failed to unmarshal, no default rules
+	if cfg.Context == nil {
 		return nil, "", nil
 	}
 
-	// Project root is where grove.yml is found
+	// Project root is where the config file is found
 	configPath, _ := config.FindConfigFile(m.workDir)
 	projectRoot := filepath.Dir(configPath)
 	if projectRoot == "" {
@@ -404,21 +380,21 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 	}
 
 	// Preferred: default_rules takes just a preset name
-	if contextConfig.DefaultRules != "" {
-		if resolvedPath, findErr := m.FindRulesetFile(projectRoot, contextConfig.DefaultRules); findErr == nil {
+	if cfg.Context.DefaultRules != "" {
+		if resolvedPath, findErr := m.FindRulesetFile(projectRoot, cfg.Context.DefaultRules); findErr == nil {
 			content, err := os.ReadFile(resolvedPath)
 			if err == nil {
 				return content, localRulesPath, nil
 			}
 		}
-		fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s'\n", contextConfig.DefaultRules)
+		fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s'\n", cfg.Context.DefaultRules)
 		return nil, "", nil
 	}
 
 	// Legacy: default_rules_path takes a relative path
-	if contextConfig.DefaultRulesPath != "" {
+	if cfg.Context.DefaultRulesPath != "" {
 		// Try as preset name first
-		base := filepath.Base(contextConfig.DefaultRulesPath)
+		base := filepath.Base(cfg.Context.DefaultRulesPath)
 		presetName := strings.TrimSuffix(base, RulesExt)
 		if resolvedPath, findErr := m.FindRulesetFile(projectRoot, presetName); findErr == nil {
 			content, err := os.ReadFile(resolvedPath)
@@ -428,7 +404,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		}
 
 		// Fallback: direct relative path
-		defaultRulesPath := filepath.Join(projectRoot, contextConfig.DefaultRulesPath)
+		defaultRulesPath := filepath.Join(projectRoot, cfg.Context.DefaultRulesPath)
 		content, err := os.ReadFile(defaultRulesPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not read default_rules_path %s: %v\n", defaultRulesPath, err)

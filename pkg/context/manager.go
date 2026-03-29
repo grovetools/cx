@@ -169,8 +169,15 @@ func (m *Manager) ResolveRulesPath() string {
 }
 
 // ResolveRulesWritePath returns the preferred path for writing the active rules file.
-// Same as ResolveRulesPath but ensures the parent directory exists.
+// If a plan is active, returns the plan-scoped path (creating dirs as needed),
+// regardless of whether the file exists yet.
 func (m *Manager) ResolveRulesWritePath() string {
+	if planName := m.GetActivePlanName(); planName != "" {
+		if p := m.GetPlanRulesPath(planName); p != "" {
+			os.MkdirAll(filepath.Dir(p), 0755)
+			return p
+		}
+	}
 	p := m.ResolveRulesPath()
 	os.MkdirAll(filepath.Dir(p), 0755)
 	return p

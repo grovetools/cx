@@ -74,17 +74,13 @@ func newRulesUnsetCmd() *cobra.Command {
 func newRulesLoadCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "load <name-or-path>",
-		Short: "Copy a named set to .grove/rules as a modifiable working copy",
-		Long: `Copy a named rule set from .cx/ or .cx.work/ to .grove/rules.
+		Short: "Copy a named preset to the active rules file as a modifiable working copy",
+		Long: `Copy a named rule set to the active rules location (plan-scoped, notebook, or .grove/rules).
 This creates a working copy that you can edit freely without affecting the original.
-The state is automatically unset so .grove/rules becomes active.
-
-You can also provide a direct file path to a rules file (including plan-specific rules).
 
 Examples:
-  cx rules load default          # Copy .cx/default.rules to .grove/rules
-  cx rules load dev-no-tests     # Copy from either .cx/ or .cx.work/
-  cx rules load /path/to/plan/rules/file.rules  # Copy from absolute path`,
+  cx rules load dev-no-tests     # Copy preset to active rules file
+  cx rules load /path/to/file.rules  # Copy from absolute path`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
@@ -118,17 +114,15 @@ Examples:
 				return fmt.Errorf("failed to read rule set: %w", err)
 			}
 
-			// Ensure .grove directory exists
-			if err := os.MkdirAll(filepath.Dir(context.ActiveRulesFile), 0755); err != nil {
-				return fmt.Errorf("failed to create .grove directory: %w", err)
+			// Resolve the active rules write path (plan-scoped > notebook > local)
+			rulesPath := mgr.ResolveRulesWritePath()
+
+			// Write to resolved rules path
+			if err := os.WriteFile(rulesPath, content, 0644); err != nil {
+				return fmt.Errorf("failed to write rules: %w", err)
 			}
 
-			// Write to .grove/rules
-			if err := os.WriteFile(context.ActiveRulesFile, content, 0644); err != nil {
-				return fmt.Errorf("failed to write to .grove/rules: %w", err)
-			}
-
-			// Unset any active rule set state so .grove/rules becomes active
+			// Unset any active rule set state so the resolved path becomes active
 			if err := state.Delete(context.StateSourceKey); err != nil {
 				// Non-fatal, just warn
 				ulog.Warn("Could not unset active rule set in state").
@@ -139,13 +133,9 @@ Examples:
 			ulog.Success("Loaded rule set into working copy").
 				Field("name", nameOrPath).
 				Field("source", sourcePath).
-				Pretty(fmt.Sprintf("Loaded '%s' into .grove/rules as working copy", nameOrPath)).
+				Field("target", rulesPath).
+				Pretty(fmt.Sprintf("Loaded '%s' to %s as working copy", nameOrPath, rulesPath)).
 				Log(ctx)
-			ulog.Info("Source location").
-				Field("source", sourcePath).
-				Pretty(fmt.Sprintf("Source: %s", sourcePath)).
-				Log(ctx)
-			ulog.Info("You can now edit .grove/rules freely without affecting the original").Log(ctx)
 			return nil
 		},
 	}

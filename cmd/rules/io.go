@@ -201,24 +201,22 @@ func loadRuleCmd(item ruleItem) tea.Cmd {
 			return tea.Quit()
 		}
 
-		// Ensure .grove directory exists
-		if err := os.MkdirAll(filepath.Dir(context.ActiveRulesFile), 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating .grove directory: %v\n", err)
+		// Resolve the active rules write path (plan-scoped > notebook > local)
+		mgr := context.NewManager("")
+		rulesPath := mgr.ResolveRulesWritePath()
+
+		// Write to resolved rules path
+		if err := os.WriteFile(rulesPath, content, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing rules: %v\n", err)
 			return tea.Quit()
 		}
 
-		// Write to .grove/rules
-		if err := os.WriteFile(context.ActiveRulesFile, content, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing to .grove/rules: %v\n", err)
-			return tea.Quit()
-		}
-
-		// Unset any active rule set state so .grove/rules becomes active
+		// Unset any active rule set state so the resolved path becomes active
 		if err := state.Delete(context.StateSourceKey); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not unset active rule set in state: %v\n", err)
 		}
 
-		fmt.Println(theme.DefaultTheme.Success.Render(fmt.Sprintf("Loaded '%s' into .grove/rules as working copy", item.name)))
+		fmt.Println(theme.DefaultTheme.Success.Render(fmt.Sprintf("%s Loaded '%s' to %s as working copy", theme.IconSuccess, item.name, rulesPath)))
 		return tea.Quit()
 	}
 }
@@ -238,17 +236,16 @@ func performLoadCmd(item ruleItem) tea.Cmd {
 			return loadCompleteMsg{err: err}
 		}
 
-		// Ensure .grove directory exists
-		if err := os.MkdirAll(filepath.Dir(context.ActiveRulesFile), 0755); err != nil {
+		// Resolve the active rules write path (plan-scoped > notebook > local)
+		mgr := context.NewManager("")
+		rulesPath := mgr.ResolveRulesWritePath()
+
+		// Write to resolved rules path
+		if err := os.WriteFile(rulesPath, content, 0644); err != nil {
 			return loadCompleteMsg{err: err}
 		}
 
-		// Write to .grove/rules
-		if err := os.WriteFile(context.ActiveRulesFile, content, 0644); err != nil {
-			return loadCompleteMsg{err: err}
-		}
-
-		// Unset any active rule set state so .grove/rules becomes active
+		// Unset any active rule set state so the resolved path becomes active
 		_ = state.Delete(context.StateSourceKey)
 
 		return loadCompleteMsg{err: nil}

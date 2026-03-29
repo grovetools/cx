@@ -77,7 +77,8 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Set status message
 		if m.loadingFromIdx >= 0 && m.loadingFromIdx < len(m.items) {
-			m.statusMessage = fmt.Sprintf("Loaded '%s' to .grove/rules as working copy", m.items[m.loadingFromIdx].name)
+			mgr := context.NewManager("")
+			m.statusMessage = fmt.Sprintf("Loaded '%s' to %s as working copy", m.items[m.loadingFromIdx].name, mgr.ResolveRulesWritePath())
 		}
 
 		// Reload the rules to reflect the new state
