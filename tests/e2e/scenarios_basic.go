@@ -109,13 +109,14 @@ func MissingRulesScenario() *harness.Scenario {
                     return fmt.Errorf("cx generate should succeed even without rules file, but got error: %w", result.Error)
                 }
                 
-                // Verify warning message is shown
-                if !strings.Contains(result.Stderr, "WARNING: No rules file found!") {
-                    return fmt.Errorf("expected warning message about missing rules file in stderr, got: %s", result.Stderr)
+                // Verify warning message is shown (ulog writes to stdout, not stderr)
+                combinedOutput := result.Stdout + result.Stderr
+                if !strings.Contains(combinedOutput, "No rules file found") {
+                    return fmt.Errorf("expected warning message about missing rules file, got stdout: %s\nstderr: %s", result.Stdout, result.Stderr)
                 }
-                
-                if !strings.Contains(result.Stderr, "Create .grove/rules with patterns to include files") {
-                    return fmt.Errorf("expected instruction to create .grove/rules in stderr")
+
+                if !strings.Contains(combinedOutput, "Create .grove/rules with patterns to include files") {
+                    return fmt.Errorf("expected instruction to create .grove/rules in output")
                 }
                 
                 return nil
