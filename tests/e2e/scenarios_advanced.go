@@ -97,7 +97,7 @@ func GitBasedContextScenario() *harness.Scenario {
 				return result.Error
 			}),
 			harness.NewStep("Verify rules file contains only staged file", func(ctx *harness.Context) error {
-				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				rulesPath := findRulesFileOrFallback(ctx.RootDir)
 				content, err := fs.ReadString(rulesPath)
 				if err != nil {
 					return err
@@ -223,7 +223,7 @@ func PlainDirectoryPatternScenario() *harness.Scenario {
 				}
 
 				// Read the cached-context-files list to verify cold context files
-				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				cachedFilesPath := findCachedContextFilesListOrFallback(ctx.RootDir)
 				content, err := os.ReadFile(cachedFilesPath)
 				if err != nil {
 					return fmt.Errorf("failed to read cached-context-files: %v", err)
@@ -275,8 +275,9 @@ func RecursiveParentPatternScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup sibling project structure", func(ctx *harness.Context) error {
 				// Create a parent directory with two sibling projects
+				// Use a unique name to avoid contamination from other parallel tests
 				parentDir := filepath.Dir(ctx.RootDir)
-				siblingDir := filepath.Join(parentDir, "sibling-project")
+				siblingDir := filepath.Join(parentDir, "sibling-recursive")
 
 				// Clean up any existing sibling project first
 				os.RemoveAll(siblingDir)
@@ -309,7 +310,7 @@ func RecursiveParentPatternScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Create rules with ../**/*.go pattern", func(ctx *harness.Context) error {
-				rules := "../sibling-project/**/*.go"
+				rules := "../sibling-recursive/**/*.go"
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
 			harness.NewStep("Run 'cx list' and verify recursive matching", func(ctx *harness.Context) error {
