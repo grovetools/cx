@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	cxcontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/tend/pkg/command"
 	"github.com/grovetools/tend/pkg/fs"
 	"github.com/grovetools/tend/pkg/git"
@@ -49,7 +50,7 @@ src/utils.go
 				}
 
 				// Verify main context file
-				mainContextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+				mainContextPath := cxcontext.NewManager(ctx.RootDir).ResolveContextPath()
 				mainContent, err := fs.ReadString(mainContextPath)
 				if err != nil {
 					return err
@@ -65,7 +66,7 @@ src/utils.go
 				}
 
 				// Verify cached context file (the XML file with cold files)
-				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
+				cachedContextPath := cxcontext.NewManager(ctx.RootDir).ResolveCachedContextPath()
 				cachedContent, err := fs.ReadString(cachedContextPath)
 				if err != nil {
 					return err
@@ -81,7 +82,7 @@ src/utils.go
 				}
 				
 				// Also verify the cached-context-files list
-				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				cachedFilesPath := cxcontext.NewManager(ctx.RootDir).ResolveCachedContextFilesListPath()
 				cachedFiles, err := fs.ReadString(cachedFilesPath)
 				if err != nil {
 					return err
@@ -176,7 +177,7 @@ func NoSeparatorBackwardCompatibilityScenario() *harness.Scenario {
 				}
 
 				// Verify main context
-				mainContextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+				mainContextPath := cxcontext.NewManager(ctx.RootDir).ResolveContextPath()
 				mainContent, err := fs.ReadString(mainContextPath)
 				if err != nil {
 					return err
@@ -186,7 +187,7 @@ func NoSeparatorBackwardCompatibilityScenario() *harness.Scenario {
 				}
 
 				// Verify cached context XML file exists with empty cold context (no --- means no cold files)
-				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
+				cachedContextPath := cxcontext.NewManager(ctx.RootDir).ResolveCachedContextPath()
 				if fs.Exists(cachedContextPath) {
 					cachedContent, _ := fs.ReadString(cachedContextPath)
 					if !strings.Contains(cachedContent, "<cold-context files=\"0\">") {
@@ -195,7 +196,7 @@ func NoSeparatorBackwardCompatibilityScenario() *harness.Scenario {
 				}
 				
 				// Verify cached-context-files does not exist or is empty
-				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				cachedFilesPath := cxcontext.NewManager(ctx.RootDir).ResolveCachedContextFilesListPath()
 				if fs.Exists(cachedFilesPath) {
 					content, _ := fs.ReadString(cachedFilesPath)
 					if content != "" {
@@ -231,7 +232,7 @@ func EmptyColdContextScenario() *harness.Scenario {
 				}
 
 				// Verify main context
-				mainContextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+				mainContextPath := cxcontext.NewManager(ctx.RootDir).ResolveContextPath()
 				mainContent, err := fs.ReadString(mainContextPath)
 				if err != nil {
 					return err
@@ -244,7 +245,7 @@ func EmptyColdContextScenario() *harness.Scenario {
 				}
 
 				// Verify cached context XML file exists with empty cold context
-				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
+				cachedContextPath := cxcontext.NewManager(ctx.RootDir).ResolveCachedContextPath()
 				if !fs.Exists(cachedContextPath) {
 					return fmt.Errorf("cached-context should exist")
 				}
@@ -260,7 +261,7 @@ func EmptyColdContextScenario() *harness.Scenario {
 				}
 				
 				// Also verify the cached-context-files list is empty
-				cachedFilesPath := filepath.Join(ctx.RootDir, ".grove", "cached-context-files")
+				cachedFilesPath := cxcontext.NewManager(ctx.RootDir).ResolveCachedContextFilesListPath()
 				if !fs.Exists(cachedFilesPath) {
 					return fmt.Errorf("cached-context-files should exist")
 				}
@@ -324,7 +325,7 @@ go.mod
 				}
 
 				// Read and verify cached context
-				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
+				cachedContextPath := cxcontext.NewManager(ctx.RootDir).ResolveCachedContextPath()
 				cachedContent, err := fs.ReadString(cachedContextPath)
 				if err != nil {
 					return err

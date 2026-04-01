@@ -312,9 +312,7 @@ func AliasResolutionFromEcosystemWorktreeRootScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup ecosystem with worktree and decoy project", func(ctx *harness.Context) error {
 				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
-				testConfigHome := filepath.Join(ctx.RootDir, ".test-config")
-				groveConfigDir := filepath.Join(testConfigHome, "grove")
-				ctx.Set("testConfigHome", testConfigHome)
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
 
 				// Create global grove.yml to discover projects
 				groveConfig := fmt.Sprintf(`groves:
@@ -356,7 +354,6 @@ workspaces:
 			}),
 			harness.NewStep("Run 'cx list' from worktree root with simple alias", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				testConfigHome := ctx.Get("testConfigHome").(string)
 				worktreeDir := ctx.Get("worktreeDir").(string)
 
 				// Create rules file in the ecosystem worktree root
@@ -364,7 +361,7 @@ workspaces:
 				fs.WriteString(filepath.Join(worktreeDir, ".grove", "rules"), rules)
 
 				// Run the command from the ecosystem worktree root
-				cmd := command.New(cx, "list").Dir(worktreeDir).Env(fmt.Sprintf("XDG_CONFIG_HOME=%s", testConfigHome))
+				cmd := ctx.Command(cx, "list").Dir(worktreeDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.Error != nil {

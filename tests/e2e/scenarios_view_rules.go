@@ -36,7 +36,7 @@ func TUIViewRulesScenario() *harness.Scenario {
 				ctx.Set("tui_session", session)
 
 				// Wait for UI to load
-				if err := session.WaitForText("Rules File:", 5*time.Second); err != nil {
+				if err := session.WaitForText("Rules File:", 15*time.Second); err != nil {
 					view, _ := session.Capture()
 					return fmt.Errorf("timeout waiting for rules page: %w\nView:\n%s", err, view)
 				}

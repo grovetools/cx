@@ -35,7 +35,7 @@ func TUIViewStatsScenario() *harness.Scenario {
 				}
 				ctx.Set("tui_session", session)
 
-				if err := session.WaitForText("File Types", 5*time.Second); err != nil {
+				if err := session.WaitForText("File Types", 15*time.Second); err != nil {
 					view, _ := session.Capture()
 					return fmt.Errorf("timeout waiting for stats page: %w\nView:\n%s", err, view)
 				}

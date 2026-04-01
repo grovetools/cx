@@ -3,10 +3,10 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
+	cxcontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/tend/pkg/command"
 	"github.com/grovetools/tend/pkg/fs"
 	"github.com/grovetools/tend/pkg/harness"
@@ -36,14 +36,14 @@ func EnhancedRulesWorkflowScenario() *harness.Scenario {
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
 				output := result.Stdout + result.Stderr
-				if !strings.Contains(output, "Saved current rules as 'baseline' in .cx/") {
-					return fmt.Errorf("save did not report saving to .cx/")
+				if !strings.Contains(output, "Saved current rules as 'baseline'") {
+					return fmt.Errorf("save did not report saving 'baseline', got: %s", output)
 				}
 
-				// Verify file exists in .cx/
-				baselinePath := filepath.Join(ctx.RootDir, ".cx", "baseline.rules")
-				if _, err := os.Stat(baselinePath); os.IsNotExist(err) {
-					return fmt.Errorf("baseline.rules not created in .cx/")
+				// Verify file exists using dynamic lookup
+				mgr := cxcontext.NewManager(ctx.RootDir)
+				if _, err := mgr.FindRulesetFile(ctx.RootDir, "baseline"); err != nil {
+					return fmt.Errorf("baseline ruleset not found: %w", err)
 				}
 
 				return result.Error
@@ -59,14 +59,14 @@ func EnhancedRulesWorkflowScenario() *harness.Scenario {
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
 				output := result.Stdout + result.Stderr
-				if !strings.Contains(output, "Saved current rules as 'experimental' in .cx.work/") {
-					return fmt.Errorf("save --work did not report saving to .cx.work/")
+				if !strings.Contains(output, "Saved current rules as 'experimental'") {
+					return fmt.Errorf("save --work did not report saving 'experimental', got: %s", output)
 				}
 
-				// Verify file exists in .cx.work/
-				expPath := filepath.Join(ctx.RootDir, ".cx.work", "experimental.rules")
-				if _, err := os.Stat(expPath); os.IsNotExist(err) {
-					return fmt.Errorf("experimental.rules not created in .cx.work/")
+				// Verify file exists using dynamic lookup
+				mgr := cxcontext.NewManager(ctx.RootDir)
+				if _, err := mgr.FindRulesetFile(ctx.RootDir, "experimental"); err != nil {
+					return fmt.Errorf("experimental ruleset not found: %w", err)
 				}
 
 				return result.Error
@@ -124,12 +124,12 @@ func EnhancedRulesWorkflowScenario() *harness.Scenario {
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
 				output := result.Stdout + result.Stderr
-				if !strings.Contains(output, "Loaded 'baseline' into .grove/rules as working copy") {
-					return fmt.Errorf("load did not report success")
+				if !strings.Contains(output, "Loaded 'baseline'") || !strings.Contains(output, "as working copy") {
+					return fmt.Errorf("load did not report success, got: %s", output)
 				}
 
 				// Verify .grove/rules has the baseline content
-				rulesContent, err := fs.ReadString(filepath.Join(ctx.RootDir, ".grove", "rules"))
+				rulesContent, err := fs.ReadString(findRulesFileOrFallback(ctx.RootDir))
 				if err != nil {
 					return err
 				}
@@ -159,8 +159,8 @@ func EnhancedRulesWorkflowScenario() *harness.Scenario {
 				}
 
 				// Verify file still exists
-				baselinePath := filepath.Join(ctx.RootDir, ".cx", "baseline.rules")
-				if _, err := os.Stat(baselinePath); os.IsNotExist(err) {
+				mgr := cxcontext.NewManager(ctx.RootDir)
+				if _, err := mgr.FindRulesetFile(ctx.RootDir, "baseline"); err != nil {
 					return fmt.Errorf("baseline.rules was deleted when it should have been protected")
 				}
 
@@ -182,8 +182,8 @@ func EnhancedRulesWorkflowScenario() *harness.Scenario {
 				}
 
 				// Verify file is gone
-				expPath := filepath.Join(ctx.RootDir, ".cx.work", "experimental.rules")
-				if _, err := os.Stat(expPath); !os.IsNotExist(err) {
+				mgr := cxcontext.NewManager(ctx.RootDir)
+				if _, err := mgr.FindRulesetFile(ctx.RootDir, "experimental"); err == nil {
 					return fmt.Errorf("experimental.rules was not deleted")
 				}
 
@@ -205,8 +205,8 @@ func EnhancedRulesWorkflowScenario() *harness.Scenario {
 				}
 
 				// Verify file is gone
-				baselinePath := filepath.Join(ctx.RootDir, ".cx", "baseline.rules")
-				if _, err := os.Stat(baselinePath); !os.IsNotExist(err) {
+				mgr := cxcontext.NewManager(ctx.RootDir)
+				if _, err := mgr.FindRulesetFile(ctx.RootDir, "baseline"); err == nil {
 					return fmt.Errorf("baseline.rules was not deleted with --force")
 				}
 

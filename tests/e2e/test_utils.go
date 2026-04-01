@@ -32,6 +32,70 @@ func FindProjectBinary() (string, error) {
 	return binaryPath, nil
 }
 
+// findGeneratedFile looks for a generated file across all possible output locations.
+// The cx binary may write to different paths depending on notebook config, plan state, etc.
+// When run via ctx.Command(), the binary has a sandboxed HOME under <rootDir>/home/,
+// so files may end up under home/.grove/notebooks/... within the test root.
+// This helper searches all known locations using glob patterns.
+func findGeneratedFile(rootDir, filename string) string {
+	// Check direct paths first (fastest)
+	directPaths := []string{
+		filepath.Join(rootDir, ".notebook", "context", "generated", filename),
+		filepath.Join(rootDir, ".notebook", "context", "cache", filename),
+		filepath.Join(rootDir, ".grove", filename),
+	}
+	for _, p := range directPaths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	// Check under sandboxed home (ctx.Command sets HOME=<rootDir>/home)
+	homeGlob := filepath.Join(rootDir, "home", ".grove", "notebooks", "*", "workspaces", "*", "context", "**", filename)
+	matches, _ := filepath.Glob(homeGlob)
+	if len(matches) > 0 {
+		return matches[0]
+	}
+
+	// Broader search: find the file anywhere under rootDir
+	var found string
+	filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) == filename && found == "" {
+			found = path
+		}
+		return nil
+	})
+	if found != "" {
+		return found
+	}
+
+	// Return fallback path for better error messages
+	return filepath.Join(rootDir, ".grove", filename)
+}
+
+// findContextFileOrFallback finds the generated context file across all possible output locations.
+func findContextFileOrFallback(rootDir string) string {
+	return findGeneratedFile(rootDir, "context")
+}
+
+// findCachedContextFileOrFallback finds the cached context file across all possible output locations.
+func findCachedContextFileOrFallback(rootDir string) string {
+	return findGeneratedFile(rootDir, "cached-context")
+}
+
+// findCachedContextFilesListOrFallback finds the cached context files list across all possible output locations.
+func findCachedContextFilesListOrFallback(rootDir string) string {
+	return findGeneratedFile(rootDir, "cached-context-files")
+}
+
+// findRulesFileOrFallback finds the active rules file across all possible locations.
+func findRulesFileOrFallback(rootDir string) string {
+	return findGeneratedFile(rootDir, "rules")
+}
+
 // CleanupExistingTestSessions kills any existing tmux sessions that match tend test patterns.
 // This helps ensure a clean test environment and avoids port conflicts or session collisions.
 func CleanupExistingTestSessions() error {

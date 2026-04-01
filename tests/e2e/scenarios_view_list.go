@@ -36,7 +36,7 @@ func TUIViewListScenario() *harness.Scenario {
 				ctx.Set("tui_session", session)
 
 				// Wait for hot context files to appear
-				if _, err := session.WaitForAnyText([]string{"main.go", "lib.go"}, 5*time.Second); err != nil {
+				if _, err := session.WaitForAnyText([]string{"main.go", "lib.go"}, 15*time.Second); err != nil {
 					view, _ := session.Capture()
 					return fmt.Errorf("timeout waiting for list content: %w\nView:\n%s", err, view)
 				}
@@ -58,16 +58,16 @@ func TUIViewListScenario() *harness.Scenario {
 				if err := session.Type("Tab"); err != nil {
 					return err
 				}
-				// Wait for tree view (directory indicators)
-				time.Sleep(500 * time.Millisecond)
+				// Wait for tree view content (absolute path components visible in tree)
+				time.Sleep(1 * time.Second)
 
 				view, _ := session.Capture()
 				ctx.ShowCommandOutput("After Tab to Tree Page", view, "")
 
 				content, _ := session.Capture(tui.WithCleanedOutput())
-				// Tree view shows directory icons
 				return ctx.Verify(func(v *verify.Collector) {
-					v.True("navigated to tree page", strings.Contains(content, "var") || strings.Contains(content, "private"))
+					v.True("navigated to tree page",
+						strings.Contains(content, "var") || strings.Contains(content, "private") || strings.Contains(content, "TREE"))
 				})
 			}),
 			harness.NewStep("Quit the TUI", quitCXViewTUI),

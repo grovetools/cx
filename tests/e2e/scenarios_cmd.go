@@ -348,7 +348,7 @@ func CommandExpressionAbsolutePathsScenario() *harness.Scenario {
 				}
 
 				// Verify context file was created and contains the files
-				contextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+				contextPath := findContextFileOrFallback(ctx.RootDir)
 				content, err := fs.ReadString(contextPath)
 				if err != nil {
 					return fmt.Errorf("could not read context file: %w", err)
@@ -471,7 +471,7 @@ go.mod`
 				}
 
 				// Read generated context
-				contextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+				contextPath := findContextFileOrFallback(ctx.RootDir)
 				content, err := fs.ReadString(contextPath)
 				if err != nil {
 					return fmt.Errorf("could not read context file: %w", err)

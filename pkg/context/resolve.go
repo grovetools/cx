@@ -654,25 +654,23 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		var contextConfig struct {
-			DefaultRules     string `yaml:"default_rules"`
-			DefaultRulesPath string `yaml:"default_rules_path"`
-		}
-		if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to unmarshal context extension for @default path %s: %v\n", defaultPath, err)
-			continue
+		// Read context config from the explicit Config.Context field
+		var defaultRules, defaultRulesPath string
+		if cfg.Context != nil {
+			defaultRules = cfg.Context.DefaultRules
+			defaultRulesPath = cfg.Context.DefaultRulesPath
 		}
 
 		var defaultRulesFile string
-		if contextConfig.DefaultRules != "" {
-			if resolved, findErr := m.FindRulesetFile(realPath, contextConfig.DefaultRules); findErr == nil {
+		if defaultRules != "" {
+			if resolved, findErr := m.FindRulesetFile(realPath, defaultRules); findErr == nil {
 				defaultRulesFile = resolved
 			} else {
-				fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s' for @default path %s\n", contextConfig.DefaultRules, defaultPath)
+				fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s' for @default path %s\n", defaultRules, defaultPath)
 				continue
 			}
-		} else if contextConfig.DefaultRulesPath != "" {
-			defaultRulesFile = filepath.Join(realPath, contextConfig.DefaultRulesPath)
+		} else if defaultRulesPath != "" {
+			defaultRulesFile = filepath.Join(realPath, defaultRulesPath)
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: no default_rules or default_rules_path found for @default path %s\n", defaultPath)
 			continue
@@ -754,25 +752,23 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		var contextConfig struct {
-			DefaultRules     string `yaml:"default_rules"`
-			DefaultRulesPath string `yaml:"default_rules_path"`
-		}
-		if err := cfg.UnmarshalExtension("context", &contextConfig); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to unmarshal context extension for @default path %s: %v\n", defaultPath, err)
-			continue
+		// Read context config from the explicit Config.Context field
+		var defaultRules, defaultRulesPath string
+		if cfg.Context != nil {
+			defaultRules = cfg.Context.DefaultRules
+			defaultRulesPath = cfg.Context.DefaultRulesPath
 		}
 
 		var defaultRulesFile string
-		if contextConfig.DefaultRules != "" {
-			if resolved, findErr := m.FindRulesetFile(realPath, contextConfig.DefaultRules); findErr == nil {
+		if defaultRules != "" {
+			if resolved, findErr := m.FindRulesetFile(realPath, defaultRules); findErr == nil {
 				defaultRulesFile = resolved
 			} else {
-				fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s' for @default path %s\n", contextConfig.DefaultRules, defaultPath)
+				fmt.Fprintf(os.Stderr, "Warning: could not find default_rules preset '%s' for @default path %s\n", defaultRules, defaultPath)
 				continue
 			}
-		} else if contextConfig.DefaultRulesPath != "" {
-			defaultRulesFile = filepath.Join(realPath, contextConfig.DefaultRulesPath)
+		} else if defaultRulesPath != "" {
+			defaultRulesFile = filepath.Join(realPath, defaultRulesPath)
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: no default_rules or default_rules_path found for @default path %s\n", defaultPath)
 			continue

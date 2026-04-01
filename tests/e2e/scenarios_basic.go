@@ -53,7 +53,7 @@ func BasicContextGenerationScenario() *harness.Scenario {
                 return result.Error
             }),
             harness.NewStep("Verify generated .grove/context", func(ctx *harness.Context) error {
-                contextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+                contextPath := findContextFileOrFallback(ctx.RootDir)
                 content, err := fs.ReadString(contextPath)
                 if err != nil {
                     return fmt.Errorf("could not read generated context file: %w", err)
@@ -122,7 +122,7 @@ func MissingRulesScenario() *harness.Scenario {
                 return nil
             }),
             harness.NewStep("Verify empty context file was created", func(ctx *harness.Context) error {
-                contextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+                contextPath := findContextFileOrFallback(ctx.RootDir)
                 
                 // Verify the context file exists
                 if _, err := os.Stat(contextPath); err != nil {

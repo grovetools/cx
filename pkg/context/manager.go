@@ -1100,12 +1100,14 @@ func (m *Manager) initAllowedRoots() {
 			fmt.Fprintf(os.Stderr, "Warning: could not load grove configuration to apply workspace filters: %v\n", err)
 		}
 
-		// Read context-specific configuration from the extension
+		// Read context-specific configuration from the config's Context field.
+		// The core config now has an explicit Context field (yaml:"context"),
+		// so UnmarshalExtension("context") no longer works.
 		var ctxCfg ContextConfig
-		if mergedCfg != nil {
-			if err := mergedCfg.UnmarshalExtension("context", &ctxCfg); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to read context configuration: %v\n", err)
-			}
+		if mergedCfg != nil && mergedCfg.Context != nil {
+			ctxCfg.IncludedWorkspaces = mergedCfg.Context.IncludedWorkspaces
+			ctxCfg.ExcludedWorkspaces = mergedCfg.Context.ExcludedWorkspaces
+			ctxCfg.AllowedPaths = mergedCfg.Context.AllowedPaths
 		}
 
 		var allowed []string
@@ -1485,8 +1487,10 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 		// Load config to check exclusions
 		mergedCfg, _ := config.LoadFrom(m.workDir)
 		var ctxCfg ContextConfig
-		if mergedCfg != nil {
-			mergedCfg.UnmarshalExtension("context", &ctxCfg)
+		if mergedCfg != nil && mergedCfg.Context != nil {
+			ctxCfg.IncludedWorkspaces = mergedCfg.Context.IncludedWorkspaces
+			ctxCfg.ExcludedWorkspaces = mergedCfg.Context.ExcludedWorkspaces
+			ctxCfg.AllowedPaths = mergedCfg.Context.AllowedPaths
 		}
 
 		// Check if the given path is within or equals any excluded workspace

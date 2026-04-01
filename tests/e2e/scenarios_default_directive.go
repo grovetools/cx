@@ -106,7 +106,7 @@ context:
 			}),
 			harness.NewStep("Verify hot context includes imported rules", func(ctx *harness.Context) error {
 				
-				contextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+				contextPath := findContextFileOrFallback(ctx.RootDir)
 				content, err := fs.ReadString(contextPath)
 				if err != nil {
 					return fmt.Errorf("could not read generated context file: %w", err)
@@ -145,7 +145,7 @@ context:
 			}),
 			harness.NewStep("Verify cold context is correct", func(ctx *harness.Context) error {
 				// Check the cached-context file directly
-				cachedContextPath := filepath.Join(ctx.RootDir, ".grove", "cached-context")
+				cachedContextPath := findCachedContextFileOrFallback(ctx.RootDir)
 				cachedContent, err := fs.ReadString(cachedContextPath)
 				if err != nil {
 					// It's OK if cached-context doesn't exist yet
@@ -242,7 +242,7 @@ context:
 				return result.Error
 			}),
 			harness.NewStep("Verify hot context has only local .go files", func(ctx *harness.Context) error {
-				contextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+				contextPath := findContextFileOrFallback(ctx.RootDir)
 				content, err := fs.ReadString(contextPath)
 				if err != nil {
 					return fmt.Errorf("could not read generated context file: %w", err)
@@ -361,7 +361,7 @@ context:
 				return result.Error
 			}),
 			harness.NewStep("Verify context was generated correctly", func(ctx *harness.Context) error {
-				contextPath := filepath.Join(ctx.RootDir, ".grove", "context")
+				contextPath := findContextFileOrFallback(ctx.RootDir)
 				content, err := fs.ReadString(contextPath)
 				if err != nil {
 					return fmt.Errorf("could not read generated context file: %w", err)
