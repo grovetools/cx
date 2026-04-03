@@ -98,6 +98,11 @@ func main() {
 
 		// Search Directive Scenarios
 		FindDirectiveScenario(),
+		FindDirectiveGlobScenario(),
+		FindDirectiveRegexScenario(),
+		FindDirectiveDoubleStarGlobScenario(),
+		FindDirectiveInvalidRegexFallbackScenario(),
+		FindDirectiveFullPathRegexScenario(),
 		GrepDirectiveScenario(),
 		GrepIDirectiveScenario(),
 		GlobalGrepIDirectiveScenario(),

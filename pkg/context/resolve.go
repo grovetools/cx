@@ -1105,7 +1105,24 @@ func decodeDirective(pattern string) (string, string, string, bool) {
 // For "grep", it reads the file and checks if the content matches the query as a regex (or literal fallback).
 func (m *Manager) matchDirective(file, directive, query string) bool {
 	if directive == "find" {
-		return strings.Contains(file, query)
+		// @find: filter by filename/path using substring, glob, or regex
+		// 1. Substring match (original behavior)
+		if strings.Contains(file, query) {
+			return true
+		}
+		// 2. Basename glob match
+		if globMatch, _ := filepath.Match(query, filepath.Base(file)); globMatch {
+			return true
+		}
+		// 3. Full path/recursive glob match
+		if matchDoubleStarPattern(query, file) {
+			return true
+		}
+		// 4. Regex match
+		if re, err := regexp.Compile(query); err == nil && re.MatchString(filepath.ToSlash(file)) {
+			return true
+		}
+		return false
 	}
 	if directive == "grep" || directive == "grep-i" {
 		filePath := file

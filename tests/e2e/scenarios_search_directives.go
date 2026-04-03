@@ -98,6 +98,333 @@ func FindDirectiveScenario() *harness.Scenario {
 	}
 }
 
+// FindDirectiveGlobScenario tests the @find directive with glob patterns
+func FindDirectiveGlobScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-find-directive-glob",
+		Description: "Tests @find directive using glob patterns",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with various files", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "pkg", "managers"),
+					filepath.Join(ctx.RootDir, "pkg", "api"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "pkg", "managers", "user_manager_test.go"): "package managers",
+					filepath.Join(ctx.RootDir, "pkg", "managers", "file_manager.go"):      "package managers",
+					filepath.Join(ctx.RootDir, "pkg", "api", "api_test.go"):               "package api",
+					filepath.Join(ctx.RootDir, "pkg", "api", "file_api.go"):               "package api",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with @find glob directive", func(ctx *harness.Context) error {
+				rulesContent := `pkg/**/*.go @find: "*_test.go"`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify only test files are included", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if !strings.Contains(output, "user_manager_test.go") {
+					return fmt.Errorf("output should contain user_manager_test.go")
+				}
+				if !strings.Contains(output, "api_test.go") {
+					return fmt.Errorf("output should contain api_test.go")
+				}
+				if strings.Contains(output, "file_manager.go") {
+					return fmt.Errorf("output should not contain file_manager.go")
+				}
+				if strings.Contains(output, "file_api.go") {
+					return fmt.Errorf("output should not contain file_api.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// FindDirectiveRegexScenario tests the @find directive with regex patterns
+func FindDirectiveRegexScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-find-directive-regex",
+		Description: "Tests @find directive using regex patterns",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with various files", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "pkg", "managers"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "pkg", "managers", "a_manager.go"):  "package managers",
+					filepath.Join(ctx.RootDir, "pkg", "managers", "1_manager.go"):  "package managers",
+					filepath.Join(ctx.RootDir, "pkg", "managers", "12_manager.go"): "package managers",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with @find regex directive", func(ctx *harness.Context) error {
+				rulesContent := "pkg/**/*.go @find: \"[0-9]+_manager\\.go$\""
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify only regex matching files are included", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if strings.Contains(output, "a_manager.go") {
+					return fmt.Errorf("output should not contain a_manager.go")
+				}
+				if !strings.Contains(output, "1_manager.go") {
+					return fmt.Errorf("output should contain 1_manager.go")
+				}
+				if !strings.Contains(output, "12_manager.go") {
+					return fmt.Errorf("output should contain 12_manager.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// FindDirectiveDoubleStarGlobScenario tests the @find directive with double-star glob patterns
+func FindDirectiveDoubleStarGlobScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-find-directive-doublestar",
+		Description: "Tests @find directive using double-star glob patterns",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with nested directories", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "app", "services", "http"),
+					filepath.Join(ctx.RootDir, "app", "services", "grpc"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "app", "services", "http", "test_server.go"): "package http",
+					filepath.Join(ctx.RootDir, "app", "services", "grpc", "test_client.go"): "package grpc",
+					filepath.Join(ctx.RootDir, "app", "services", "http", "server.go"):      "package http",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with @find double-star directive", func(ctx *harness.Context) error {
+				// Pattern **/test_*.go uses matchDoubleStarPattern: empty prefix, suffix test_*.go
+				rulesContent := `app/**/*.go @find: "**/test_*.go"`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify only test_ prefixed files are included", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if !strings.Contains(output, "test_server.go") {
+					return fmt.Errorf("output should contain test_server.go")
+				}
+				if !strings.Contains(output, "test_client.go") {
+					return fmt.Errorf("output should contain test_client.go")
+				}
+				if strings.Contains(output, "app/services/http/server.go") {
+					return fmt.Errorf("output should not contain server.go (without test_ prefix)")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// FindDirectiveInvalidRegexFallbackScenario tests the @find directive with invalid regex strings
+func FindDirectiveInvalidRegexFallbackScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-find-directive-invalid-regex",
+		Description: "Tests @find directive falls back to substring on invalid regex",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project", func(ctx *harness.Context) error {
+				if err := os.MkdirAll(filepath.Join(ctx.RootDir, "pkg"), 0755); err != nil {
+					return err
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "pkg", "draft_[unbalanced.go"): "package pkg",
+					filepath.Join(ctx.RootDir, "pkg", "draft_normal.go"):     "package pkg",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules with invalid regex @find directive", func(ctx *harness.Context) error {
+				// "[unbal" is an invalid regex and invalid glob, forcing fallback to substring matching
+				rulesContent := `pkg/**/*.go @find: "[unbal"`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify substring fallback works", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if !strings.Contains(output, "draft_[unbalanced.go") {
+					return fmt.Errorf("output should contain draft_[unbalanced.go")
+				}
+				if strings.Contains(output, "draft_normal.go") {
+					return fmt.Errorf("output should not contain draft_normal.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// FindDirectiveFullPathRegexScenario tests the @find directive with full path regex matches
+func FindDirectiveFullPathRegexScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-find-directive-fullpath-regex",
+		Description: "Tests @find directive regex matching against full paths",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "pkg", "auth"),
+					filepath.Join(ctx.RootDir, "pkg", "billing"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "pkg", "auth", "api_handler.go"):    "package auth",
+					filepath.Join(ctx.RootDir, "pkg", "billing", "api_handler.go"): "package billing",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules with full path regex directive", func(ctx *harness.Context) error {
+				// Regex matches the auth path segment but not billing; no ^ anchor since paths are absolute
+				rulesContent := "pkg/**/*.go @find: \"pkg/auth/.*_handler\\.go$\""
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify regex path matching", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if !strings.Contains(output, "auth/api_handler.go") {
+					return fmt.Errorf("output should contain auth/api_handler.go")
+				}
+				if strings.Contains(output, "billing/api_handler.go") {
+					return fmt.Errorf("output should not contain billing/api_handler.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
 // GrepDirectiveScenario tests the @grep directive for filtering by file content
 func GrepDirectiveScenario() *harness.Scenario {
 	return &harness.Scenario{
