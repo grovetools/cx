@@ -103,6 +103,10 @@ func main() {
 		UnquotedInlineSearchDirectivesScenario(),
 		UnquotedGlobalSearchDirectivesScenario(),
 		MalformedSearchDirectivesScenario(),
+		InvalidGrepRegexScenario(),
+		ValidGrepRegexScenario(),
+		GrepRegexVsLiteralScenario(),
+		EmptyGrepQueryScenario(),
 
 		// Directive Import Scenarios
 		DirectiveWorkspaceGrepImportScenario(),

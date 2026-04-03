@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -20,10 +21,11 @@ var log = logging.NewLogger("cx.context.resolve")
 
 // patternInfo holds information about a pattern including any associated directive
 type patternInfo struct {
-	pattern   string
-	directive string
-	query     string
-	isExclude bool
+	pattern    string
+	directive  string
+	query      string
+	queryRegex *regexp.Regexp
+	isExclude  bool
 }
 
 // patternMatcher holds pre-processed patterns and provides a method to classify files.
@@ -122,10 +124,24 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 			} else { // It's an inclusion pattern
 				if info.directive == "" {
 					isValidMatch = true
-				} else {
-					filtered, err := m.applyDirectiveFilter([]string{path}, info.directive, info.query)
-					if err == nil && len(filtered) > 0 {
+				} else if info.directive == "find" {
+					if strings.Contains(path, info.query) {
 						isValidMatch = true
+					}
+				} else if info.directive == "grep" {
+					filePath := path
+					if !filepath.IsAbs(path) {
+						filePath = filepath.Join(pm.workDir, path)
+					}
+					content, err := os.ReadFile(filePath)
+					if err == nil {
+						if info.queryRegex != nil {
+							if info.queryRegex.Match(content) {
+								isValidMatch = true
+							}
+						} else if strings.Contains(string(content), info.query) {
+							isValidMatch = true
+						}
 					}
 				}
 			}
@@ -1076,68 +1092,29 @@ func decodeDirective(pattern string) (string, string, string, bool) {
 	return pattern, "", "", false
 }
 
-// applyDirectiveFilter filters a list of files based on a directive (@find or @grep)
-func (m *Manager) applyDirectiveFilter(files []string, directive, query string) ([]string, error) {
-	var filtered []string
-
+// matchDirective checks if a single file matches a directive filter.
+// For "find", it checks if the path contains the query string.
+// For "grep", it reads the file and checks if the content matches the query as a regex (or literal fallback).
+func (m *Manager) matchDirective(file, directive, query string) bool {
 	if directive == "find" {
-		// @find: filter by filename/path
-		for _, file := range files {
-			if strings.Contains(file, query) {
-				filtered = append(filtered, file)
-			}
-		}
-	} else if directive == "grep" {
-		// @grep: filter by file content (parallelized for performance)
-		type result struct {
-			file string
-			err  error
-		}
-
-		resultChan := make(chan result, len(files))
-		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent goroutines
-
-		for _, file := range files {
-			file := file // Capture loop variable
-
-			go func() {
-				semaphore <- struct{}{} // Acquire semaphore
-				defer func() { <-semaphore }() // Release semaphore
-
-				// Construct absolute path for reading
-				filePath := file
-				if !filepath.IsAbs(file) {
-					filePath = filepath.Join(m.workDir, file)
-				}
-
-				// Read file content
-				content, err := os.ReadFile(filePath)
-				if err != nil {
-					// Skip files that can't be read
-					resultChan <- result{file: "", err: nil}
-					return
-				}
-
-				// Check if content contains the query
-				if strings.Contains(string(content), query) {
-					resultChan <- result{file: file, err: nil}
-				} else {
-					resultChan <- result{file: "", err: nil}
-				}
-			}()
-		}
-
-		// Collect results
-		for i := 0; i < len(files); i++ {
-			res := <-resultChan
-			if res.file != "" {
-				filtered = append(filtered, res.file)
-			}
-		}
-		close(resultChan)
+		return strings.Contains(file, query)
 	}
-
-	return filtered, nil
+	if directive == "grep" {
+		filePath := file
+		if !filepath.IsAbs(file) {
+			filePath = filepath.Join(m.workDir, file)
+		}
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return false
+		}
+		compiled, err := regexp.Compile(query)
+		if err != nil {
+			return strings.Contains(string(content), query)
+		}
+		return compiled.Match(content)
+	}
+	return false
 }
 
 // resolveFilesFromPatterns resolves files from a given set of patterns
@@ -1232,11 +1209,21 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			cleanProcessedPattern = strings.TrimPrefix(processedPattern, "!")
 		}
 
+		var queryRegex *regexp.Regexp
+		if tempInfos[i].directive == "grep" && tempInfos[i].query != "" {
+			var err error
+			queryRegex, err = regexp.Compile(tempInfos[i].query)
+			if err != nil {
+				return nil, fmt.Errorf("invalid regex '%s' in @grep directive: %w", tempInfos[i].query, err)
+			}
+		}
+
 		patternInfos = append(patternInfos, patternInfo{
-			pattern:   cleanProcessedPattern,
-			directive: tempInfos[i].directive,
-			query:     tempInfos[i].query,
-			isExclude: isExclude,
+			pattern:    cleanProcessedPattern,
+			directive:  tempInfos[i].directive,
+			query:      tempInfos[i].query,
+			queryRegex: queryRegex,
+			isExclude:  isExclude,
 		})
 	}
 

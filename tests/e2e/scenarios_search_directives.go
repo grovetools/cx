@@ -605,3 +605,192 @@ tests/**/*_test.go`
 		},
 	}
 }
+
+// InvalidGrepRegexScenario tests that an invalid regex in @grep fails fast with an error
+func InvalidGrepRegexScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-invalid-grep-regex",
+		Description: "Tests that an invalid regex in a @grep directive fails fast with an error message",
+		Tags:        []string{"cx", "search-directives", "error"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project", func(ctx *harness.Context) error {
+				return fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main\n")
+			}),
+			harness.NewStep("Create rules with invalid regex", func(ctx *harness.Context) error {
+				rulesContent := `*.go @grep: "[invalid"`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify command fails with expected error message", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error == nil {
+					return fmt.Errorf("expected command to fail, but it succeeded")
+				}
+
+				output := result.Stdout + result.Stderr
+				if !strings.Contains(output, "invalid regex") {
+					return fmt.Errorf("expected error message to contain 'invalid regex', got: %s", output)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// ValidGrepRegexScenario tests that a valid regex pattern correctly filters files
+func ValidGrepRegexScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-valid-grep-regex",
+		Description: "Tests that a valid regex in @grep correctly matches file content",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with function and struct files", func(ctx *harness.Context) error {
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "func.go"):   "package main\n\nfunc MyFunction() {}\n",
+					filepath.Join(ctx.RootDir, "struct.go"): "package main\n\ntype MyStruct struct {}\n",
+				}
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules with valid regex", func(ctx *harness.Context) error {
+				rulesContent := `*.go @grep: "func\s+\w+"`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify only function file matches", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if !strings.Contains(output, "func.go") {
+					return fmt.Errorf("output should contain func.go")
+				}
+				if strings.Contains(output, "struct.go") {
+					return fmt.Errorf("output should not contain struct.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// GrepRegexVsLiteralScenario tests that @grep uses regex matching, not literal
+func GrepRegexVsLiteralScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-grep-regex-vs-literal",
+		Description: "Tests that @grep evaluates query as regex, matching patterns like .*Manager",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with manager and non-manager files", func(ctx *harness.Context) error {
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "user.go"):  "package main\n\ntype UserManager struct {}\n",
+					filepath.Join(ctx.RootDir, "file.go"):  "package main\n\ntype FileManager struct {}\n",
+					filepath.Join(ctx.RootDir, "other.go"): "package main\n\ntype OtherSystem struct {}\n",
+				}
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules with regex pattern", func(ctx *harness.Context) error {
+				rulesContent := `*.go @grep: ".*Manager"`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify regex matches manager files only", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if !strings.Contains(output, "user.go") {
+					return fmt.Errorf("output should contain user.go")
+				}
+				if !strings.Contains(output, "file.go") {
+					return fmt.Errorf("output should contain file.go")
+				}
+				if strings.Contains(output, "other.go") {
+					return fmt.Errorf("output should not contain other.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// EmptyGrepQueryScenario tests that an empty @grep query doesn't crash
+func EmptyGrepQueryScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-empty-grep-query",
+		Description: "Tests that an empty @grep query is handled gracefully without errors",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project", func(ctx *harness.Context) error {
+				return fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main\n\nfunc main() {}\n")
+			}),
+			harness.NewStep("Create rules with empty grep query", func(ctx *harness.Context) error {
+				rulesContent := `*.go @grep: ""`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify command succeeds without errors", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return fmt.Errorf("expected command to succeed, but got error: %v", result.Error)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
