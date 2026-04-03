@@ -523,7 +523,7 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 	// Extract the query (everything after the directive keyword and colon)
 	queryPart := strings.TrimSpace(line[directiveIdx+len(" @"+directiveName+": "):])
 
-	// The query should be in quotes
+	// The query may be in quotes
 	if len(queryPart) >= 2 && queryPart[0] == '"' {
 		// Find the closing quote
 		endQuote := strings.Index(queryPart[1:], "\"")
@@ -531,6 +531,11 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 			query = queryPart[1 : endQuote+1]
 			return basePattern, directiveName, query, true
 		}
+	}
+
+	// If no quotes, use the whole query part as the unquoted query
+	if queryPart != "" {
+		return basePattern, directiveName, queryPart, true
 	}
 
 	// If we couldn't parse the query properly, treat it as no directive
@@ -635,26 +640,34 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 		// Handle global @find: directive
 		if strings.HasPrefix(line, "@find:") {
 			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@find:"))
-			// Parse the quoted query
+			// Parse the quoted or unquoted query
 			if len(queryPart) >= 2 && queryPart[0] == '"' {
-				endQuote := strings.Index(queryPart[1:], "\"")
-				if endQuote != -1 {
+				if endQuote := strings.Index(queryPart[1:], "\""); endQuote != -1 {
 					globalDirective = "find"
 					globalQuery = queryPart[1 : endQuote+1]
+					continue
 				}
+			}
+			if queryPart != "" {
+				globalDirective = "find"
+				globalQuery = queryPart
 			}
 			continue
 		}
 		// Handle global @grep: directive
 		if strings.HasPrefix(line, "@grep:") {
 			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@grep:"))
-			// Parse the quoted query
+			// Parse the quoted or unquoted query
 			if len(queryPart) >= 2 && queryPart[0] == '"' {
-				endQuote := strings.Index(queryPart[1:], "\"")
-				if endQuote != -1 {
+				if endQuote := strings.Index(queryPart[1:], "\""); endQuote != -1 {
 					globalDirective = "grep"
 					globalQuery = queryPart[1 : endQuote+1]
+					continue
 				}
+			}
+			if queryPart != "" {
+				globalDirective = "grep"
+				globalQuery = queryPart
 			}
 			continue
 		}

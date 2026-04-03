@@ -331,13 +331,14 @@ func parseSearchDirectiveLine(line, prefix string) map[string]string {
 		parts["search"] = strings.TrimSpace(strings.TrimPrefix(line, prefix))
 	}
 
-	// Extract quoted query if present
-	if strings.Contains(parts["search"], "\"") {
-		start := strings.Index(parts["search"], "\"")
-		end := strings.LastIndex(parts["search"], "\"")
-		if start != -1 && end != -1 && start < end {
-			parts["query"] = parts["search"][start+1 : end]
+	// Extract quoted query if present, otherwise use unquoted search as query
+	if strings.HasPrefix(parts["search"], "\"") {
+		if end := strings.Index(parts["search"][1:], "\""); end != -1 {
+			parts["query"] = parts["search"][1 : end+1]
 		}
+	}
+	if parts["query"] == "" && parts["search"] != "" {
+		parts["query"] = parts["search"]
 	}
 
 	return parts
