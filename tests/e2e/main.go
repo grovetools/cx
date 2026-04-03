@@ -127,6 +127,15 @@ func main() {
 		// Path Normalization Scenarios
 		PathNormalizationWorktreeScenario(),
 		// PathNormalizationSymlinkScenario(), // TODO: Fix symlink test
+
+		// Tree Directive Scenarios
+		TreeDirectiveBasicScenario(),
+		TreeDirectiveGitignoreScenario(),
+		TreeDirectiveCombinedScenario(),
+		TreeDirectiveXMLScenario(),
+		TreeDirectiveMultipleScenario(),
+		TreeDirectiveNonexistentScenario(),
+		TreeDirectiveResolveScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.
