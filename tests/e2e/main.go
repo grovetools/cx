@@ -98,6 +98,11 @@ func main() {
 		// Search Directive Scenarios
 		FindDirectiveScenario(),
 		GrepDirectiveScenario(),
+		RecentDirectiveScenario(),
+		GlobalRecentDirectiveScenario(),
+		RecentTimeUnitsScenario(),
+		RecentCombinedDirectivesScenario(),
+		RecentInvalidDurationScenario(),
 		AliasWithDirectiveScenario(),
 		CombinedDirectivesScenario(),
 

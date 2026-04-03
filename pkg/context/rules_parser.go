@@ -21,6 +21,7 @@ const (
 	LineTypeCmdDirective
 	LineTypeFindDirective
 	LineTypeGrepDirective
+	LineTypeRecentDirective
 	LineTypeOtherDirective
 	LineTypePattern
 	LineTypeEmpty
@@ -67,6 +68,9 @@ var (
 
 	// Grep directive: @grep: (standalone or inline)
 	grepDirectiveRegex = regexp.MustCompile(`@grep:`)
+
+	// Recent directive: @recent: (standalone or inline)
+	recentDirectiveRegex = regexp.MustCompile(`@recent:`)
 
 	// Other directives: @default, @freeze-cache, @no-expire, @disable-cache, @expire-time
 	otherDirectiveRegex = regexp.MustCompile(`^\s*@(default|freeze-cache|no-expire|disable-cache|expire-time):?`)
@@ -189,6 +193,16 @@ func ParseRulesLine(line string) ParsedLine {
 		parts := parseSearchDirectiveLine(trimmed, "@grep:")
 		return ParsedLine{
 			Type:    LineTypeGrepDirective,
+			Content: line,
+			Parts:   parts,
+		}
+	}
+
+	// Recent directive (standalone or inline)
+	if recentDirectiveRegex.MatchString(line) {
+		parts := parseSearchDirectiveLine(trimmed, "@recent:")
+		return ParsedLine{
+			Type:    LineTypeRecentDirective,
 			Content: line,
 			Parts:   parts,
 		}
@@ -338,6 +352,9 @@ func parseSearchDirectiveLine(line, prefix string) map[string]string {
 		if start != -1 && end != -1 && start < end {
 			parts["query"] = parts["search"][start+1 : end]
 		}
+	} else if prefix == "@recent:" && parts["search"] != "" {
+		// @recent: allows unquoted duration values (e.g., 7d, 2w, 24h)
+		parts["query"] = parts["search"]
 	}
 
 	return parts

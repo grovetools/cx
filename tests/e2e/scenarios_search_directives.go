@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/grovetools/tend/pkg/command"
 	"github.com/grovetools/tend/pkg/fs"
@@ -171,6 +172,384 @@ func GrepDirectiveScenario() *harness.Scenario {
 				}
 				if strings.Contains(output, "file_api.go") {
 					return fmt.Errorf("output should not contain file_api.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// RecentDirectiveScenario tests the @recent directive for filtering by modification time
+func RecentDirectiveScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-recent-directive",
+		Description: "Tests @recent directive for filtering files by modification time",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with old and new files", func(ctx *harness.Context) error {
+				// Create directories
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "pkg", "new"),
+					filepath.Join(ctx.RootDir, "pkg", "old"),
+				}
+
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				// Create files
+				newFilePath := filepath.Join(ctx.RootDir, "pkg", "new", "new_file.go")
+				oldFilePath := filepath.Join(ctx.RootDir, "pkg", "old", "old_file.go")
+
+				if err := fs.WriteString(newFilePath, "package new\n"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(oldFilePath, "package old\n"); err != nil {
+					return err
+				}
+
+				// Change modification time of old file to 10 days ago
+				tenDaysAgo := time.Now().Add(-10 * 24 * time.Hour)
+				if err := os.Chtimes(oldFilePath, tenDaysAgo, tenDaysAgo); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with @recent directive", func(ctx *harness.Context) error {
+				// Only include Go files modified in the last 7 days
+				rulesContent := "pkg/**/*.go @recent: 7d"
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify only recent files are included", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// Verify new files are included
+				if !strings.Contains(output, "new_file.go") {
+					return fmt.Errorf("output should contain new_file.go but got:\n%s", output)
+				}
+
+				// Verify old files are NOT included
+				if strings.Contains(output, "old_file.go") {
+					return fmt.Errorf("output should not contain old_file.go but got:\n%s", output)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// GlobalRecentDirectiveScenario tests that a standalone @recent: directive applies to all patterns below it
+func GlobalRecentDirectiveScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-global-recent-directive",
+		Description: "Tests global @recent: directive applying to all patterns below it",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup workspace with old and new files", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "src"),
+					filepath.Join(ctx.RootDir, "docs"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				// Create files
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "src", "a.go"):  "package src\n",
+					filepath.Join(ctx.RootDir, "src", "b.go"):  "package src\n",
+					filepath.Join(ctx.RootDir, "docs", "c.md"): "# Doc\n",
+				}
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+
+				// Backdate b.go and c.md to 10 days ago
+				tenDaysAgo := time.Now().Add(-10 * 24 * time.Hour)
+				for _, path := range []string{
+					filepath.Join(ctx.RootDir, "src", "b.go"),
+					filepath.Join(ctx.RootDir, "docs", "c.md"),
+				} {
+					if err := os.Chtimes(path, tenDaysAgo, tenDaysAgo); err != nil {
+						return err
+					}
+				}
+
+				return nil
+			}),
+			harness.NewStep("Create rules with global @recent directive", func(ctx *harness.Context) error {
+				rulesContent := "@recent: 3d\nsrc/**/*.go\ndocs/**/*.md"
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify only recent files are included", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if !strings.Contains(output, "a.go") {
+					return fmt.Errorf("output should contain a.go but got:\n%s", output)
+				}
+				if strings.Contains(output, "b.go") {
+					return fmt.Errorf("output should not contain b.go but got:\n%s", output)
+				}
+				if strings.Contains(output, "c.md") {
+					return fmt.Errorf("output should not contain c.md but got:\n%s", output)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// RecentTimeUnitsScenario tests inline @recent: with different time units (w, h, quoted)
+func RecentTimeUnitsScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-recent-time-units",
+		Description: "Tests @recent: directive with weeks, hours, and quoted values",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup files with various ages in subdirectories", func(ctx *harness.Context) error {
+				// Each file goes in its own subdirectory so we can use glob patterns
+				// (literal file paths bypass directive filtering)
+				dirs := []string{"hours", "days", "olddays", "weeks"}
+				for _, d := range dirs {
+					if err := os.MkdirAll(filepath.Join(ctx.RootDir, d), 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "hours", "recent.txt"):   "recent\n",
+					filepath.Join(ctx.RootDir, "days", "recent.txt"):    "somewhat old\n",
+					filepath.Join(ctx.RootDir, "olddays", "recent.txt"): "old\n",
+					filepath.Join(ctx.RootDir, "weeks", "recent.txt"):   "very old\n",
+				}
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+
+				// Set modification times
+				now := time.Now()
+				ages := map[string]time.Duration{
+					"hours/recent.txt":   1 * time.Hour,
+					"days/recent.txt":    3 * 24 * time.Hour,
+					"olddays/recent.txt": 10 * 24 * time.Hour,
+					"weeks/recent.txt":   21 * 24 * time.Hour,
+				}
+				for name, age := range ages {
+					path := filepath.Join(ctx.RootDir, name)
+					t := now.Add(-age)
+					if err := os.Chtimes(path, t, t); err != nil {
+						return err
+					}
+				}
+
+				return nil
+			}),
+			harness.NewStep("Create rules with different time units", func(ctx *harness.Context) error {
+				rulesContent := `hours/**/*.txt @recent: 24h
+days/**/*.txt @recent: 1w
+olddays/**/*.txt @recent: "2w"
+weeks/**/*.txt @recent: 2w`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify correct filtering by time unit", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// hours/recent.txt: 1h old, threshold 24h -> included
+				if !strings.Contains(output, "hours") {
+					return fmt.Errorf("output should contain hours/recent.txt but got:\n%s", output)
+				}
+				// days/recent.txt: 3d old, threshold 1w -> included
+				if !strings.Contains(output, "days/recent.txt") || !strings.Contains(output, filepath.Join("days", "recent.txt")) {
+					return fmt.Errorf("output should contain days/recent.txt but got:\n%s", output)
+				}
+				// olddays/recent.txt: 10d old, threshold "2w" (14d) -> included
+				if !strings.Contains(output, "olddays") {
+					return fmt.Errorf("output should contain olddays/recent.txt but got:\n%s", output)
+				}
+				// weeks/recent.txt: 21d old, threshold 2w (14d) -> excluded
+				if strings.Contains(output, filepath.Join("weeks", "recent.txt")) {
+					return fmt.Errorf("output should not contain weeks/recent.txt but got:\n%s", output)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// RecentCombinedDirectivesScenario tests @recent: alongside @grep: in the same rules file
+func RecentCombinedDirectivesScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-combined-recent-directives",
+		Description: "Tests combining @recent: with @grep: across different patterns",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup workspace", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "src"),
+					filepath.Join(ctx.RootDir, "config"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "src", "manager.go"):     "package src\n\ntype Manager struct{}",
+					filepath.Join(ctx.RootDir, "src", "old_manager.go"): "package src\n\ntype OldManager struct{}",
+					filepath.Join(ctx.RootDir, "config", "secrets.yaml"):     "password: secret123",
+					filepath.Join(ctx.RootDir, "config", "old_secrets.yaml"): "password: oldsecret",
+				}
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+
+				// Backdate old files
+				tenDaysAgo := time.Now().Add(-10 * 24 * time.Hour)
+				for _, name := range []string{"src/old_manager.go", "config/old_secrets.yaml"} {
+					path := filepath.Join(ctx.RootDir, name)
+					if err := os.Chtimes(path, tenDaysAgo, tenDaysAgo); err != nil {
+						return err
+					}
+				}
+
+				return nil
+			}),
+			harness.NewStep("Create rules with @recent and @grep", func(ctx *harness.Context) error {
+				rulesContent := "src/**/*.go @recent: 7d\nconfig/**/*.yaml @grep: \"password\""
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify correct filtering", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// manager.go: recent, included by @recent: 7d
+				if !strings.Contains(output, "src/manager.go") {
+					return fmt.Errorf("output should contain src/manager.go but got:\n%s", output)
+				}
+				// old_manager.go: 10d old, excluded by @recent: 7d
+				if strings.Contains(output, "old_manager.go") {
+					return fmt.Errorf("output should not contain old_manager.go but got:\n%s", output)
+				}
+				// Both yaml files contain "password", included by @grep
+				if !strings.Contains(output, "secrets.yaml") {
+					return fmt.Errorf("output should contain secrets.yaml but got:\n%s", output)
+				}
+				if !strings.Contains(output, "old_secrets.yaml") {
+					return fmt.Errorf("output should contain old_secrets.yaml but got:\n%s", output)
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// RecentInvalidDurationScenario tests that invalid @recent: duration results in no matches
+func RecentInvalidDurationScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-recent-invalid-duration",
+		Description: "Tests that invalid @recent: duration produces no matches",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup workspace with a file", func(ctx *harness.Context) error {
+				dir := filepath.Join(ctx.RootDir, "src")
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					return err
+				}
+				return fs.WriteString(filepath.Join(dir, "main.go"), "package main\n")
+			}),
+			harness.NewStep("Create rules with invalid duration", func(ctx *harness.Context) error {
+				rulesContent := "src/**/*.go @recent: xyz"
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify no files matched with invalid duration", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				// Invalid duration silently fails the directive filter,
+				// so the file should not appear in output
+				output := strings.TrimSpace(result.Stdout)
+				if strings.Contains(output, "main.go") {
+					return fmt.Errorf("output should not contain main.go when duration is invalid, got:\n%s", output)
 				}
 
 				return nil

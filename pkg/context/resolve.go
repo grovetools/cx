@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/logging"
@@ -1066,6 +1068,37 @@ func (m *Manager) preProcessPatterns(patterns []string) []string {
 	return processedPatterns
 }
 
+// parseExtendedDuration parses a duration string, adding support for 'd' (days) and 'w' (weeks)
+// on top of Go's standard time.ParseDuration units.
+func parseExtendedDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	// Strip quotes if present
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+
+	if s == "" {
+		return 0, fmt.Errorf("empty duration string")
+	}
+
+	if strings.HasSuffix(s, "d") {
+		days, err := strconv.ParseFloat(s[:len(s)-1], 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid days value: %w", err)
+		}
+		return time.Duration(days * 24 * float64(time.Hour)), nil
+	}
+	if strings.HasSuffix(s, "w") {
+		weeks, err := strconv.ParseFloat(s[:len(s)-1], 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid weeks value: %w", err)
+		}
+		return time.Duration(weeks * 7 * 24 * float64(time.Hour)), nil
+	}
+
+	return time.ParseDuration(s)
+}
+
 // decodeDirective extracts directive information from an encoded pattern
 // Returns: cleanPattern, directive, query, hasDirective
 func decodeDirective(pattern string) (string, string, string, bool) {
@@ -1135,6 +1168,23 @@ func (m *Manager) applyDirectiveFilter(files []string, directive, query string) 
 			}
 		}
 		close(resultChan)
+	} else if directive == "recent" {
+		// @recent: filter by modification time
+		duration, err := parseExtendedDuration(query)
+		if err != nil {
+			return nil, fmt.Errorf("invalid duration for @recent directive '%s': %w", query, err)
+		}
+		cutoff := time.Now().Add(-duration)
+		for _, file := range files {
+			filePath := file
+			if !filepath.IsAbs(file) {
+				filePath = filepath.Join(m.workDir, file)
+			}
+			stat, err := os.Stat(filePath)
+			if err == nil && stat.ModTime().After(cutoff) {
+				filtered = append(filtered, file)
+			}
+		}
 	}
 
 	return filtered, nil

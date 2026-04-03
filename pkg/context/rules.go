@@ -499,19 +499,23 @@ func splitByComma(s string) []string {
 // Returns: basePattern, directive, query, hasDirective
 // Example: "pkg/**/*.go @find: \"manager\"" -> "pkg/**/*.go", "find", "manager", true
 func parseSearchDirective(line string) (basePattern, directive, query string, hasDirective bool) {
-	// Look for @find: or @grep: followed by a quoted string
+	// Look for @find:, @grep:, or @recent: followed by a query
 	findIdx := strings.Index(line, " @find: ")
 	grepIdx := strings.Index(line, " @grep: ")
+	recentIdx := strings.Index(line, " @recent: ")
 
 	var directiveIdx int
 	var directiveName string
 
-	if findIdx != -1 && (grepIdx == -1 || findIdx < grepIdx) {
+	if findIdx != -1 && (grepIdx == -1 || findIdx < grepIdx) && (recentIdx == -1 || findIdx < recentIdx) {
 		directiveIdx = findIdx
 		directiveName = "find"
-	} else if grepIdx != -1 {
+	} else if grepIdx != -1 && (recentIdx == -1 || grepIdx < recentIdx) {
 		directiveIdx = grepIdx
 		directiveName = "grep"
+	} else if recentIdx != -1 {
+		directiveIdx = recentIdx
+		directiveName = "recent"
 	} else {
 		// No directive found
 		return line, "", "", false
@@ -523,7 +527,17 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 	// Extract the query (everything after the directive keyword and colon)
 	queryPart := strings.TrimSpace(line[directiveIdx+len(" @"+directiveName+": "):])
 
-	// The query should be in quotes
+	// @recent: allows unquoted duration values (e.g., 7d, 2w, 24h)
+	if directiveName == "recent" {
+		query = queryPart
+		// Strip quotes if user provided them anyway
+		if len(query) >= 2 && query[0] == '"' && query[len(query)-1] == '"' {
+			query = query[1 : len(query)-1]
+		}
+		return basePattern, directiveName, query, true
+	}
+
+	// The query should be in quotes (for find/grep)
 	if len(queryPart) >= 2 && queryPart[0] == '"' {
 		// Find the closing quote
 		endQuote := strings.Index(queryPart[1:], "\"")
@@ -655,6 +669,18 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					globalDirective = "grep"
 					globalQuery = queryPart[1 : endQuote+1]
 				}
+			}
+			continue
+		}
+		// Handle global @recent: directive
+		if strings.HasPrefix(line, "@recent:") {
+			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@recent:"))
+			if len(queryPart) >= 2 && queryPart[0] == '"' && queryPart[len(queryPart)-1] == '"' {
+				globalDirective = "recent"
+				globalQuery = queryPart[1 : len(queryPart)-1]
+			} else if queryPart != "" {
+				globalDirective = "recent"
+				globalQuery = queryPart
 			}
 			continue
 		}
