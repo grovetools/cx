@@ -1080,15 +1080,18 @@ func decodeDirective(pattern string) (string, string, string, bool) {
 func (m *Manager) applyDirectiveFilter(files []string, directive, query string) ([]string, error) {
 	var filtered []string
 
-	if directive == "find" {
-		// @find: filter by filename/path
+	if directive == "find" || directive == "find!" {
+		// @find: / @find!: filter by filename/path
+		invert := directive == "find!"
 		for _, file := range files {
-			if strings.Contains(file, query) {
+			match := strings.Contains(file, query)
+			if match != invert {
 				filtered = append(filtered, file)
 			}
 		}
-	} else if directive == "grep" {
-		// @grep: filter by file content (parallelized for performance)
+	} else if directive == "grep" || directive == "grep!" {
+		// @grep: / @grep!: filter by file content (parallelized for performance)
+		invert := directive == "grep!"
 		type result struct {
 			file string
 			err  error
@@ -1119,7 +1122,8 @@ func (m *Manager) applyDirectiveFilter(files []string, directive, query string) 
 				}
 
 				// Check if content contains the query
-				if strings.Contains(string(content), query) {
+				match := strings.Contains(string(content), query)
+				if match != invert {
 					resultChan <- result{file: file, err: nil}
 				} else {
 					resultChan <- result{file: "", err: nil}

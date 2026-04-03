@@ -495,33 +495,46 @@ func splitByComma(s string) []string {
 	return results
 }
 
-// parseSearchDirective parses a line for search directives (@find: or @grep:)
+// parseSearchDirective parses a line for search directives (@find:, @find!:, @grep:, or @grep!:)
 // Returns: basePattern, directive, query, hasDirective
 // Example: "pkg/**/*.go @find: \"manager\"" -> "pkg/**/*.go", "find", "manager", true
+// Example: "pkg/**/*.go @find!: \"test\"" -> "pkg/**/*.go", "find!", "test", true
 func parseSearchDirective(line string) (basePattern, directive, query string, hasDirective bool) {
-	// Look for @find: or @grep: followed by a quoted string
-	findIdx := strings.Index(line, " @find: ")
-	grepIdx := strings.Index(line, " @grep: ")
+	// Look for @find:, @find!:, @grep:, or @grep!: followed by a quoted string
+	type candidate struct {
+		idx  int
+		name string
+		len  int
+	}
 
-	var directiveIdx int
-	var directiveName string
+	candidates := []candidate{
+		{strings.Index(line, " @find!: "), "find!", len(" @find!: ")},
+		{strings.Index(line, " @find: "), "find", len(" @find: ")},
+		{strings.Index(line, " @grep!: "), "grep!", len(" @grep!: ")},
+		{strings.Index(line, " @grep: "), "grep", len(" @grep: ")},
+	}
 
-	if findIdx != -1 && (grepIdx == -1 || findIdx < grepIdx) {
-		directiveIdx = findIdx
-		directiveName = "find"
-	} else if grepIdx != -1 {
-		directiveIdx = grepIdx
-		directiveName = "grep"
-	} else {
-		// No directive found
+	// Find the earliest match
+	bestIdx := -1
+	var bestName string
+	var bestLen int
+	for _, c := range candidates {
+		if c.idx != -1 && (bestIdx == -1 || c.idx < bestIdx) {
+			bestIdx = c.idx
+			bestName = c.name
+			bestLen = c.len
+		}
+	}
+
+	if bestIdx == -1 {
 		return line, "", "", false
 	}
 
 	// Extract the base pattern (everything before the directive)
-	basePattern = strings.TrimSpace(line[:directiveIdx])
+	basePattern = strings.TrimSpace(line[:bestIdx])
 
 	// Extract the query (everything after the directive keyword and colon)
-	queryPart := strings.TrimSpace(line[directiveIdx+len(" @"+directiveName+": "):])
+	queryPart := strings.TrimSpace(line[bestIdx+bestLen:])
 
 	// The query should be in quotes
 	if len(queryPart) >= 2 && queryPart[0] == '"' {
@@ -529,7 +542,7 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 		endQuote := strings.Index(queryPart[1:], "\"")
 		if endQuote != -1 {
 			query = queryPart[1 : endQuote+1]
-			return basePattern, directiveName, query, true
+			return basePattern, bestName, query, true
 		}
 	}
 
@@ -632,27 +645,37 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			}
 			continue
 		}
-		// Handle global @find: directive
-		if strings.HasPrefix(line, "@find:") {
-			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@find:"))
-			// Parse the quoted query
+		// Handle global @find: and @find!: directives
+		if strings.HasPrefix(line, "@find!:") || strings.HasPrefix(line, "@find:") {
+			prefix := "@find:"
+			dirName := "find"
+			if strings.HasPrefix(line, "@find!:") {
+				prefix = "@find!:"
+				dirName = "find!"
+			}
+			queryPart := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 			if len(queryPart) >= 2 && queryPart[0] == '"' {
 				endQuote := strings.Index(queryPart[1:], "\"")
 				if endQuote != -1 {
-					globalDirective = "find"
+					globalDirective = dirName
 					globalQuery = queryPart[1 : endQuote+1]
 				}
 			}
 			continue
 		}
-		// Handle global @grep: directive
-		if strings.HasPrefix(line, "@grep:") {
-			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@grep:"))
-			// Parse the quoted query
+		// Handle global @grep: and @grep!: directives
+		if strings.HasPrefix(line, "@grep!:") || strings.HasPrefix(line, "@grep:") {
+			prefix := "@grep:"
+			dirName := "grep"
+			if strings.HasPrefix(line, "@grep!:") {
+				prefix = "@grep!:"
+				dirName = "grep!"
+			}
+			queryPart := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 			if len(queryPart) >= 2 && queryPart[0] == '"' {
 				endQuote := strings.Index(queryPart[1:], "\"")
 				if endQuote != -1 {
-					globalDirective = "grep"
+					globalDirective = dirName
 					globalQuery = queryPart[1 : endQuote+1]
 				}
 			}

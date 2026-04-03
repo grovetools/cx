@@ -98,7 +98,15 @@ func main() {
 		// Search Directive Scenarios
 		FindDirectiveScenario(),
 		GrepDirectiveScenario(),
+		FindInvertedDirectiveScenario(),
+		GrepInvertedDirectiveScenario(),
+		GlobalFindInvertedDirectiveScenario(),
+		GlobalGrepInvertedDirectiveScenario(),
+		CombinedInvertedNormalDirectivesScenario(),
 		AliasWithDirectiveScenario(),
+		AliasWithInvertedDirectiveScenario(),
+		FindInvertedAllExcludedScenario(),
+		FindInvertedNoneExcludedScenario(),
 		CombinedDirectivesScenario(),
 
 		// Directive Import Scenarios

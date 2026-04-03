@@ -62,11 +62,11 @@ var (
 	// Command directive: @cmd:
 	cmdDirectiveRegex = regexp.MustCompile(`^\s*@cmd:`)
 
-	// Find directive: @find: (standalone or inline)
-	findDirectiveRegex = regexp.MustCompile(`@find:`)
+	// Find directive: @find: or @find!: (standalone or inline)
+	findDirectiveRegex = regexp.MustCompile(`@find!?:`)
 
-	// Grep directive: @grep: (standalone or inline)
-	grepDirectiveRegex = regexp.MustCompile(`@grep:`)
+	// Grep directive: @grep: or @grep!: (standalone or inline)
+	grepDirectiveRegex = regexp.MustCompile(`@grep!?:`)
 
 	// Other directives: @default, @freeze-cache, @no-expire, @disable-cache, @expire-time
 	otherDirectiveRegex = regexp.MustCompile(`^\s*@(default|freeze-cache|no-expire|disable-cache|expire-time):?`)
@@ -176,7 +176,11 @@ func ParseRulesLine(line string) ParsedLine {
 
 	// Find directive (standalone or inline)
 	if findDirectiveRegex.MatchString(line) {
-		parts := parseSearchDirectiveLine(trimmed, "@find:")
+		prefix := "@find:"
+		if strings.Contains(line, "@find!:") {
+			prefix = "@find!:"
+		}
+		parts := parseSearchDirectiveLine(trimmed, prefix)
 		return ParsedLine{
 			Type:    LineTypeFindDirective,
 			Content: line,
@@ -186,7 +190,11 @@ func ParseRulesLine(line string) ParsedLine {
 
 	// Grep directive (standalone or inline)
 	if grepDirectiveRegex.MatchString(line) {
-		parts := parseSearchDirectiveLine(trimmed, "@grep:")
+		prefix := "@grep:"
+		if strings.Contains(line, "@grep!:") {
+			prefix = "@grep!:"
+		}
+		parts := parseSearchDirectiveLine(trimmed, prefix)
 		return ParsedLine{
 			Type:    LineTypeGrepDirective,
 			Content: line,
