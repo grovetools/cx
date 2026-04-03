@@ -79,6 +79,14 @@ func NewResetCmd() *cobra.Command {
 #   *.go
 #   !*_test.go
 #   src/**/*.js
+#
+# Filter with @find (substring, glob, or regex):
+#   pkg/**/*.go @find: "manager"
+#   src/**/*.ts @find: "*_test.ts"
+#   lib/**/*.go @find: "[0-9]+_handler\.go$"
+#
+# Filter with @grep (file content):
+#   pkg/**/*.go @grep: "TODO"
 `)
 				if err := os.WriteFile(rulesPath, boilerplate, 0644); err != nil {
 					return fmt.Errorf("error writing rules file: %w", err)

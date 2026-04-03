@@ -16,6 +16,17 @@ func NewEditCmd() *cobra.Command {
 		Use:   "edit",
 		Short: "Open the rules file in your editor or print its path",
 		Long:  `Opens .grove/rules in your system's default editor (specified by $EDITOR environment variable), or prints the path if --print-path is used.`,
+		Example: `  # Open rules file in $EDITOR
+  cx edit
+
+  # Print the rules file path
+  cx edit --print-path
+
+  # Example rules file content with git-aware directives:
+  #   @changed: HEAD              # include all uncommitted changed files
+  #   @changed: main              # include files changed vs main branch
+  #   pkg/**/*.go @changed: HEAD  # only changed Go files under pkg/
+  #   @diff: staged               # include unified diff of staged changes as .patch`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
 			mgr := context.NewManager("")

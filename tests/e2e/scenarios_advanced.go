@@ -91,7 +91,7 @@ func GitBasedContextScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Run 'cx from-git --staged'", func(ctx *harness.Context) error {
 				cx, _ := FindProjectBinary()
-				cmd := ctx.Command(cx, "from-git", "--staged").Dir(ctx.RootDir)
+				cmd := ctx.Command(cx, "from-git", "--staged", "--force").Dir(ctx.RootDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				return result.Error
@@ -621,6 +621,144 @@ func ExplicitWorktreeInclusionScenario() *harness.Scenario {
 				// Check if the output contains the worktree file
 				if !strings.Contains(output, "feature.go") {
 					return fmt.Errorf("list output is missing the explicitly included worktree file 'feature.go'")
+				}
+				return nil
+			}),
+		},
+	}
+}
+
+// FromGitSafetyScenario tests safety mechanisms for the from-git command (append, force, prompt cancellation).
+func FromGitSafetyScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-from-git-safety",
+		Description: "Tests safety mechanisms for the from-git command (append, force, and prompt cancellation).",
+		Tags:        []string{"cx", "git", "safety"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup git repository and initial rules file", func(ctx *harness.Context) error {
+				git.Init(ctx.RootDir)
+				git.SetupTestConfig(ctx.RootDir)
+
+				// Create and commit a file
+				fs.WriteString(filepath.Join(ctx.RootDir, "committed.txt"), "committed")
+				git.Add(ctx.RootDir, "committed.txt")
+				git.Commit(ctx.RootDir, "Initial commit")
+
+				// Create and stage a new file
+				fs.WriteString(filepath.Join(ctx.RootDir, "staged.txt"), "staged")
+				git.Add(ctx.RootDir, "staged.txt")
+
+				// Create initial rules file
+				rulesDir := filepath.Join(ctx.RootDir, ".grove")
+				os.MkdirAll(rulesDir, 0755)
+				return fs.WriteString(filepath.Join(rulesDir, "rules"), "initial_rule.txt\n")
+			}),
+			harness.NewStep("No-stdin cancellation preserves existing rules", func(ctx *harness.Context) error {
+				cx, _ := FindProjectBinary()
+				cmd := ctx.Command(cx, "from-git", "--staged").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				// Should fail because no interactive stdin is available
+				if result.Error == nil {
+					return fmt.Errorf("expected command to fail without --force or --append, but it succeeded")
+				}
+
+				combined := result.Stdout + result.Stderr
+				if !strings.Contains(combined, "operation cancelled") {
+					return fmt.Errorf("expected 'operation cancelled' in output, got: %s", combined)
+				}
+
+				// Verify rules file is unchanged
+				rulesPath := findRulesFileOrFallback(ctx.RootDir)
+				content, err := fs.ReadString(rulesPath)
+				if err != nil {
+					return err
+				}
+				if !strings.Contains(content, "initial_rule.txt") {
+					return fmt.Errorf("rules file should still contain initial_rule.txt, got: %s", content)
+				}
+				return nil
+			}),
+			harness.NewStep("Mutual exclusivity of --append and --force", func(ctx *harness.Context) error {
+				cx, _ := FindProjectBinary()
+				cmd := ctx.Command(cx, "from-git", "--staged", "--append", "--force").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error == nil {
+					return fmt.Errorf("expected command to fail with both --append and --force")
+				}
+
+				combined := result.Stdout + result.Stderr
+				if !strings.Contains(combined, "cannot use both --append and --force") {
+					return fmt.Errorf("expected mutual exclusivity error, got: %s", combined)
+				}
+
+				// Verify rules file is unchanged
+				rulesPath := findRulesFileOrFallback(ctx.RootDir)
+				content, err := fs.ReadString(rulesPath)
+				if err != nil {
+					return err
+				}
+				if !strings.Contains(content, "initial_rule.txt") {
+					return fmt.Errorf("rules file should still contain initial_rule.txt, got: %s", content)
+				}
+				return nil
+			}),
+			harness.NewStep("Append mode adds to existing rules", func(ctx *harness.Context) error {
+				cx, _ := FindProjectBinary()
+				cmd := ctx.Command(cx, "from-git", "--staged", "--append").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return fmt.Errorf("--append should succeed: %v", result.Error)
+				}
+
+				rulesPath := findRulesFileOrFallback(ctx.RootDir)
+				content, err := fs.ReadString(rulesPath)
+				if err != nil {
+					return err
+				}
+
+				if !strings.Contains(content, "initial_rule.txt") {
+					return fmt.Errorf("rules file should still contain initial_rule.txt after append, got: %s", content)
+				}
+				if !strings.Contains(content, "staged.txt") {
+					return fmt.Errorf("rules file should contain staged.txt after append, got: %s", content)
+				}
+				return nil
+			}),
+			harness.NewStep("Force mode overwrites existing rules", func(ctx *harness.Context) error {
+				// Re-write rules to a known baseline
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				if err := fs.WriteString(rulesPath, "doomed_rule.txt\n"); err != nil {
+					return err
+				}
+
+				cx, _ := FindProjectBinary()
+				cmd := ctx.Command(cx, "from-git", "--staged", "--force").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return fmt.Errorf("--force should succeed: %v", result.Error)
+				}
+
+				content, err := fs.ReadString(rulesPath)
+				if err != nil {
+					return err
+				}
+
+				if !strings.Contains(content, "staged.txt") {
+					return fmt.Errorf("rules file should contain staged.txt after force, got: %s", content)
+				}
+				if strings.Contains(content, "doomed_rule.txt") {
+					return fmt.Errorf("rules file should NOT contain doomed_rule.txt after force, got: %s", content)
+				}
+				if strings.Contains(content, "initial_rule.txt") {
+					return fmt.Errorf("rules file should NOT contain initial_rule.txt after force, got: %s", content)
 				}
 				return nil
 			}),
