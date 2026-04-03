@@ -19,7 +19,13 @@ func NewFromGitCmd() *cobra.Command {
 		Long: `Generate context from files in git history based on various criteria like commits, branches, or dates.
 
 If a rules file already exists and neither --append nor --force is specified,
-you will be prompted to overwrite, append, or cancel.`,
+you will be prompted to overwrite, append, or cancel.
+
+For dynamic git-aware rules that re-evaluate each time, use directives in .grove/rules instead:
+  @changed: HEAD       — files with uncommitted changes
+  @changed: staged     — only staged files
+  @changed: main       — files changed vs main branch
+  @diff: HEAD          — unified diff as a .patch file`,
 		Example: `  # Add staged files to context, overwriting existing rules
   cx from-git --staged --force
 
