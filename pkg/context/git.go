@@ -21,6 +21,8 @@ type GitOptions struct {
 	Branch  string // Include files changed in branch (e.g., main..HEAD)
 	Staged  bool   // Include only staged files
 	Commits int    // Include files from last N commits
+	Append  bool   // Append to existing rules instead of overwriting
+	Force   bool   // Force overwrite of existing rules without prompting
 }
 
 // UpdateFromGit updates the context files list based on git history
@@ -90,11 +92,42 @@ func (m *Manager) UpdateFromGit(opts GitOptions) error {
 
 	// Write to .grove/rules as explicit file paths
 	rulesPath := filepath.Join(m.workDir, ActiveRulesFile)
-	if err := m.WriteFilesList(rulesPath, fileList); err != nil {
-		return err
+
+	// Check if file exists and prompt if neither --force nor --append
+	if _, err := os.Stat(rulesPath); err == nil {
+		if !opts.Force && !opts.Append {
+			fmt.Printf("Rules file %s already exists. [o]verwrite, [a]ppend, or [c]ancel? [c]: ", rulesPath)
+
+			reader := bufio.NewReader(os.Stdin)
+			response, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("operation cancelled")
+			}
+
+			response = strings.ToLower(strings.TrimSpace(response))
+			switch response {
+			case "o", "overwrite":
+				// proceed with overwrite
+			case "a", "append":
+				opts.Append = true
+			default:
+				return fmt.Errorf("operation cancelled")
+			}
+		}
 	}
 
-	fmt.Printf("Updated %s with %d explicit file paths from git\n", rulesPath, len(fileList))
+	if opts.Append {
+		if err := m.AppendFilesList(rulesPath, fileList); err != nil {
+			return err
+		}
+		fmt.Printf("Appended %d explicit file paths from git to %s\n", len(fileList), rulesPath)
+	} else {
+		if err := m.WriteFilesList(rulesPath, fileList); err != nil {
+			return err
+		}
+		fmt.Printf("Updated %s with %d explicit file paths from git\n", rulesPath, len(fileList))
+	}
+
 	return nil
 }
 

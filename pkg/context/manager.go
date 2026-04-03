@@ -613,6 +613,21 @@ func (m *Manager) WriteFilesList(filename string, files []string) error {
 	return nil
 }
 
+// AppendFilesList appends a list of files to a file
+func (m *Manager) AppendFilesList(filename string, files []string) error {
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	for _, f := range files {
+		fmt.Fprintln(file, f)
+	}
+
+	return nil
+}
+
 // getGitIgnoredFiles returns a set of all gitignored files for the repository
 // containing the given directory. It returns a map of absolute paths for efficient lookup.
 func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {

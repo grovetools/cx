@@ -25,21 +25,29 @@ func NewFromGitCmd() *cobra.Command {
 			branch, _ := cmd.Flags().GetString("branch")
 			staged, _ := cmd.Flags().GetBool("staged")
 			commits, _ := cmd.Flags().GetInt("commits")
-			
+			appendRules, _ := cmd.Flags().GetBool("append")
+			force, _ := cmd.Flags().GetBool("force")
+
+			if appendRules && force {
+				return fmt.Errorf("cannot use both --append and --force flags together")
+			}
+
 			// Validate that at least one option is specified
 			if since == "" && branch == "" && !staged && commits == 0 {
 				return fmt.Errorf("specify at least one option: --since, --branch, --staged, or --commits")
 			}
-			
+
 			fromGitLog.Info("Updating context from git history")
 			fromGitPrettyLog.InfoPretty("Updating context from git history...")
-			
+
 			// Create git options
 			opts := context.GitOptions{
 				Since:   since,
 				Branch:  branch,
 				Staged:  staged,
 				Commits: commits,
+				Append:  appendRules,
+				Force:   force,
 			}
 			
 			// Update from git
@@ -65,6 +73,8 @@ func NewFromGitCmd() *cobra.Command {
 	cmd.Flags().String("branch", "", "Include files changed in branch (e.g., main..HEAD)")
 	cmd.Flags().Bool("staged", false, "Include only staged files")
 	cmd.Flags().Int("commits", 0, "Include files from last N commits")
-	
+	cmd.Flags().BoolP("append", "a", false, "Append to existing rules instead of overwriting")
+	cmd.Flags().BoolP("force", "f", false, "Force overwrite of existing rules without prompting")
+
 	return cmd
 }

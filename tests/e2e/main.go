@@ -51,6 +51,7 @@ func main() {
 		// Advanced Scenarios
 		StatsAndValidateScenario(),
 		GitBasedContextScenario(),
+		FromGitSafetyScenario(),
 		ComplexPatternScenario(),
 		PlainDirectoryPatternScenario(),
 		RecursiveParentPatternScenario(),
