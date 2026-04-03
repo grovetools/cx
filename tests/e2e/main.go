@@ -148,6 +148,14 @@ func main() {
 		RelativeRecursiveGlobScenario(),
 		RelativeMultipleSiblingsScenario(),
 		TreeRootDiscoveryRelativeScenario(),
+
+		// Lint Scenarios
+		LintCleanRulesScenario(),
+		LintDirectiveTypoScenario(),
+		LintZeroMatchScenario(),
+		LintOverlyBroadScenario(),
+		LintMultipleIssuesScenario(),
+		LintNoRulesScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.
