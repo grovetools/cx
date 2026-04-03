@@ -67,8 +67,10 @@ type PlanRule struct {
 type Manager struct {
 	workDir         string
 	locator         *workspace.NotebookLocator // Notebook locator for centralized context paths
-	gitIgnoredCache map[string]map[string]bool // Cache for gitignored files by repository root
-	gitIgnoredMutex sync.RWMutex               // Mutex to protect gitIgnoredCache
+	gitIgnoredCache   map[string]map[string]bool // Cache for gitignored files by repository root
+	gitIgnoredMutex   sync.RWMutex               // Mutex to protect gitIgnoredCache
+	changedFilesCache map[string]map[string]bool // Cache for changed files by git ref
+	changedFilesMutex sync.Mutex                 // Mutex to protect changedFilesCache
 	aliasResolver   *alias.AliasResolver       // Lazily initialized alias resolver
 	allowedRoots    []string
 	allowedRootsErr error
@@ -98,8 +100,9 @@ func NewManager(workDir string) *Manager {
 	return &Manager{
 		workDir:         workDir,
 		locator:         workspace.NewNotebookLocator(cfg),
-		gitIgnoredCache: make(map[string]map[string]bool),
-		aliasResolver:   nil, // Lazily initialized
+		gitIgnoredCache:   make(map[string]map[string]bool),
+		changedFilesCache: make(map[string]map[string]bool),
+		aliasResolver:     nil, // Lazily initialized
 		log:             grovelogging.NewLogger("grove-context"),
 		ulog:            grovelogging.NewUnifiedLogger("cx.context"),
 		daemonClient:    daemon.NewWithAutoStart(),
@@ -601,6 +604,21 @@ func (m *Manager) ReadFilesList(filename string) ([]string, error) {
 // WriteFilesList writes a list of files to a file
 func (m *Manager) WriteFilesList(filename string, files []string) error {
 	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	for _, f := range files {
+		fmt.Fprintln(file, f)
+	}
+
+	return nil
+}
+
+// AppendFilesList appends a list of files to a file
+func (m *Manager) AppendFilesList(filename string, files []string) error {
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -1653,9 +1671,7 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	var allPatterns []string
 	for _, rule := range hotRules {
 		pattern := rule.Pattern
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			allPatterns = append(allPatterns, "!"+pattern)
 		} else {
@@ -1664,9 +1680,7 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	}
 	for _, rule := range coldRules {
 		pattern := rule.Pattern
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			allPatterns = append(allPatterns, "!"+pattern)
 		} else {
@@ -1900,9 +1914,10 @@ func (m *Manager) extractRootPaths(patterns []string) []string {
 					rootsMap[basePath] = true
 				}
 			}
-		} else if strings.HasPrefix(pattern, "../") {
+		} else if IsRelativeExternalPath(pattern) {
 			// For relative external paths like ../grove-flow/**/*.go
-			parts := strings.Split(pattern, "/")
+			// Use the already-cleaned pattern to avoid redundant normalization.
+			parts := strings.Split(filepath.ToSlash(filepath.Clean(pattern)), "/")
 			nonGlobParts := []string{}
 			for _, part := range parts {
 				if strings.ContainsAny(part, "*?[") {

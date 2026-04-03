@@ -127,7 +127,7 @@ func styleLineByType(line string, parsed context.ParsedLine) string {
 
 	case context.LineTypeViewDirective, context.LineTypeCmdDirective,
 		context.LineTypeFindDirective, context.LineTypeGrepDirective,
-		context.LineTypeOtherDirective:
+		context.LineTypeCombinedDirective, context.LineTypeOtherDirective:
 		// Directives are accented (violet)
 		return theme.Accent.Render(line)
 

@@ -51,6 +51,7 @@ func main() {
 		// Advanced Scenarios
 		StatsAndValidateScenario(),
 		GitBasedContextScenario(),
+		FromGitSafetyScenario(),
 		ComplexPatternScenario(),
 		PlainDirectoryPatternScenario(),
 		RecursiveParentPatternScenario(),
@@ -97,9 +98,37 @@ func main() {
 
 		// Search Directive Scenarios
 		FindDirectiveScenario(),
+		FindDirectiveGlobScenario(),
+		FindDirectiveRegexScenario(),
+		FindDirectiveDoubleStarGlobScenario(),
+		FindDirectiveInvalidRegexFallbackScenario(),
+		FindDirectiveFullPathRegexScenario(),
 		GrepDirectiveScenario(),
+		RecentDirectiveScenario(),
+		GlobalRecentDirectiveScenario(),
+		RecentTimeUnitsScenario(),
+		RecentCombinedDirectivesScenario(),
+		RecentInvalidDurationScenario(),
+		FindInvertedDirectiveScenario(),
+		GrepInvertedDirectiveScenario(),
+		GlobalFindInvertedDirectiveScenario(),
+		GlobalGrepInvertedDirectiveScenario(),
+		CombinedInvertedNormalDirectivesScenario(),
+		GrepIDirectiveScenario(),
+		GlobalGrepIDirectiveScenario(),
+		GrepVsGrepIScenario(),
+		CombinedSearchDirectivesScenario(),
 		AliasWithDirectiveScenario(),
+		AliasWithInvertedDirectiveScenario(),
+		FindInvertedAllExcludedScenario(),
+		FindInvertedNoneExcludedScenario(),
 		CombinedDirectivesScenario(),
+		CombinedFindAndGrepDirectiveScenario(),
+		GlobalMultiDirectiveScenario(),
+		MultipleFindDirectivesScenario(),
+		DirectiveAndWithExclusionsScenario(),
+		DirectiveAndInColdContextScenario(),
+		DirectiveAndWithBraceExpansionScenario(),
 		UnquotedInlineSearchDirectivesScenario(),
 		UnquotedGlobalSearchDirectivesScenario(),
 		MalformedSearchDirectivesScenario(),
@@ -107,6 +136,14 @@ func main() {
 		ValidGrepRegexScenario(),
 		GrepRegexVsLiteralScenario(),
 		EmptyGrepQueryScenario(),
+
+		// Git-Aware Directive Scenarios
+		ChangedStandaloneScenario(),
+		ChangedInlineFilterScenario(),
+		DiffStandaloneScenario(),
+		ChangedDeletedFilesScenario(),
+		ChangedBranchRefScenario(),
+		ChangedCombinedScenario(),
 
 		// Directive Import Scenarios
 		DirectiveWorkspaceGrepImportScenario(),
@@ -137,6 +174,32 @@ func main() {
 		TreeDirectiveNonexistentScenario(),
 		TreeDirectiveResolveScenario(),
 		TreeDirectiveAliasScenario(),
+
+		// Relative Path Scenarios
+		BasicRelativePathScenario(),
+		UncleanedRelativePathScenario(),
+		DoubleDotOnlyScenario(),
+		MultipleParentTraversalScenario(),
+		FloatingInclusionNotAffectedScenario(),
+		RelativeExclusionScenario(),
+		RelativeRecursiveGlobScenario(),
+		RelativeMultipleSiblingsScenario(),
+		TreeRootDiscoveryRelativeScenario(),
+
+		// Lint Scenarios
+		LintCleanRulesScenario(),
+		LintDirectiveTypoScenario(),
+		LintZeroMatchScenario(),
+		LintOverlyBroadScenario(),
+		LintMultipleIssuesScenario(),
+		LintNoRulesScenario(),
+
+		// Composite Ruleset Scenarios
+		CompositeRulesetBasicScenario(),
+		CompositeRulesetColdContextScenario(),
+		CompositeRulesetPathAndNestedScenario(),
+		CompositeRulesetCircularScenario(),
+		CompositeRulesetSearchDirectiveScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.
