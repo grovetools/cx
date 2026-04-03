@@ -1,6 +1,7 @@
 package context
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -1099,7 +1100,7 @@ func (m *Manager) matchDirective(file, directive, query string) bool {
 	if directive == "find" {
 		return strings.Contains(file, query)
 	}
-	if directive == "grep" {
+	if directive == "grep" || directive == "grep-i" {
 		filePath := file
 		if !filepath.IsAbs(file) {
 			filePath = filepath.Join(m.workDir, file)
@@ -1107,6 +1108,14 @@ func (m *Manager) matchDirective(file, directive, query string) bool {
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			return false
+		}
+		caseInsensitive := directive == "grep-i"
+		if caseInsensitive {
+			compiled, err := regexp.Compile("(?i)" + query)
+			if err != nil {
+				return bytes.Contains(bytes.ToLower(content), []byte(strings.ToLower(query)))
+			}
+			return compiled.Match(content)
 		}
 		compiled, err := regexp.Compile(query)
 		if err != nil {

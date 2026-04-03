@@ -495,24 +495,33 @@ func splitByComma(s string) []string {
 	return results
 }
 
-// parseSearchDirective parses a line for search directives (@find: or @grep:)
+// parseSearchDirective parses a line for search directives (@find:, @grep:, or @grep-i:)
 // Returns: basePattern, directive, query, hasDirective
 // Example: "pkg/**/*.go @find: \"manager\"" -> "pkg/**/*.go", "find", "manager", true
 func parseSearchDirective(line string) (basePattern, directive, query string, hasDirective bool) {
-	// Look for @find: or @grep: followed by a quoted string
+	// Look for @find:, @grep:, or @grep-i: followed by a quoted string
 	findIdx := strings.Index(line, " @find: ")
 	grepIdx := strings.Index(line, " @grep: ")
+	grepIIdx := strings.Index(line, " @grep-i: ")
 
-	var directiveIdx int
+	var directiveIdx int = -1
 	var directiveName string
 
-	if findIdx != -1 && (grepIdx == -1 || findIdx < grepIdx) {
+	// Find the earliest directive index
+	if findIdx != -1 {
 		directiveIdx = findIdx
 		directiveName = "find"
-	} else if grepIdx != -1 {
+	}
+	if grepIdx != -1 && (directiveIdx == -1 || grepIdx < directiveIdx) {
 		directiveIdx = grepIdx
 		directiveName = "grep"
-	} else {
+	}
+	if grepIIdx != -1 && (directiveIdx == -1 || grepIIdx < directiveIdx) {
+		directiveIdx = grepIIdx
+		directiveName = "grep-i"
+	}
+
+	if directiveIdx == -1 {
 		// No directive found
 		return line, "", "", false
 	}
@@ -651,6 +660,19 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			if queryPart != "" {
 				globalDirective = "find"
 				globalQuery = queryPart
+			}
+			continue
+		}
+		// Handle global @grep-i: directive (must be checked before @grep:)
+		if strings.HasPrefix(line, "@grep-i:") {
+			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@grep-i:"))
+			// Parse the quoted query
+			if len(queryPart) >= 2 && queryPart[0] == '"' {
+				endQuote := strings.Index(queryPart[1:], "\"")
+				if endQuote != -1 {
+					globalDirective = "grep-i"
+					globalQuery = queryPart[1 : endQuote+1]
+				}
 			}
 			continue
 		}

@@ -510,6 +510,297 @@ func MalformedSearchDirectivesScenario() *harness.Scenario {
 	}
 }
 
+// GrepIDirectiveScenario tests the @grep-i directive for case-insensitive content filtering
+func GrepIDirectiveScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-grep-i-directive",
+		Description: "Tests @grep-i directive for case-insensitive file content filtering",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with various cased content", func(ctx *harness.Context) error {
+				dir := filepath.Join(ctx.RootDir, "pkg", "managers")
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					return err
+				}
+
+				files := map[string]string{
+					filepath.Join(dir, "user.go"):       "package managers\n\ntype UserManager struct {}",
+					filepath.Join(dir, "user_lower.go"): "package managers\n\nvar usermanager = true",
+					filepath.Join(dir, "user_upper.go"): "package managers\n\nconst USERMANAGER = 1",
+					filepath.Join(dir, "file.go"):       "package managers\n\ntype FileHandler struct {}",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with @grep-i directive", func(ctx *harness.Context) error {
+				rulesContent := `pkg/**/*.go @grep-i: "usermanager"`
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify case-insensitive grep matches all casings", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// All three files with various casings of "usermanager" should be included
+				for _, expected := range []string{"user.go", "user_lower.go", "user_upper.go"} {
+					if !strings.Contains(output, expected) {
+						return fmt.Errorf("output should contain %s", expected)
+					}
+				}
+
+				// File without any casing of "usermanager" should NOT be included
+				if strings.Contains(output, "file.go") {
+					return fmt.Errorf("output should not contain file.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// GlobalGrepIDirectiveScenario tests standalone @grep-i: directive applied to all patterns
+func GlobalGrepIDirectiveScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-global-grep-i-directive",
+		Description: "Tests global @grep-i directive applies case-insensitive filtering to all patterns",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with logger content in various cases", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "src", "app"),
+					filepath.Join(ctx.RootDir, "src", "pkg"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "src", "app", "main.go"):   "package app\n\nvar LOGGER = true",
+					filepath.Join(ctx.RootDir, "src", "pkg", "utils.go"):  "package pkg\n\nvar logger = newLogger()",
+					filepath.Join(ctx.RootDir, "src", "pkg", "config.go"): "package pkg\n\ntype Settings struct {}",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with global @grep-i directive", func(ctx *harness.Context) error {
+				rulesContent := "@grep-i: \"logger\"\nsrc/**/*.go"
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify global grep-i filters all patterns case-insensitively", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// Files with "LOGGER" and "logger" should be included
+				if !strings.Contains(output, "src/app/main.go") {
+					return fmt.Errorf("output should contain src/app/main.go")
+				}
+				if !strings.Contains(output, "src/pkg/utils.go") {
+					return fmt.Errorf("output should contain src/pkg/utils.go")
+				}
+
+				// File without any casing of "logger" should NOT be included
+				if strings.Contains(output, "config.go") {
+					return fmt.Errorf("output should not contain config.go")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// GrepVsGrepIScenario contrasts case-sensitive @grep: with case-insensitive @grep-i:
+func GrepVsGrepIScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-grep-vs-grep-i",
+		Description: "Contrasts @grep (case-sensitive) with @grep-i (case-insensitive)",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with strict and loose directories", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "pkg", "auth", "strict"),
+					filepath.Join(ctx.RootDir, "pkg", "auth", "loose"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "pkg", "auth", "strict", "file1.go"): "package strict\n\nvar AuthToken = true",
+					filepath.Join(ctx.RootDir, "pkg", "auth", "strict", "file2.go"): "package strict\n\nvar authtoken = true",
+					filepath.Join(ctx.RootDir, "pkg", "auth", "loose", "file1.go"):  "package loose\n\nvar AuthToken = true",
+					filepath.Join(ctx.RootDir, "pkg", "auth", "loose", "file2.go"):  "package loose\n\nvar authtoken = true",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with @grep and @grep-i", func(ctx *harness.Context) error {
+				rulesContent := "pkg/auth/strict/*.go @grep: \"authtoken\"\npkg/auth/loose/*.go @grep-i: \"authtoken\""
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify grep is case-sensitive and grep-i is case-insensitive", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// @grep: "authtoken" (case-sensitive) should only match exact lowercase
+				if !strings.Contains(output, "pkg/auth/strict/file2.go") {
+					return fmt.Errorf("output should contain pkg/auth/strict/file2.go (exact case match)")
+				}
+				if strings.Contains(output, "pkg/auth/strict/file1.go") {
+					return fmt.Errorf("output should not contain pkg/auth/strict/file1.go (AuthToken != authtoken)")
+				}
+
+				// @grep-i: "authtoken" (case-insensitive) should match both
+				if !strings.Contains(output, "pkg/auth/loose/file1.go") {
+					return fmt.Errorf("output should contain pkg/auth/loose/file1.go (case-insensitive match)")
+				}
+				if !strings.Contains(output, "pkg/auth/loose/file2.go") {
+					return fmt.Errorf("output should contain pkg/auth/loose/file2.go (case-insensitive match)")
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
+// CombinedSearchDirectivesScenario tests @grep-i alongside @find, @grep, and regular patterns
+func CombinedSearchDirectivesScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-combined-search-directives",
+		Description: "Tests @grep-i alongside @find, @grep, and regular patterns in one rules file",
+		Tags:        []string{"cx", "search-directives"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with multiple directories", func(ctx *harness.Context) error {
+				dirs := []string{
+					filepath.Join(ctx.RootDir, "src", "models"),
+					filepath.Join(ctx.RootDir, "src", "controllers"),
+					filepath.Join(ctx.RootDir, "src", "utils"),
+					filepath.Join(ctx.RootDir, "tests"),
+				}
+				for _, dir := range dirs {
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						return err
+					}
+				}
+
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "src", "models", "user.go"):       "package models\n\ntype AccountInfo struct {}",
+					filepath.Join(ctx.RootDir, "src", "controllers", "auth.go"):  "package controllers\n\nvar SecretToken = true",
+					filepath.Join(ctx.RootDir, "src", "utils", "helper.go"):      "package utils\n\nconst HELPER_FUNC = 1",
+					filepath.Join(ctx.RootDir, "tests", "main_test.go"):          "package tests\n\nfunc TestMain() {}",
+				}
+
+				for path, content := range files {
+					if err := fs.WriteString(path, content); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create .grove/rules with mixed directives", func(ctx *harness.Context) error {
+				rulesContent := "src/**/*.go @find: \"user\"\nsrc/controllers/*.go @grep: \"SecretToken\"\nsrc/utils/*.go @grep-i: \"helper_func\"\ntests/**/*_test.go"
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Verify all directives work together correctly", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				// All four files should be included via their respective directives
+				expectedFiles := []string{
+					"src/models/user.go",       // via @find: "user"
+					"src/controllers/auth.go",  // via @grep: "SecretToken"
+					"src/utils/helper.go",      // via @grep-i: "helper_func"
+					"tests/main_test.go",       // via plain pattern
+				}
+
+				for _, file := range expectedFiles {
+					if !strings.Contains(output, file) {
+						return fmt.Errorf("output should contain %s", file)
+					}
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
 // CombinedDirectivesScenario tests combining both directives with regular patterns
 func CombinedDirectivesScenario() *harness.Scenario {
 	return &harness.Scenario{

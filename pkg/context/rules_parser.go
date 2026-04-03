@@ -21,6 +21,7 @@ const (
 	LineTypeCmdDirective
 	LineTypeFindDirective
 	LineTypeGrepDirective
+	LineTypeGrepIDirective
 	LineTypeOtherDirective
 	LineTypePattern
 	LineTypeEmpty
@@ -67,6 +68,9 @@ var (
 
 	// Grep directive: @grep: (standalone or inline)
 	grepDirectiveRegex = regexp.MustCompile(`@grep:`)
+
+	// Grep-i directive: @grep-i: (standalone or inline, case-insensitive grep)
+	grepIDirectiveRegex = regexp.MustCompile(`@grep-i:`)
 
 	// Other directives: @default, @freeze-cache, @no-expire, @disable-cache, @expire-time
 	otherDirectiveRegex = regexp.MustCompile(`^\s*@(default|freeze-cache|no-expire|disable-cache|expire-time):?`)
@@ -179,6 +183,16 @@ func ParseRulesLine(line string) ParsedLine {
 		parts := parseSearchDirectiveLine(trimmed, "@find:")
 		return ParsedLine{
 			Type:    LineTypeFindDirective,
+			Content: line,
+			Parts:   parts,
+		}
+	}
+
+	// Grep-i directive (standalone or inline) - must be checked before @grep:
+	if grepIDirectiveRegex.MatchString(line) {
+		parts := parseSearchDirectiveLine(trimmed, "@grep-i:")
+		return ParsedLine{
+			Type:    LineTypeGrepIDirective,
 			Content: line,
 			Parts:   parts,
 		}
