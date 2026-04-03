@@ -19,6 +19,7 @@ const (
 	LineTypeAliasPattern
 	LineTypeViewDirective
 	LineTypeCmdDirective
+	LineTypeIncludeDirective
 	LineTypeFindDirective
 	LineTypeGrepDirective
 	LineTypeGrepIDirective
@@ -64,6 +65,9 @@ var (
 
 	// Command directive: @cmd:
 	cmdDirectiveRegex = regexp.MustCompile(`^\s*@cmd:`)
+
+	// Include directive: @include:
+	includeDirectiveRegex = regexp.MustCompile(`^\s*@include:`)
 
 	// Find directive: @find: (standalone or inline)
 	findDirectiveRegex = regexp.MustCompile(`@find:`)
@@ -183,6 +187,15 @@ func ParseRulesLine(line string) ParsedLine {
 			Type:    LineTypeCmdDirective,
 			Content: line,
 			Parts:   map[string]string{"command": strings.TrimSpace(strings.TrimPrefix(trimmed, "@cmd:"))},
+		}
+	}
+
+	// Include directive
+	if includeDirectiveRegex.MatchString(line) {
+		return ParsedLine{
+			Type:    LineTypeIncludeDirective,
+			Content: line,
+			Parts:   map[string]string{"ruleset": strings.TrimSpace(strings.TrimPrefix(trimmed, "@include:"))},
 		}
 	}
 

@@ -272,6 +272,39 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	mainImports := parsed.mainImportedRuleSets
 	coldImports := parsed.coldImportedRuleSets
 	localView := parsed.viewPaths
+	rulesDir := filepath.Dir(absRulesPath)
+
+	// Process @include: directives before local rules so local rules can override them
+	for _, includeInfo := range parsed.mainIncludes {
+		includedHot, includedCold, includedView, includeErr := m.resolveInclude(includeInfo, rulesDir, visited)
+		if includeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve included ruleset '%s': %v\n", includeInfo.ImportIdentifier, includeErr)
+			continue
+		}
+		hotRules = append(hotRules, includedHot...)
+		coldRules = append(coldRules, includedCold...)
+		viewPaths = append(viewPaths, includedView...)
+	}
+
+	for _, includeInfo := range parsed.coldIncludes {
+		includedHot, includedCold, includedView, includeErr := m.resolveInclude(includeInfo, rulesDir, visited)
+		if includeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve included ruleset '%s': %v\n", includeInfo.ImportIdentifier, includeErr)
+			continue
+		}
+		// For cold includes, all nested rules go to cold
+		allNested := append(includedHot, includedCold...)
+		if includeInfo.Directive != "" {
+			for i := range allNested {
+				if allNested[i].Directive == "" {
+					allNested[i].Directive = includeInfo.Directive
+					allNested[i].DirectiveQuery = includeInfo.DirectiveQuery
+				}
+			}
+		}
+		coldRules = append(coldRules, allNested...)
+		viewPaths = append(viewPaths, includedView...)
+	}
 
 	// Set EffectiveLineNum for local rules
 	for i := range localHot {
@@ -305,8 +338,6 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			hotRules = append(hotRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: 0, EffectiveLineNum: 0})
 		}
 	}
-
-	rulesDir := filepath.Dir(absRulesPath)
 
 	// Process hot rule set imports
 	for _, importInfo := range mainImports {
@@ -842,6 +873,56 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	}
 
 	return hotRules, coldRules, viewPaths, nil
+}
+
+// resolveInclude resolves a single @include: directive to its constituent rules.
+// It locates the named ruleset file and recursively expands it.
+func (m *Manager) resolveInclude(includeInfo ImportInfo, rulesDir string, visited map[string]bool) (hotRules, coldRules []RuleInfo, viewPaths []string, err error) {
+	includeName := includeInfo.ImportIdentifier
+	var rulesFilePath string
+
+	if strings.Contains(includeName, "/") || strings.HasSuffix(includeName, RulesExt) {
+		// Treat as a path (relative or absolute)
+		rulesFilePath = includeName
+		if !filepath.IsAbs(rulesFilePath) {
+			rulesFilePath = filepath.Join(rulesDir, rulesFilePath)
+		}
+	} else {
+		// Treat as a named preset — resolve via FindRulesetFile
+		projectRoot := m.workDir
+		configPath, cfgErr := config.FindConfigFile(rulesDir)
+		if cfgErr == nil {
+			projectRoot = filepath.Dir(configPath)
+		}
+		resolvedPath, findErr := m.FindRulesetFile(projectRoot, includeName)
+		if findErr != nil {
+			return nil, nil, nil, fmt.Errorf("could not find included ruleset '%s': %w", includeName, findErr)
+		}
+		rulesFilePath = resolvedPath
+	}
+
+	nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, includeInfo.LineNum)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Propagate search directives from the include line to nested rules that don't have their own
+	if includeInfo.Directive != "" {
+		for i := range nestedHot {
+			if nestedHot[i].Directive == "" {
+				nestedHot[i].Directive = includeInfo.Directive
+				nestedHot[i].DirectiveQuery = includeInfo.DirectiveQuery
+			}
+		}
+		for i := range nestedCold {
+			if nestedCold[i].Directive == "" {
+				nestedCold[i].Directive = includeInfo.Directive
+				nestedCold[i].DirectiveQuery = includeInfo.DirectiveQuery
+			}
+		}
+	}
+
+	return nestedHot, nestedCold, nestedView, nil
 }
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file

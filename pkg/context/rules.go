@@ -28,6 +28,8 @@ type parsedRules struct {
 	coldDefaultPaths     []string
 	mainImportedRuleSets []ImportInfo
 	coldImportedRuleSets []ImportInfo
+	mainIncludes         []ImportInfo
+	coldIncludes         []ImportInfo
 	viewPaths            []string
 	conceptIDs           []string // Concept IDs to resolve via @concept: directive
 	freezeCache          bool
@@ -657,6 +659,25 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			conceptID := strings.TrimSpace(strings.TrimPrefix(line, "@concept:"))
 			if conceptID != "" {
 				results.conceptIDs = append(results.conceptIDs, conceptID)
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "@include:") {
+			rulePart, directive, query, _ := parseSearchDirective(line)
+			includeName := strings.TrimSpace(strings.TrimPrefix(rulePart, "@include:"))
+			if includeName != "" {
+				info := ImportInfo{
+					OriginalLine:     line,
+					ImportIdentifier: includeName,
+					LineNum:          lineNum,
+					Directive:        directive,
+					DirectiveQuery:   query,
+				}
+				if inColdSection {
+					results.coldIncludes = append(results.coldIncludes, info)
+				} else {
+					results.mainIncludes = append(results.mainIncludes, info)
+				}
 			}
 			continue
 		}
