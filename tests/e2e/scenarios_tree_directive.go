@@ -373,3 +373,83 @@ func TreeDirectiveResolveScenario() *harness.Scenario {
 		},
 	}
 }
+
+// TreeDirectiveAliasScenario tests that @tree: works with alias references like @a:project.
+func TreeDirectiveAliasScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-tree-alias",
+		Description: "Tests @tree directive with alias resolution",
+		Tags:        []string{"cx", "tree-directive", "alias"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup multi-project environment", func(ctx *harness.Context) error {
+				// Create a groves directory with an external project
+				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
+
+				// Configure grove discovery
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
+				groveConfig := fmt.Sprintf("groves:\n  test:\n    path: %s\n    enabled: true\n", grovesDir)
+				if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig); err != nil {
+					return err
+				}
+
+				// External project: "lib-ext"
+				libExtDir := filepath.Join(grovesDir, "lib-ext")
+				if err := fs.WriteString(filepath.Join(libExtDir, "grove.yml"), "name: lib-ext"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(libExtDir, "src", "core.go"), "package src"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(libExtDir, "src", "util", "helper.go"), "package util"); err != nil {
+					return err
+				}
+				if result := command.New("git", "init").Dir(libExtDir).Run(); result.Error != nil {
+					return fmt.Errorf("git init lib-ext failed: %w", result.Error)
+				}
+
+				// Main project
+				if result := command.New("git", "init").Dir(ctx.RootDir).Run(); result.Error != nil {
+					return fmt.Errorf("git init failed: %w", result.Error)
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), "name: test-main"); err != nil {
+					return err
+				}
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), "@tree: @a:lib-ext\nmain.go")
+			}),
+
+			harness.NewStep("Verify alias tree generates correctly", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				// Write a dummy main.go so there's at least one file pattern match
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main"); err != nil {
+					return err
+				}
+
+				cmd := ctx.Command(cxBinary, "generate", "--xml=false").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return fmt.Errorf("cx generate failed: %w", result.Error)
+				}
+
+				contextPath := findContextFileOrFallback(ctx.RootDir)
+				content, err := fs.ReadString(contextPath)
+				if err != nil {
+					return fmt.Errorf("could not read context file: %w", err)
+				}
+
+				return ctx.Verify(func(v *verify.Collector) {
+					v.Contains("tree section for aliased project", content, "=== TREE:")
+					v.Contains("src directory in aliased tree", content, "src/")
+					v.Contains("core.go in aliased tree", content, "core.go")
+					v.Contains("helper.go in aliased tree", content, "helper.go")
+					v.Contains("util directory in aliased tree", content, "util/")
+					v.NotContains("no glob pattern in tree header", content, "**")
+				})
+			}),
+		},
+	}
+}

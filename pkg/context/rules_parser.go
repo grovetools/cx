@@ -18,6 +18,7 @@ const (
 	LineTypeRulesetImport
 	LineTypeAliasPattern
 	LineTypeViewDirective
+	LineTypeTreeDirective
 	LineTypeCmdDirective
 	LineTypeFindDirective
 	LineTypeGrepDirective
@@ -58,6 +59,9 @@ var (
 
 	// View directive: @view: or @v:
 	viewDirectiveRegex = regexp.MustCompile(`^\s*@(view|v):`)
+
+	// Tree directive: @tree:
+	treeDirectiveRegex = regexp.MustCompile(`^\s*@tree:`)
 
 	// Command directive: @cmd:
 	cmdDirectiveRegex = regexp.MustCompile(`^\s*@cmd:`)
@@ -160,6 +164,16 @@ func ParseRulesLine(line string) ParsedLine {
 		parts := parseViewDirective(trimmed)
 		return ParsedLine{
 			Type:    LineTypeViewDirective,
+			Content: line,
+			Parts:   parts,
+		}
+	}
+
+	// Tree directive
+	if treeDirectiveRegex.MatchString(line) {
+		parts := parseTreeDirective(trimmed)
+		return ParsedLine{
+			Type:    LineTypeTreeDirective,
 			Content: line,
 			Parts:   parts,
 		}
@@ -287,6 +301,26 @@ func parseAliasPattern(line string) map[string]string {
 	}
 
 	parts["full_alias"] = aliasPart
+
+	return parts
+}
+
+// parseTreeDirective parses a tree directive like @tree: /path/to/dir or @tree: @a:project
+func parseTreeDirective(line string) map[string]string {
+	parts := make(map[string]string)
+
+	line = strings.TrimPrefix(line, "@tree:")
+	line = strings.TrimSpace(line)
+
+	if strings.HasPrefix(line, "@alias:") || strings.HasPrefix(line, "@a:") {
+		aliasValue := strings.TrimPrefix(line, "@alias:")
+		aliasValue = strings.TrimPrefix(aliasValue, "@a:")
+		parts["type"] = "alias"
+		parts["value"] = strings.TrimSpace(aliasValue)
+	} else {
+		parts["type"] = "path"
+		parts["value"] = line
+	}
 
 	return parts
 }

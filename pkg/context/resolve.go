@@ -230,16 +230,16 @@ func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, e
 }
 
 // expandAllRules recursively resolves rules, including those from @default directives.
-func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, importLineNum int) (hotRules, coldRules []RuleInfo, viewPaths []string, err error) {
+func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, importLineNum int) (hotRules, coldRules []RuleInfo, viewPaths []string, treePaths []string, err error) {
 	defer profiling.Start("context.expandAllRules").Stop()
 	absRulesPath, err := filepath.Abs(rulesPath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get absolute path for rules: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to get absolute path for rules: %w", err)
 	}
 
 	if visited[absRulesPath] {
 		// Circular dependency detected, return to prevent infinite loop.
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 	visited[absRulesPath] = true
 
@@ -247,14 +247,14 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	if err != nil {
 		if os.IsNotExist(err) {
 			// If a default rules file doesn't exist, it's not an error, just return empty.
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, nil
 		}
-		return nil, nil, nil, fmt.Errorf("reading rules file %s: %w", absRulesPath, err)
+		return nil, nil, nil, nil, fmt.Errorf("reading rules file %s: %w", absRulesPath, err)
 	}
 
 	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
+		return nil, nil, nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
 	}
 
 	localHot := parsed.hotRules
@@ -264,6 +264,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	mainImports := parsed.mainImportedRuleSets
 	coldImports := parsed.coldImportedRuleSets
 	localView := parsed.viewPaths
+	localTree := parsed.treePaths
 
 	// Set EffectiveLineNum for local rules
 	for i := range localHot {
@@ -284,6 +285,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	hotRules = append(hotRules, localHot...)
 	coldRules = append(coldRules, localCold...)
 	viewPaths = append(viewPaths, localView...)
+	treePaths = append(treePaths, localTree...)
 
 	// Process concept directives
 	for _, conceptID := range parsed.conceptIDs {
@@ -352,7 +354,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				continue
 			}
 
-			nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
+			nestedHot, nestedCold, nestedView, nestedTree, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from repository %s: %v\n", rulesetName, repoURL, err)
 				continue
@@ -394,6 +396,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				}
 			}
 			viewPaths = append(viewPaths, nestedView...)
+			for i, path := range nestedTree {
+				if !filepath.IsAbs(path) {
+					nestedTree[i] = filepath.Join(localPath, path)
+				}
+			}
+			treePaths = append(treePaths, nestedTree...)
 
 			continue
 		}
@@ -424,7 +432,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
+		nestedHot, nestedCold, nestedView, nestedTree, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
@@ -482,6 +490,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			}
 		}
 		viewPaths = append(viewPaths, nestedView...)
+		for i, path := range nestedTree {
+			if !filepath.IsAbs(path) {
+				nestedTree[i] = filepath.Join(projectPath, path)
+			}
+		}
+		treePaths = append(treePaths, nestedTree...)
 	}
 
 	// Process cold rule set imports
@@ -533,7 +547,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				continue
 			}
 
-			nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
+			nestedHot, nestedCold, nestedView, nestedTree, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from repository %s: %v\n", rulesetName, repoURL, err)
 				continue
@@ -565,6 +579,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				}
 			}
 			viewPaths = append(viewPaths, nestedView...)
+			for i, path := range nestedTree {
+				if !filepath.IsAbs(path) {
+					nestedTree[i] = filepath.Join(localPath, path)
+				}
+			}
+			treePaths = append(treePaths, nestedTree...)
 			continue
 		}
 
@@ -594,7 +614,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
+		nestedHot, nestedCold, nestedView, nestedTree, err := m.expandAllRules(rulesFilePath, visited, importInfo.LineNum)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve ruleset '%s' from project '%s': %v\n", rulesetName, projectAlias, err)
 			continue
@@ -636,6 +656,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			}
 		}
 		viewPaths = append(viewPaths, nestedView...)
+		for i, path := range nestedTree {
+			if !filepath.IsAbs(path) {
+				nestedTree[i] = filepath.Join(projectPath, path)
+			}
+		}
+		treePaths = append(treePaths, nestedTree...)
 	}
 
 	// Process hot defaults
@@ -694,9 +720,9 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 		// Recursively resolve patterns from the default rules file
 		// ALL patterns from the default (hot and cold) are added to the current HOT context.
-		nestedHot, nestedCold, nestedView, err := m.expandAllRules(defaultRulesFile, visited, 0)
+		nestedHot, nestedCold, nestedView, nestedTree, err := m.expandAllRules(defaultRulesFile, visited, 0)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		// The patterns from external project need to be prefixed with the project path
 		// so they resolve files from that project, not the current one
@@ -734,6 +760,12 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			}
 		}
 		viewPaths = append(viewPaths, nestedView...)
+		for i, path := range nestedTree {
+			if !filepath.IsAbs(path) {
+				nestedTree[i] = filepath.Join(realPath, path)
+			}
+		}
+		treePaths = append(treePaths, nestedTree...)
 	}
 
 	// Process cold defaults
@@ -792,9 +824,9 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 		// Recursively resolve patterns from the default rules file
 		// ALL patterns from the default are added to the current COLD context.
-		nestedHot, nestedCold, nestedView, err := m.expandAllRules(defaultRulesFile, visited, 0)
+		nestedHot, nestedCold, nestedView, nestedTree, err := m.expandAllRules(defaultRulesFile, visited, 0)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		// The patterns from external project need to be prefixed with the project path
 		for i := range nestedHot {
@@ -831,28 +863,40 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			}
 		}
 		viewPaths = append(viewPaths, nestedView...)
+		for i, path := range nestedTree {
+			if !filepath.IsAbs(path) {
+				nestedTree[i] = filepath.Join(realPath, path)
+			}
+		}
+		treePaths = append(treePaths, nestedTree...)
 	}
 
-	return hotRules, coldRules, viewPaths, nil
+	return hotRules, coldRules, viewPaths, treePaths, nil
 }
 
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
-	defer profiling.Start("context.ResolveFilesFromRules").Stop()
+	files, _, err := m.ResolveFilesAndTreesFromRules()
+	return files, err
+}
+
+// ResolveFilesAndTreesFromRules dynamically resolves the list of files and tree paths from the active rules file
+func (m *Manager) ResolveFilesAndTreesFromRules() ([]string, []string, error) {
+	defer profiling.Start("context.ResolveFilesAndTreesFromRules").Stop()
 	// Load the active rules content (respects state-based rules)
 	rulesContent, activeRulesFile, err := m.LoadRulesContent()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load rules: %w", err)
+		return nil, nil, fmt.Errorf("failed to load rules: %w", err)
 	}
 	if rulesContent == nil || activeRulesFile == "" {
 		// No active or default rules found
-		return []string{}, nil
+		return []string{}, nil, nil
 	}
 
 	// Resolve all patterns recursively from the active rules file
-	hotRules, coldRules, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
+	hotRules, coldRules, _, treePaths, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve patterns: %w", err)
+		return nil, nil, fmt.Errorf("failed to resolve patterns: %w", err)
 	}
 
 	// Extract patterns from RuleInfo
@@ -887,7 +931,7 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	// Resolve files from hot patterns
 	hotFiles, err := m.resolveFilesFromPatterns(hotPatterns)
 	if err != nil {
-		return nil, fmt.Errorf("error resolving hot context files: %w", err)
+		return nil, nil, fmt.Errorf("error resolving hot context files: %w", err)
 	}
 
 	// Only resolve and filter cold patterns if there are any
@@ -895,7 +939,7 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 		// Resolve files from cold patterns
 		coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
 		if err != nil {
-			return nil, fmt.Errorf("error resolving cold context files: %w", err)
+			return nil, nil, fmt.Errorf("error resolving cold context files: %w", err)
 		}
 
 		// Create a map of cold files for efficient exclusion
@@ -912,11 +956,27 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 			}
 		}
 
-		return finalHotFiles, nil
+		return finalHotFiles, deduplicateStrings(treePaths), nil
 	}
 
 	// No cold patterns, return hot files as is
-	return hotFiles, nil
+	return hotFiles, deduplicateStrings(treePaths), nil
+}
+
+// deduplicateStrings returns a new slice with duplicate entries removed, preserving order.
+func deduplicateStrings(items []string) []string {
+	if len(items) == 0 {
+		return items
+	}
+	seen := make(map[string]bool, len(items))
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if !seen[item] {
+			seen[item] = true
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 // ResolveFilesFromCustomRulesFile resolves both hot and cold files from a custom rules file path.
@@ -933,7 +993,7 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 	}
 
 	// Resolve all patterns recursively from the custom rules file
-	hotRules, coldRules, _, err := m.expandAllRules(absRulesFilePath, make(map[string]bool), 0)
+	hotRules, coldRules, _, _, err := m.expandAllRules(absRulesFilePath, make(map[string]bool), 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to resolve patterns from rules file: %w", err)
 	}
@@ -1013,7 +1073,7 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 
 
 	// Resolve all patterns recursively from the active rules file
-	_, coldRules, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
+	_, coldRules, _, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve patterns for cold context: %w", err)
 	}

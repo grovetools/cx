@@ -136,6 +136,7 @@ func main() {
 		TreeDirectiveMultipleScenario(),
 		TreeDirectiveNonexistentScenario(),
 		TreeDirectiveResolveScenario(),
+		TreeDirectiveAliasScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.

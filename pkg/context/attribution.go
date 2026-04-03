@@ -62,7 +62,7 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 	tmpFile.Close()
 
 	// 2. Use expandAllRules to get all rules with proper import handling
-	hotRules, coldRules, _, err := m.expandAllRules(tmpFile.Name(), make(map[string]bool), 0)
+	hotRules, coldRules, _, _, err := m.expandAllRules(tmpFile.Name(), make(map[string]bool), 0)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to expand rules: %w", err)
 	}

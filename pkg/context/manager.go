@@ -538,7 +538,7 @@ func (m *Manager) resolvePatternsFromRulesetImport(importRule string) ([]string,
 	}
 
 	// 4. Expand all rules from that file
-	hotRules, coldRules, _, err := m.expandAllRules(rulesFilePath, make(map[string]bool), 0)
+	hotRules, coldRules, _, _, err := m.expandAllRules(rulesFilePath, make(map[string]bool), 0)
 	if err != nil {
 		return nil, fmt.Errorf("could not expand ruleset '%s' from project '%s': %w", rulesetName, projectAlias, err)
 	}
@@ -1644,7 +1644,7 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 		}
 	}
 
-	hotRules, coldRules, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
+	hotRules, coldRules, _, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand rules: %w", err)
 	}

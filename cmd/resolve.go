@@ -132,6 +132,8 @@ func NewResolveCmd() *cobra.Command {
 				trimmedLine = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "@view:"))
 			} else if strings.HasPrefix(trimmedLine, "@v:") {
 				trimmedLine = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "@v:"))
+			} else if strings.HasPrefix(trimmedLine, "@tree:") {
+				trimmedLine = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "@tree:"))
 			}
 
 			if trimmedLine == "" {

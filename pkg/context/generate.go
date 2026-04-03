@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/grovetools/core/util/pathutil"
 	"github.com/sirupsen/logrus"
 )
 
@@ -46,7 +47,7 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 		Field("lines", lineCount).
 		Log(context.Background())
 
-	hotRules, coldRules, _, err := m.expandAllRules(absRulesFilePath, make(map[string]bool), 0)
+	hotRules, coldRules, _, treePaths, err := m.expandAllRules(absRulesFilePath, make(map[string]bool), 0)
 	if err != nil {
 		return fmt.Errorf("failed to resolve patterns from rules file %s: %w", rulesFilePath, err)
 	}
@@ -104,7 +105,7 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 	}
 
 	// Generate context files
-	if err := m.generateContextFromFiles(finalHotFiles, useXMLFormat); err != nil {
+	if err := m.generateContextFromFilesAndTrees(finalHotFiles, treePaths, useXMLFormat); err != nil {
 		return err
 	}
 
@@ -129,14 +130,14 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 
-	// Use ResolveFilesFromRules which handles @default directives
-	filesToInclude, err := m.ResolveFilesFromRules()
+	// Use ResolveFilesAndTreesFromRules which handles @default and @tree directives
+	filesToInclude, treePaths, err := m.ResolveFilesAndTreesFromRules()
 	if err != nil {
 		return fmt.Errorf("error resolving files from rules: %w", err)
 	}
 
 	// Handle case where no rules file exists
-	if len(filesToInclude) == 0 {
+	if len(filesToInclude) == 0 && len(treePaths) == 0 {
 		rulesContent, _, _ := m.LoadRulesContent()
 		if rulesContent == nil {
 			// Log warning using structured logging (respects TUI mode)
@@ -146,11 +147,11 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 		}
 	}
 
-	return m.generateContextFromFiles(filesToInclude, useXMLFormat)
+	return m.generateContextFromFilesAndTrees(filesToInclude, treePaths, useXMLFormat)
 }
 
-// generateContextFromFiles is a private helper that writes a list of files to the hot context file.
-func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) error {
+// generateContextFromFilesAndTrees is a private helper that writes trees and a list of files to the hot context file.
+func (m *Manager) generateContextFromFilesAndTrees(files []string, treePaths []string, useXMLFormat bool) error {
 	// Resolve context file path (plan-scoped > notebook > local)
 	contextPath := m.ResolveContextWritePath()
 	ctxFile, err := os.Create(contextPath)
@@ -166,12 +167,30 @@ func (m *Manager) generateContextFromFiles(files []string, useXMLFormat bool) er
 		fmt.Fprintf(ctxFile, "  <hot-context files=\"%d\" description=\"Files to be used for reference/background context to carry out the user's question/task to be provided later\">\n", len(files))
 	}
 
-	// If no files to include, write a comment explaining why
-	if len(files) == 0 {
+	// If no files or trees to include, write a comment explaining why
+	if len(files) == 0 && len(treePaths) == 0 {
 		if useXMLFormat {
 			fmt.Fprintf(ctxFile, "    <!-- No rules file found. Create %s with patterns to include files. -->\n", ActiveRulesFile)
 		} else {
 			fmt.Fprintf(ctxFile, "# No rules file found. Create %s with patterns to include files.\n", ActiveRulesFile)
+		}
+	}
+
+	// Write trees first
+	for _, tp := range treePaths {
+		treeStr, err := m.GenerateTreeString(tp)
+		if err != nil {
+			m.ulog.Warn("Error generating tree").
+				Field("path", tp).
+				Err(err).
+				Log(context.Background())
+			continue
+		}
+
+		if useXMLFormat {
+			fmt.Fprintf(ctxFile, "    <tree path=\"%s\">\n%s    </tree>\n", tp, treeStr)
+		} else {
+			fmt.Fprintf(ctxFile, "=== TREE: %s ===\n%s=== END TREE: %s ===\n\n", tp, treeStr, tp)
 		}
 	}
 
@@ -327,5 +346,82 @@ func (m *Manager) writeFileToXML(w io.Writer, file string, indent string) error 
 	}
 
 	fmt.Fprintf(w, "%s</file>\n", indent)
+	return nil
+}
+
+// GenerateTreeString generates an ascii tree representation of the directory structure
+func (m *Manager) GenerateTreeString(rootPath string) (string, error) {
+	absPath := rootPath
+	if !filepath.IsAbs(rootPath) {
+		absPath = filepath.Join(m.workDir, rootPath)
+	}
+	absPath = filepath.Clean(absPath)
+
+	gitIgnored, err := m.getGitIgnoredFiles(absPath)
+	if err != nil {
+		gitIgnored = make(map[string]bool)
+	}
+
+	var sb strings.Builder
+	baseName := filepath.Base(absPath)
+	if baseName == "." || baseName == string(filepath.Separator) {
+		baseName = filepath.Base(m.workDir)
+	}
+	sb.WriteString(baseName + "/\n")
+
+	err = m.buildTreeString(&sb, absPath, "", gitIgnored)
+	return sb.String(), err
+}
+
+func (m *Manager) buildTreeString(sb *strings.Builder, dirPath string, prefix string, gitIgnored map[string]bool) error {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return err
+	}
+
+	// Filter entries to drop gitignored items and internal Grove/git directories
+	var validEntries []os.DirEntry
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == ".git" || name == ".grove" {
+			continue
+		}
+
+		fullPath := filepath.Join(dirPath, name)
+		normPath, normErr := pathutil.NormalizeForLookup(fullPath)
+		if normErr != nil {
+			normPath = fullPath
+		}
+
+		if gitIgnored[normPath] {
+			continue
+		}
+		validEntries = append(validEntries, entry)
+	}
+
+	for i, entry := range validEntries {
+		isLast := i == len(validEntries)-1
+
+		connector := "├── "
+		childPrefix := prefix + "│   "
+		if isLast {
+			connector = "└── "
+			childPrefix = prefix + "    "
+		}
+
+		name := entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+
+		sb.WriteString(prefix + connector + name + "\n")
+
+		if entry.IsDir() {
+			if err := m.buildTreeString(sb, filepath.Join(dirPath, entry.Name()), childPrefix, gitIgnored); err != nil {
+				sb.WriteString(childPrefix + "[error reading directory]\n")
+			}
+		}
+	}
+
 	return nil
 }

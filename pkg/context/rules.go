@@ -29,6 +29,7 @@ type parsedRules struct {
 	mainImportedRuleSets []ImportInfo
 	coldImportedRuleSets []ImportInfo
 	viewPaths            []string
+	treePaths            []string
 	conceptIDs           []string // Concept IDs to resolve via @concept: directive
 	freezeCache          bool
 	disableExpiration    bool
@@ -615,6 +616,27 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 							results.viewPaths = append(results.viewPaths, p)
 						}
 					}
+				}
+			}
+			continue
+		}
+		// Handle @tree:
+		if strings.HasPrefix(line, "@tree:") {
+			rulePart := strings.TrimSpace(strings.TrimPrefix(line, "@tree:"))
+			if rulePart != "" {
+				// For aliases, resolve directly to the project base path (not a glob pattern)
+				if resolver != nil && (strings.HasPrefix(rulePart, "@alias:") || strings.HasPrefix(rulePart, "@a:")) {
+					aliasPart := strings.TrimPrefix(rulePart, "@alias:")
+					aliasPart = strings.TrimPrefix(aliasPart, "@a:")
+					projectPath, resolveErr := resolver.Resolve(aliasPart)
+					if resolveErr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: could not resolve alias for tree rule '%s': %v\n", rulePart, resolveErr)
+						results.treePaths = append(results.treePaths, rulePart)
+					} else {
+						results.treePaths = append(results.treePaths, projectPath)
+					}
+				} else {
+					results.treePaths = append(results.treePaths, rulePart)
 				}
 			}
 			continue
