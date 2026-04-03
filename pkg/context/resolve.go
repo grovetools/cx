@@ -20,6 +20,12 @@ import (
 
 var log = logging.NewLogger("cx.context.resolve")
 
+// IsRelativeExternalPath checks if a pattern refers to a path outside the current directory.
+func IsRelativeExternalPath(pattern string) bool {
+	normPattern := filepath.ToSlash(filepath.Clean(pattern))
+	return normPattern == ".." || strings.HasPrefix(normPattern, "../")
+}
+
 // patternInfo holds information about a pattern including any associated directive
 type patternInfo struct {
 	pattern    string
@@ -98,7 +104,7 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 		}
 
 		// Floating inclusion patterns should not match external files.
-		isFloatingInclusion := !info.isExclude && !strings.Contains(info.pattern, "/") && !filepath.IsAbs(info.pattern) && !strings.HasPrefix(info.pattern, "..")
+		isFloatingInclusion := !info.isExclude && !strings.Contains(info.pattern, "/") && !filepath.IsAbs(info.pattern) && !IsRelativeExternalPath(info.pattern)
 		if isFloatingInclusion && isExternal {
 			continue
 		}
@@ -109,7 +115,8 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 
 		if filepath.IsAbs(cleanPattern) {
 			matchPath = filepath.ToSlash(path)
-		} else if strings.HasPrefix(cleanPattern, "../") {
+		} else if IsRelativeExternalPath(cleanPattern) {
+			cleanPattern = filepath.ToSlash(filepath.Clean(cleanPattern))
 			relFromWorkDir, err := filepath.Rel(pm.workDir, path)
 			if err == nil {
 				matchPath = filepath.ToSlash(relFromWorkDir)
@@ -1242,7 +1249,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	for _, info := range patternInfos {
 		cleanPattern := info.pattern
 
-		if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
+		if filepath.IsAbs(cleanPattern) || IsRelativeExternalPath(cleanPattern) {
 			// Resolve path for validation. For globs, validate the base path.
 			pathToValidate := cleanPattern
 			if strings.ContainsAny(pathToValidate, "*?[") {
@@ -1311,7 +1318,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			filePath = filepath.Clean(filePath)
 
 			if fstat, err := os.Stat(filePath); err == nil && !fstat.IsDir() {
-				if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
+				if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
 					uniqueFiles[filePath] = true
 				} else {
 					relPath, err := filepath.Rel(m.workDir, filePath)
@@ -1335,7 +1342,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			if isFloatingExclusion {
 				// Floating exclusions like "!tests" or "!*.tmp" or "!**/*.md" should apply globally
 				floatingExclusionInfos = append(floatingExclusionInfos, info)
-			} else if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
+			} else if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
 				deferredExclusionInfos = append(deferredExclusionInfos, info)
 			} else {
 				// Path-specific exclusions for relative patterns
@@ -1344,7 +1351,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			continue
 		}
 
-		if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
+		if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
 			basePath := info.pattern
 			if !filepath.IsAbs(info.pattern) {
 				basePath = filepath.Join(m.workDir, info.pattern)

@@ -1915,9 +1915,10 @@ func (m *Manager) extractRootPaths(patterns []string) []string {
 					rootsMap[basePath] = true
 				}
 			}
-		} else if strings.HasPrefix(pattern, "../") {
+		} else if IsRelativeExternalPath(pattern) {
 			// For relative external paths like ../grove-flow/**/*.go
-			parts := strings.Split(pattern, "/")
+			// Use the already-cleaned pattern to avoid redundant normalization.
+			parts := strings.Split(filepath.ToSlash(filepath.Clean(pattern)), "/")
 			nonGlobParts := []string{}
 			for _, part := range parts {
 				if strings.ContainsAny(part, "*?[") {
