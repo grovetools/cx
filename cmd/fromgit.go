@@ -16,7 +16,21 @@ func NewFromGitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "from-git",
 		Short: "Generate context based on git history",
-		Long:  `Generate context from files in git history based on various criteria like commits, branches, or dates.`,
+		Long: `Generate context from files in git history based on various criteria like commits, branches, or dates.
+
+If a rules file already exists and neither --append nor --force is specified,
+you will be prompted to overwrite, append, or cancel.`,
+		Example: `  # Add staged files to context, overwriting existing rules
+  cx from-git --staged --force
+
+  # Append files from last 5 commits to existing rules
+  cx from-git --commits 5 --append
+
+  # Add files changed since a date (prompts if rules exist)
+  cx from-git --since "2 weeks ago"
+
+  # Add files changed in a branch compared to main
+  cx from-git --branch main..HEAD -f`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager("")
 			
