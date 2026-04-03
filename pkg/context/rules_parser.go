@@ -19,9 +19,13 @@ const (
 	LineTypeAliasPattern
 	LineTypeViewDirective
 	LineTypeCmdDirective
+	LineTypeIncludeDirective
 	LineTypeFindDirective
 	LineTypeGrepDirective
 	LineTypeCombinedDirective
+	LineTypeGrepIDirective
+	LineTypeChangedDirective
+	LineTypeDiffDirective
 	LineTypeOtherDirective
 	LineTypePattern
 	LineTypeEmpty
@@ -63,11 +67,23 @@ var (
 	// Command directive: @cmd:
 	cmdDirectiveRegex = regexp.MustCompile(`^\s*@cmd:`)
 
+	// Include directive: @include:
+	includeDirectiveRegex = regexp.MustCompile(`^\s*@include:`)
+
 	// Find directive: @find: (standalone or inline)
 	findDirectiveRegex = regexp.MustCompile(`@find:`)
 
 	// Grep directive: @grep: (standalone or inline)
 	grepDirectiveRegex = regexp.MustCompile(`@grep:`)
+
+	// Grep-i directive: @grep-i: (standalone or inline, case-insensitive grep)
+	grepIDirectiveRegex = regexp.MustCompile(`@grep-i:`)
+
+	// Changed directive: @changed: (standalone or inline)
+	changedDirectiveRegex = regexp.MustCompile(`@changed:`)
+
+	// Diff directive: @diff: (standalone)
+	diffDirectiveRegex = regexp.MustCompile(`^\s*@diff:`)
 
 	// Other directives: @default, @freeze-cache, @no-expire, @disable-cache, @expire-time
 	otherDirectiveRegex = regexp.MustCompile(`^\s*@(default|freeze-cache|no-expire|disable-cache|expire-time):?`)
@@ -195,6 +211,15 @@ func ParseRulesLine(line string) ParsedLine {
 		}
 	}
 
+	// Include directive
+	if includeDirectiveRegex.MatchString(line) {
+		return ParsedLine{
+			Type:    LineTypeIncludeDirective,
+			Content: line,
+			Parts:   map[string]string{"ruleset": strings.TrimSpace(strings.TrimPrefix(trimmed, "@include:"))},
+		}
+	}
+
 	// Find directive (standalone or inline)
 	if hasFind {
 		parts := parseSearchDirectiveLine(trimmed, "@find:")
@@ -205,11 +230,41 @@ func ParseRulesLine(line string) ParsedLine {
 		}
 	}
 
+	// Grep-i directive (standalone or inline) - must be checked before @grep:
+	if grepIDirectiveRegex.MatchString(line) {
+		parts := parseSearchDirectiveLine(trimmed, "@grep-i:")
+		return ParsedLine{
+			Type:    LineTypeGrepIDirective,
+			Content: line,
+			Parts:   parts,
+		}
+	}
+
 	// Grep directive (standalone or inline)
 	if hasGrep {
 		parts := parseSearchDirectiveLine(trimmed, "@grep:")
 		return ParsedLine{
 			Type:    LineTypeGrepDirective,
+			Content: line,
+			Parts:   parts,
+		}
+	}
+
+	// Changed directive (standalone or inline)
+	if changedDirectiveRegex.MatchString(line) {
+		parts := parseSearchDirectiveLine(trimmed, "@changed:")
+		return ParsedLine{
+			Type:    LineTypeChangedDirective,
+			Content: line,
+			Parts:   parts,
+		}
+	}
+
+	// Diff directive (standalone)
+	if diffDirectiveRegex.MatchString(line) {
+		parts := map[string]string{"ref": strings.TrimSpace(strings.TrimPrefix(trimmed, "@diff:"))}
+		return ParsedLine{
+			Type:    LineTypeDiffDirective,
 			Content: line,
 			Parts:   parts,
 		}
@@ -352,13 +407,17 @@ func parseSearchDirectiveLine(line, prefix string) map[string]string {
 		parts["search"] = strings.TrimSpace(strings.TrimPrefix(line, prefix))
 	}
 
-	// Extract quoted query if present
-	if strings.Contains(parts["search"], "\"") {
-		start := strings.Index(parts["search"], "\"")
-		end := strings.LastIndex(parts["search"], "\"")
-		if start != -1 && end != -1 && start < end {
-			parts["query"] = parts["search"][start+1 : end]
+	// Extract quoted query if present, otherwise use unquoted search as query
+	if strings.HasPrefix(parts["search"], "\"") {
+		if end := strings.Index(parts["search"][1:], "\""); end != -1 {
+			parts["query"] = parts["search"][1 : end+1]
 		}
+	} else if prefix == "@changed:" {
+		// @changed: does not require quotes around the ref
+		parts["query"] = parts["search"]
+	}
+	if parts["query"] == "" && parts["search"] != "" {
+		parts["query"] = parts["search"]
 	}
 
 	return parts

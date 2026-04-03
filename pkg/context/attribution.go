@@ -193,12 +193,16 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 			if baseMatch && !rule.IsExclude {
 				if len(rule.Directives) > 0 {
-					directiveFiltered, err := m.applyDirectiveFilter([]string{file}, rule.Directives)
-					if err == nil && len(directiveFiltered) > 0 {
-						// Match is valid only if directive passes
+					allMatch := true
+					for _, d := range rule.Directives {
+						if !m.matchDirective(file, d.Name, d.Query) {
+							allMatch = false
+							break
+						}
+					}
+					if allMatch {
 						matchingInclusionRules = append(matchingInclusionRules, rule)
 					}
-					// If directive filters the file out, it's not a match for this rule.
 				} else {
 					// Match is valid
 					matchingInclusionRules = append(matchingInclusionRules, rule)
@@ -271,10 +275,12 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 
 			// If the pattern matches, check if directive filter passes (if present)
 			if match && len(rule.Directives) > 0 && !rule.IsExclude {
-				// Apply directive filter
-				filteredResult, err := m.applyDirectiveFilter([]string{file}, rule.Directives)
-				if err != nil || len(filteredResult) == 0 {
-					match = false
+				// Apply directive filters (AND logic - all must match)
+				for _, d := range rule.Directives {
+					if !m.matchDirective(file, d.Name, d.Query) {
+						match = false
+						break
+					}
 				}
 			}
 

@@ -21,6 +21,8 @@ type GitOptions struct {
 	Branch  string // Include files changed in branch (e.g., main..HEAD)
 	Staged  bool   // Include only staged files
 	Commits int    // Include files from last N commits
+	Append  bool   // Append to existing rules instead of overwriting
+	Force   bool   // Force overwrite of existing rules without prompting
 }
 
 // UpdateFromGit updates the context files list based on git history
@@ -90,11 +92,42 @@ func (m *Manager) UpdateFromGit(opts GitOptions) error {
 
 	// Write to .grove/rules as explicit file paths
 	rulesPath := filepath.Join(m.workDir, ActiveRulesFile)
-	if err := m.WriteFilesList(rulesPath, fileList); err != nil {
-		return err
+
+	// Check if file exists and prompt if neither --force nor --append
+	if _, err := os.Stat(rulesPath); err == nil {
+		if !opts.Force && !opts.Append {
+			fmt.Printf("Rules file %s already exists. [o]verwrite, [a]ppend, or [c]ancel? [c]: ", rulesPath)
+
+			reader := bufio.NewReader(os.Stdin)
+			response, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("operation cancelled")
+			}
+
+			response = strings.ToLower(strings.TrimSpace(response))
+			switch response {
+			case "o", "overwrite":
+				// proceed with overwrite
+			case "a", "append":
+				opts.Append = true
+			default:
+				return fmt.Errorf("operation cancelled")
+			}
+		}
 	}
 
-	fmt.Printf("Updated %s with %d explicit file paths from git\n", rulesPath, len(fileList))
+	if opts.Append {
+		if err := m.AppendFilesList(rulesPath, fileList); err != nil {
+			return err
+		}
+		fmt.Printf("Appended %d explicit file paths from git to %s\n", len(fileList), rulesPath)
+	} else {
+		if err := m.WriteFilesList(rulesPath, fileList); err != nil {
+			return err
+		}
+		fmt.Printf("Updated %s with %d explicit file paths from git\n", rulesPath, len(fileList))
+	}
+
 	return nil
 }
 
@@ -184,6 +217,110 @@ func parseGitFileList(output []byte) []string {
 	}
 
 	return files
+}
+
+// getChangedFiles returns a list of files changed relative to a git ref.
+// Special refs: "staged" uses --cached, "unstaged" diffs working tree, empty defaults to HEAD.
+func (m *Manager) getChangedFiles(ref string) ([]string, error) {
+	ref = strings.TrimSpace(ref)
+	args := []string{"diff", "--name-only"}
+
+	switch {
+	case ref == "staged":
+		args = append(args, "--cached")
+	case ref == "unstaged":
+		// diff against working tree, no extra args
+	case ref != "":
+		args = append(args, strings.Fields(ref)...)
+	default:
+		args = append(args, "HEAD")
+	}
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = m.workDir
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get changed files for ref %q: %w", ref, err)
+	}
+
+	var existing []string
+	for _, file := range parseGitFileList(output) {
+		if _, statErr := os.Stat(filepath.Join(m.workDir, file)); statErr == nil {
+			existing = append(existing, file)
+		}
+	}
+	return existing, nil
+}
+
+// getChangedFilesCached is a thread-safe cached wrapper around getChangedFiles.
+func (m *Manager) getChangedFilesCached(ref string) (map[string]bool, error) {
+	m.changedFilesMutex.Lock()
+	if cached, ok := m.changedFilesCache[ref]; ok {
+		m.changedFilesMutex.Unlock()
+		return cached, nil
+	}
+	m.changedFilesMutex.Unlock()
+
+	files, err := m.getChangedFiles(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]bool, len(files))
+	for _, f := range files {
+		result[f] = true
+	}
+
+	m.changedFilesMutex.Lock()
+	m.changedFilesCache[ref] = result
+	m.changedFilesMutex.Unlock()
+
+	return result, nil
+}
+
+// generateDiffFile creates a .patch file containing the unified diff for a given ref.
+func (m *Manager) generateDiffFile(ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	args := []string{"diff"}
+
+	switch {
+	case ref == "staged":
+		args = append(args, "--cached")
+	case ref == "unstaged":
+		// diff against working tree
+	case ref != "":
+		args = append(args, strings.Fields(ref)...)
+	default:
+		args = append(args, "HEAD")
+	}
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = m.workDir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate diff for ref %q: %w", ref, err)
+	}
+
+	diffsDir := filepath.Join(m.workDir, GroveDir, "diffs")
+	if err := os.MkdirAll(diffsDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create diffs directory: %w", err)
+	}
+
+	safeRef := strings.NewReplacer(" ", "-", "/", "-").Replace(ref)
+	if safeRef == "" {
+		safeRef = "HEAD"
+	}
+
+	patchPath := filepath.Join(diffsDir, fmt.Sprintf("diff-%s.patch", safeRef))
+	if err := os.WriteFile(patchPath, output, 0644); err != nil {
+		return "", fmt.Errorf("failed to write patch file: %w", err)
+	}
+
+	absPath, err := filepath.Abs(patchPath)
+	if err != nil {
+		return patchPath, nil
+	}
+	return absPath, nil
 }
 
 // GetGitInfo returns information about the current git state

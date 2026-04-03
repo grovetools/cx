@@ -28,6 +28,8 @@ type parsedRules struct {
 	coldDefaultPaths     []string
 	mainImportedRuleSets []ImportInfo
 	coldImportedRuleSets []ImportInfo
+	mainIncludes         []ImportInfo
+	coldIncludes         []ImportInfo
 	viewPaths            []string
 	conceptIDs           []string // Concept IDs to resolve via @concept: directive
 	freezeCache          bool
@@ -495,7 +497,7 @@ func splitByComma(s string) []string {
 	return results
 }
 
-// parseSearchDirectives parses a line for search directives (@find: or @grep:)
+// parseSearchDirectives parses a line for search directives (@find:, @grep:, @grep-i:, or @changed:)
 // Returns: basePattern, directives, hasDirectives
 // Supports multiple directives on the same line acting as AND filters.
 // Example: "pkg/**/*.go @find: \"api\" @grep: \"User\"" -> "pkg/**/*.go", [{Name: "find", Query: "api"}, {Name: "grep", Query: "User"}], true
@@ -503,12 +505,14 @@ func parseSearchDirectives(line string) (basePattern string, directives []Search
 	// Find the position of the first directive
 	findIdx := strings.Index(line, " @find: ")
 	grepIdx := strings.Index(line, " @grep: ")
+	grepIIdx := strings.Index(line, " @grep-i: ")
+	changedIdx := strings.Index(line, " @changed: ")
 
 	firstDirIdx := -1
-	if findIdx != -1 && (grepIdx == -1 || findIdx < grepIdx) {
-		firstDirIdx = findIdx
-	} else if grepIdx != -1 {
-		firstDirIdx = grepIdx
+	for _, idx := range []int{findIdx, grepIdx, grepIIdx, changedIdx} {
+		if idx != -1 && (firstDirIdx == -1 || idx < firstDirIdx) {
+			firstDirIdx = idx
+		}
 	}
 
 	if firstDirIdx == -1 {
@@ -518,38 +522,87 @@ func parseSearchDirectives(line string) (basePattern string, directives []Search
 	basePattern = strings.TrimSpace(line[:firstDirIdx])
 	remainder := line[firstDirIdx:]
 
-	for {
-		fIdx := strings.Index(remainder, " @find: ")
-		gIdx := strings.Index(remainder, " @grep: ")
+	// Known directive markers
+	dirMarkers := []struct {
+		marker string
+		name   string
+	}{
+		{" @grep-i: ", "grep-i"},
+		{" @find: ", "find"},
+		{" @grep: ", "grep"},
+		{" @changed: ", "changed"},
+	}
 
-		if fIdx == -1 && gIdx == -1 {
+	for {
+		// Find the earliest directive in remainder
+		bestIdx := -1
+		var bestName, bestMarker string
+		for _, dm := range dirMarkers {
+			idx := strings.Index(remainder, dm.marker)
+			if idx != -1 && (bestIdx == -1 || idx < bestIdx) {
+				bestIdx = idx
+				bestName = dm.name
+				bestMarker = dm.marker
+			}
+		}
+		if bestIdx == -1 {
 			break
 		}
 
-		var dName string
-		var dIdx int
-		if fIdx != -1 && (gIdx == -1 || fIdx < gIdx) {
-			dName = "find"
-			dIdx = fIdx
-		} else {
-			dName = "grep"
-			dIdx = gIdx
+		queryPart := strings.TrimSpace(remainder[bestIdx+len(bestMarker):])
+
+		// For @changed:, quotes are optional
+		if bestName == "changed" {
+			query := queryPart
+			// Consume until next directive or end
+			for _, dm := range dirMarkers {
+				if idx := strings.Index(query, dm.marker); idx != -1 {
+					query = strings.TrimSpace(query[:idx])
+					break
+				}
+			}
+			if len(query) >= 2 && query[0] == '"' && query[len(query)-1] == '"' {
+				query = query[1 : len(query)-1]
+			}
+			directives = append(directives, SearchDirective{Name: bestName, Query: query})
+			advance := bestIdx + len(bestMarker) + len(query)
+			if advance < len(remainder) {
+				remainder = remainder[advance:]
+			} else {
+				break
+			}
+			continue
 		}
 
-		queryPart := strings.TrimSpace(remainder[dIdx+len(" @"+dName+": "):])
+		// Try quoted query
 		if len(queryPart) >= 2 && queryPart[0] == '"' {
 			endQuote := strings.Index(queryPart[1:], "\"")
 			if endQuote != -1 {
 				query := queryPart[1 : endQuote+1]
-				directives = append(directives, SearchDirective{Name: dName, Query: query})
-
-				// Advance past the closing quote
-				advance := dIdx + len(" @"+dName+": ") + endQuote + 2
+				directives = append(directives, SearchDirective{Name: bestName, Query: query})
+				advance := bestIdx + len(bestMarker) + endQuote + 2
 				if advance < len(remainder) {
 					remainder = remainder[advance:]
 				} else {
 					break
 				}
+				continue
+			}
+		}
+
+		// Unquoted query — consume until next directive or end of string
+		query := queryPart
+		for _, dm := range dirMarkers {
+			if idx := strings.Index(query, dm.marker); idx != -1 {
+				query = strings.TrimSpace(query[:idx])
+				break
+			}
+		}
+		if query != "" {
+			directives = append(directives, SearchDirective{Name: bestName, Query: query})
+			advance := bestIdx + len(bestMarker) + len(query)
+			if advance < len(remainder) {
+				remainder = remainder[advance:]
 			} else {
 				break
 			}
@@ -663,14 +716,47 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			}
 			continue
 		}
+		if strings.HasPrefix(line, "@include:") {
+			rulePart, directives, _ := parseSearchDirectives(line)
+			includeName := strings.TrimSpace(strings.TrimPrefix(rulePart, "@include:"))
+			if includeName != "" {
+				info := ImportInfo{
+					OriginalLine:     line,
+					ImportIdentifier: includeName,
+					LineNum:          lineNum,
+					Directives:       directives,
+				}
+				if inColdSection {
+					results.coldIncludes = append(results.coldIncludes, info)
+				} else {
+					results.mainIncludes = append(results.mainIncludes, info)
+				}
+			}
+			continue
+		}
 		// Handle global @find: directive
 		if strings.HasPrefix(line, "@find:") {
 			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@find:"))
+			// Parse the quoted or unquoted query
+			if len(queryPart) >= 2 && queryPart[0] == '"' {
+				if endQuote := strings.Index(queryPart[1:], "\""); endQuote != -1 {
+					globalDirectives = append(globalDirectives, SearchDirective{Name: "find", Query: queryPart[1 : endQuote+1]})
+					continue
+				}
+			}
+			if queryPart != "" {
+				globalDirectives = append(globalDirectives, SearchDirective{Name: "find", Query: queryPart})
+			}
+			continue
+		}
+		// Handle global @grep-i: directive (must be checked before @grep:)
+		if strings.HasPrefix(line, "@grep-i:") {
+			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@grep-i:"))
 			// Parse the quoted query
 			if len(queryPart) >= 2 && queryPart[0] == '"' {
 				endQuote := strings.Index(queryPart[1:], "\"")
 				if endQuote != -1 {
-					globalDirectives = append(globalDirectives, SearchDirective{Name: "find", Query: queryPart[1 : endQuote+1]})
+					globalDirectives = append(globalDirectives, SearchDirective{Name: "grep-i", Query: queryPart[1 : endQuote+1]})
 				}
 			}
 			continue
@@ -678,11 +764,51 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 		// Handle global @grep: directive
 		if strings.HasPrefix(line, "@grep:") {
 			queryPart := strings.TrimSpace(strings.TrimPrefix(line, "@grep:"))
-			// Parse the quoted query
+			// Parse the quoted or unquoted query
 			if len(queryPart) >= 2 && queryPart[0] == '"' {
-				endQuote := strings.Index(queryPart[1:], "\"")
-				if endQuote != -1 {
+				if endQuote := strings.Index(queryPart[1:], "\""); endQuote != -1 {
 					globalDirectives = append(globalDirectives, SearchDirective{Name: "grep", Query: queryPart[1 : endQuote+1]})
+					continue
+				}
+			}
+			if queryPart != "" {
+				globalDirectives = append(globalDirectives, SearchDirective{Name: "grep", Query: queryPart})
+			}
+			continue
+		}
+		// Handle standalone @changed: directive — expands to list of changed files
+		if strings.HasPrefix(line, "@changed:") {
+			ref := strings.TrimSpace(strings.TrimPrefix(line, "@changed:"))
+			if len(ref) >= 2 && ref[0] == '"' && ref[len(ref)-1] == '"' {
+				ref = ref[1 : len(ref)-1]
+			}
+			files, err := m.getChangedFiles(ref)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to get changed files for %q: %v\n", ref, err)
+			} else {
+				for _, file := range files {
+					ruleInfo := RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum}
+					if inColdSection {
+						results.coldRules = append(results.coldRules, ruleInfo)
+					} else {
+						results.hotRules = append(results.hotRules, ruleInfo)
+					}
+				}
+			}
+			continue
+		}
+		// Handle standalone @diff: directive — generates a .patch file
+		if strings.HasPrefix(line, "@diff:") {
+			ref := strings.TrimSpace(strings.TrimPrefix(line, "@diff:"))
+			diffFile, err := m.generateDiffFile(ref)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to generate diff for %q: %v\n", ref, err)
+			} else if diffFile != "" {
+				ruleInfo := RuleInfo{Pattern: diffFile, IsExclude: false, LineNum: lineNum}
+				if inColdSection {
+					results.coldRules = append(results.coldRules, ruleInfo)
+				} else {
+					results.hotRules = append(results.hotRules, ruleInfo)
 				}
 			}
 			continue
