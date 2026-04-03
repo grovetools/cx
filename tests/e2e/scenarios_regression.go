@@ -10,6 +10,118 @@ import (
 	"github.com/grovetools/tend/pkg/harness"
 )
 
+// EmptyPatternResolveScenario tests that empty, whitespace-only, and empty view patterns
+// return a validation error instead of walking the root filesystem.
+func EmptyPatternResolveScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-empty-pattern-resolve",
+		Description: "Tests that empty, whitespace-only, and empty view patterns return an error and do not walk the filesystem.",
+		Tags:        []string{"cx", "resolve", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Run 'cx resolve' with empty string", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cx, "resolve", "").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error == nil {
+					return fmt.Errorf("expected error when resolving empty pattern, got success")
+				}
+				if !strings.Contains(result.Stderr, "empty rule pattern provided") && !strings.Contains(result.Error.Error(), "empty rule pattern provided") {
+					return fmt.Errorf("expected 'empty rule pattern provided' error, got: %v / %s", result.Error, result.Stderr)
+				}
+				return nil
+			}),
+			harness.NewStep("Run 'cx resolve' with whitespace string", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cx, "resolve", "   ").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error == nil {
+					return fmt.Errorf("expected error when resolving whitespace pattern, got success")
+				}
+				if !strings.Contains(result.Stderr, "empty rule pattern provided") && !strings.Contains(result.Error.Error(), "empty rule pattern provided") {
+					return fmt.Errorf("expected 'empty rule pattern provided' error, got: %v / %s", result.Error, result.Stderr)
+				}
+				return nil
+			}),
+			harness.NewStep("Run 'cx resolve' with empty @view prefix", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cx, "resolve", "@view:   ").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error == nil {
+					return fmt.Errorf("expected error when resolving empty @view pattern, got success")
+				}
+				if !strings.Contains(result.Stderr, "empty rule pattern provided") && !strings.Contains(result.Error.Error(), "empty rule pattern provided") {
+					return fmt.Errorf("expected 'empty rule pattern provided' error, got: %v / %s", result.Error, result.Stderr)
+				}
+				return nil
+			}),
+		},
+	}
+}
+
+// EmptyRuleFilePatternsScenario tests that blank lines, whitespace, standalone exclusion marks (!),
+// or empty brace expansions in a rules file are ignored and do not walk the root filesystem.
+func EmptyRuleFilePatternsScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-empty-rule-file-patterns",
+		Description: "Tests that blank lines, whitespace, standalone exclusion marks (!), or empty brace expansions in a rules file are ignored.",
+		Tags:        []string{"cx", "rules", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project with empty/invalid rules", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Test"); err != nil {
+					return err
+				}
+				rulesContent := "\n!\n   \n{,  }\n{ , }\nREADME.md\n"
+				rulesPath := filepath.Join(ctx.RootDir, ".grove", "rules")
+				return fs.WriteString(rulesPath, rulesContent)
+			}),
+			harness.NewStep("Run 'cx list' and verify only valid patterns are resolved", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+
+				if !strings.Contains(output, "README.md") {
+					return fmt.Errorf("output should contain README.md")
+				}
+
+				if strings.Contains(output, "main.go") {
+					return fmt.Errorf("output should not contain main.go; empty patterns likely matched the root directory")
+				}
+				return nil
+			}),
+		},
+	}
+}
+
 // GitignoreStyleBasenameExclusionScenario tests that a floating, literal exclusion pattern
 // (e.g., !main.go) correctly excludes files with that basename in any subdirectory.
 func GitignoreStyleBasenameExclusionScenario() *harness.Scenario {

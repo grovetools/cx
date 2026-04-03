@@ -1151,12 +1151,25 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		return []string{}, nil
 	}
 
-	// Step 1: Apply brace expansion to all incoming patterns
+	// Step 1: Apply brace expansion to all incoming patterns, filtering out empty strings
 	var expandedPatterns []string
 	for _, p := range patterns {
-		expandedPatterns = append(expandedPatterns, ExpandBraces(p)...)
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		for _, expanded := range ExpandBraces(p) {
+			expanded = strings.TrimSpace(expanded)
+			if expanded != "" {
+				expandedPatterns = append(expandedPatterns, expanded)
+			}
+		}
 	}
 	patterns = expandedPatterns
+
+	if len(patterns) == 0 {
+		return []string{}, nil
+	}
 
 	// Step 2: Parse directives BEFORE preprocessing (so we work with clean base patterns)
 	// Build a temporary patternInfos to extract base patterns
@@ -1183,6 +1196,12 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		// If no plain text directive, try encoded format (e.g., "pattern|||find|||query")
 		if !hasDirective {
 			basePattern, directive, query, _ = decodeDirective(cleanPattern)
+		}
+
+		// Skip empty base patterns to prevent root-filesystem walks
+		basePattern = strings.TrimSpace(basePattern)
+		if basePattern == "" {
+			continue
 		}
 
 		tempInfos = append(tempInfos, tempPatternInfo{

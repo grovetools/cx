@@ -134,6 +134,10 @@ func NewResolveCmd() *cobra.Command {
 				trimmedLine = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "@v:"))
 			}
 
+			if trimmedLine == "" {
+				return fmt.Errorf("empty rule pattern provided")
+			}
+
 			// Do not process exclusion rules, as they don't resolve to a file list on their own.
 			if strings.HasPrefix(strings.TrimSpace(trimmedLine), "!") {
 				// Print nothing and exit successfully.

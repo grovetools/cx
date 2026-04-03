@@ -24,6 +24,8 @@ func main() {
 
 		// Regression Scenarios
 		GitignoreStyleBasenameExclusionScenario(),
+		EmptyPatternResolveScenario(),
+		EmptyRuleFilePatternsScenario(),
 
 		// Alias Scenarios
 		AliasWorkflowScenario(),
