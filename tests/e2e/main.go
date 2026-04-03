@@ -164,6 +164,13 @@ func main() {
 		LintOverlyBroadScenario(),
 		LintMultipleIssuesScenario(),
 		LintNoRulesScenario(),
+
+		// Composite Ruleset Scenarios
+		CompositeRulesetBasicScenario(),
+		CompositeRulesetColdContextScenario(),
+		CompositeRulesetPathAndNestedScenario(),
+		CompositeRulesetCircularScenario(),
+		CompositeRulesetSearchDirectiveScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.
