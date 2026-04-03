@@ -132,6 +132,17 @@ func main() {
 		// Path Normalization Scenarios
 		PathNormalizationWorktreeScenario(),
 		// PathNormalizationSymlinkScenario(), // TODO: Fix symlink test
+
+		// Relative Path Scenarios
+		BasicRelativePathScenario(),
+		UncleanedRelativePathScenario(),
+		DoubleDotOnlyScenario(),
+		MultipleParentTraversalScenario(),
+		FloatingInclusionNotAffectedScenario(),
+		RelativeExclusionScenario(),
+		RelativeRecursiveGlobScenario(),
+		RelativeMultipleSiblingsScenario(),
+		TreeRootDiscoveryRelativeScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.
