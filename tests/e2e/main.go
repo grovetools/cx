@@ -100,6 +100,12 @@ func main() {
 		GrepDirectiveScenario(),
 		AliasWithDirectiveScenario(),
 		CombinedDirectivesScenario(),
+		CombinedFindAndGrepDirectiveScenario(),
+		GlobalMultiDirectiveScenario(),
+		MultipleFindDirectivesScenario(),
+		DirectiveAndWithExclusionsScenario(),
+		DirectiveAndInColdContextScenario(),
+		DirectiveAndWithBraceExpansionScenario(),
 
 		// Directive Import Scenarios
 		DirectiveWorkspaceGrepImportScenario(),

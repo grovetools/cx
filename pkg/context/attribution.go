@@ -10,23 +10,27 @@ import (
 	"github.com/grovetools/core/pkg/profiling"
 )
 
+// SearchDirective represents a single search directive (@find: or @grep:) with its query.
+type SearchDirective struct {
+	Name  string `json:"name"`            // e.g., "find" or "grep"
+	Query string `json:"query,omitempty"` // the search query
+}
+
 // RuleInfo holds a parsed rule with its line number and origin.
 type RuleInfo struct {
 	Pattern          string
 	IsExclude        bool
-	LineNum          int    // The line number in its original source file
-	EffectiveLineNum int    // The line number in the root file that caused this rule to be included
-	Directive        string `json:"directive,omitempty"`      // e.g., "find" or "grep"
-	DirectiveQuery   string `json:"directiveQuery,omitempty"` // the search query
+	LineNum          int                // The line number in its original source file
+	EffectiveLineNum int                // The line number in the root file that caused this rule to be included
+	Directives       []SearchDirective  `json:"directives,omitempty"` // search directives (@find:/@grep:)
 }
 
 // ImportInfo holds information about a ruleset import with its line number.
 type ImportInfo struct {
-	OriginalLine     string `json:"originalLine,omitempty"`   // The full original line text
-	ImportIdentifier string // e.g., "project:ruleset"
-	LineNum          int    // The line number where this import appears
-	Directive        string `json:"directive,omitempty"`      // e.g., "find" or "grep"
-	DirectiveQuery   string `json:"directiveQuery,omitempty"` // the search query
+	OriginalLine     string             `json:"originalLine,omitempty"` // The full original line text
+	ImportIdentifier string             // e.g., "project:ruleset"
+	LineNum          int                // The line number where this import appears
+	Directives       []SearchDirective  `json:"directives,omitempty"` // search directives (@find:/@grep:)
 }
 
 // AttributionResult maps a line number to the list of files it includes.
@@ -85,7 +89,7 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		}
 
 		// Check for search directives
-		basePattern, directive, query, hasDirective := parseSearchDirective(line)
+		basePattern, directives, hasDirectives := parseSearchDirectives(line)
 
 		// Apply brace expansion to the base pattern
 		expandedPatterns := ExpandBraces(basePattern)
@@ -105,9 +109,8 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 				EffectiveLineNum: lineNum,
 			}
 
-			if hasDirective {
-				ruleInfo.Directive = directive
-				ruleInfo.DirectiveQuery = query
+			if hasDirectives {
+				ruleInfo.Directives = directives
 			}
 
 			rawRules = append(rawRules, ruleInfo)
@@ -120,10 +123,8 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 	for _, rule := range allRules {
 		if !rule.IsExclude {
 			pattern := rule.Pattern
-			// Encode directive if present
-			if rule.Directive != "" {
-				pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-			}
+			// Encode directives if present
+			pattern = encodeDirectives(pattern, rule.Directives)
 			inclusionPatterns = append(inclusionPatterns, pattern)
 		}
 	}
@@ -137,10 +138,8 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 	allPatterns := []string{}
 	for _, rule := range allRules {
 		pattern := rule.Pattern
-		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		// Encode directives if present
+		pattern = encodeDirectives(pattern, rule.Directives)
 
 		if rule.IsExclude {
 			allPatterns = append(allPatterns, "!"+pattern)
@@ -193,8 +192,8 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			baseMatch := m.matchPattern(rule.Pattern, pathToMatch)
 
 			if baseMatch && !rule.IsExclude {
-				if rule.Directive != "" {
-					directiveFiltered, err := m.applyDirectiveFilter([]string{file}, rule.Directive, rule.DirectiveQuery)
+				if len(rule.Directives) > 0 {
+					directiveFiltered, err := m.applyDirectiveFilter([]string{file}, rule.Directives)
 					if err == nil && len(directiveFiltered) > 0 {
 						// Match is valid only if directive passes
 						matchingInclusionRules = append(matchingInclusionRules, rule)
@@ -271,9 +270,9 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 			match := m.matchPattern(rule.Pattern, pathToMatch)
 
 			// If the pattern matches, check if directive filter passes (if present)
-			if match && rule.Directive != "" && !rule.IsExclude {
+			if match && len(rule.Directives) > 0 && !rule.IsExclude {
 				// Apply directive filter
-				filteredResult, err := m.applyDirectiveFilter([]string{file}, rule.Directive, rule.DirectiveQuery)
+				filteredResult, err := m.applyDirectiveFilter([]string{file}, rule.Directives)
 				if err != nil || len(filteredResult) == 0 {
 					match = false
 				}

@@ -495,46 +495,78 @@ func splitByComma(s string) []string {
 	return results
 }
 
-// parseSearchDirective parses a line for search directives (@find: or @grep:)
-// Returns: basePattern, directive, query, hasDirective
-// Example: "pkg/**/*.go @find: \"manager\"" -> "pkg/**/*.go", "find", "manager", true
-func parseSearchDirective(line string) (basePattern, directive, query string, hasDirective bool) {
-	// Look for @find: or @grep: followed by a quoted string
+// parseSearchDirectives parses a line for search directives (@find: or @grep:)
+// Returns: basePattern, directives, hasDirectives
+// Supports multiple directives on the same line acting as AND filters.
+// Example: "pkg/**/*.go @find: \"api\" @grep: \"User\"" -> "pkg/**/*.go", [{Name: "find", Query: "api"}, {Name: "grep", Query: "User"}], true
+func parseSearchDirectives(line string) (basePattern string, directives []SearchDirective, hasDirectives bool) {
+	// Find the position of the first directive
 	findIdx := strings.Index(line, " @find: ")
 	grepIdx := strings.Index(line, " @grep: ")
 
-	var directiveIdx int
-	var directiveName string
-
+	firstDirIdx := -1
 	if findIdx != -1 && (grepIdx == -1 || findIdx < grepIdx) {
-		directiveIdx = findIdx
-		directiveName = "find"
+		firstDirIdx = findIdx
 	} else if grepIdx != -1 {
-		directiveIdx = grepIdx
-		directiveName = "grep"
-	} else {
-		// No directive found
-		return line, "", "", false
+		firstDirIdx = grepIdx
 	}
 
-	// Extract the base pattern (everything before the directive)
-	basePattern = strings.TrimSpace(line[:directiveIdx])
+	if firstDirIdx == -1 {
+		return line, nil, false
+	}
 
-	// Extract the query (everything after the directive keyword and colon)
-	queryPart := strings.TrimSpace(line[directiveIdx+len(" @"+directiveName+": "):])
+	basePattern = strings.TrimSpace(line[:firstDirIdx])
+	remainder := line[firstDirIdx:]
 
-	// The query should be in quotes
-	if len(queryPart) >= 2 && queryPart[0] == '"' {
-		// Find the closing quote
-		endQuote := strings.Index(queryPart[1:], "\"")
-		if endQuote != -1 {
-			query = queryPart[1 : endQuote+1]
-			return basePattern, directiveName, query, true
+	for {
+		fIdx := strings.Index(remainder, " @find: ")
+		gIdx := strings.Index(remainder, " @grep: ")
+
+		if fIdx == -1 && gIdx == -1 {
+			break
+		}
+
+		var dName string
+		var dIdx int
+		if fIdx != -1 && (gIdx == -1 || fIdx < gIdx) {
+			dName = "find"
+			dIdx = fIdx
+		} else {
+			dName = "grep"
+			dIdx = gIdx
+		}
+
+		queryPart := strings.TrimSpace(remainder[dIdx+len(" @"+dName+": "):])
+		if len(queryPart) >= 2 && queryPart[0] == '"' {
+			endQuote := strings.Index(queryPart[1:], "\"")
+			if endQuote != -1 {
+				query := queryPart[1 : endQuote+1]
+				directives = append(directives, SearchDirective{Name: dName, Query: query})
+
+				// Advance past the closing quote
+				advance := dIdx + len(" @"+dName+": ") + endQuote + 2
+				if advance < len(remainder) {
+					remainder = remainder[advance:]
+				} else {
+					break
+				}
+			} else {
+				break
+			}
+		} else {
+			break
 		}
 	}
 
-	// If we couldn't parse the query properly, treat it as no directive
-	return line, "", "", false
+	return basePattern, directives, len(directives) > 0
+}
+
+// encodeDirectives appends directives to a pattern in |||name|||query format.
+func encodeDirectives(pattern string, directives []SearchDirective) string {
+	for _, d := range directives {
+		pattern = pattern + "|||" + d.Name + "|||" + d.Query
+	}
+	return pattern
 }
 
 // parseRulesFileContent parses the rules file content and extracts patterns, directives, and default paths.
@@ -556,8 +588,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 
 	inColdSection := false
 	// Track global search directives
-	var globalDirective string
-	var globalQuery string
+	var globalDirectives []SearchDirective
 	lineNum := 0 // Track line numbers
 
 	scanner := bufio.NewScanner(bytes.NewReader(rulesContent))
@@ -639,8 +670,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			if len(queryPart) >= 2 && queryPart[0] == '"' {
 				endQuote := strings.Index(queryPart[1:], "\"")
 				if endQuote != -1 {
-					globalDirective = "find"
-					globalQuery = queryPart[1 : endQuote+1]
+					globalDirectives = append(globalDirectives, SearchDirective{Name: "find", Query: queryPart[1 : endQuote+1]})
 				}
 			}
 			continue
@@ -652,8 +682,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			if len(queryPart) >= 2 && queryPart[0] == '"' {
 				endQuote := strings.Index(queryPart[1:], "\"")
 				if endQuote != -1 {
-					globalDirective = "grep"
-					globalQuery = queryPart[1 : endQuote+1]
+					globalDirectives = append(globalDirectives, SearchDirective{Name: "grep", Query: queryPart[1 : endQuote+1]})
 				}
 			}
 			continue
@@ -665,7 +694,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 		if line != "" && !strings.HasPrefix(line, "#") {
 			// First, parse out any inline search directives from the line.
 			// The rest of the logic will operate on the `rulePart`.
-			rulePart, directive, query, hasInlineDirective := parseSearchDirective(line)
+			rulePart, directives, hasInlineDirectives := parseSearchDirectives(line)
 
 			// Check for Git alias ruleset imports first (e.g., @a:git:owner/repo::ruleset)
 			// These need special handling to convert to GitHub URLs before processing
@@ -713,16 +742,14 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 								OriginalLine:     line,
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
-								Directive:        directive,
-								DirectiveQuery:   query,
+								Directives:       directives,
 							})
 						} else {
 							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
 								OriginalLine:     line,
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
-								Directive:        directive,
-								DirectiveQuery:   query,
+								Directives:       directives,
 							})
 						}
 					}
@@ -758,16 +785,14 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 								OriginalLine:     line,
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
-								Directive:        directive,
-								DirectiveQuery:   query,
+								Directives:       directives,
 							})
 						} else {
 							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
 								OriginalLine:     line,
 								ImportIdentifier: importIdentifier,
 								LineNum:          lineNum,
-								Directive:        directive,
-								DirectiveQuery:   query,
+								Directives:       directives,
 							})
 						}
 					}
@@ -859,7 +884,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					pathToValidate = strings.TrimPrefix(pathToValidate, "!")
 				}
 				// Parse out any search directives to get the base path
-				basePathForValidation, _, _, _ := parseSearchDirective(pathToValidate)
+				basePathForValidation, _, _ := parseSearchDirectives(pathToValidate)
 				// Extract just the directory part (remove glob patterns)
 				// For patterns like "/path/to/project/**" or "/path/to/project/src/**/*.go"
 				// we want to extract the project root path
@@ -889,7 +914,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 				// If the resolved line is just a directory path (no glob pattern),
 				// append /** to match all files in that directory
 				// Check the base pattern part before any directives
-				baseForCheck, _, _, _ := parseSearchDirective(processedLine)
+				baseForCheck, _, _ := parseSearchDirectives(processedLine)
 				if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
 					// Check if the path is actually a directory before appending /**
 					checkPath := baseForCheck
@@ -981,11 +1006,10 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			// Now we check if we should apply a global directive.
 			basePattern := processedLine
 
-			// If no inline directive but there's a global directive, use that
-			if !hasInlineDirective && globalDirective != "" {
-				directive = globalDirective
-				query = globalQuery
-				hasInlineDirective = true // Mark that a directive is now active
+			// If no inline directives but there are global directives, use them
+			if !hasInlineDirectives && len(globalDirectives) > 0 {
+				directives = globalDirectives
+				hasInlineDirectives = true // Mark that directives are now active
 			}
 
 			// Apply brace expansion to the base pattern
@@ -1005,9 +1029,8 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					IsExclude: isExclude,
 					LineNum:   lineNum,
 				}
-				if hasInlineDirective {
-					ruleInfo.Directive = directive
-					ruleInfo.DirectiveQuery = query
+				if hasInlineDirectives {
+					ruleInfo.Directives = directives
 				}
 
 				if inColdSection {

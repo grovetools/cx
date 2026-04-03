@@ -21,6 +21,7 @@ const (
 	LineTypeCmdDirective
 	LineTypeFindDirective
 	LineTypeGrepDirective
+	LineTypeCombinedDirective
 	LineTypeOtherDirective
 	LineTypePattern
 	LineTypeEmpty
@@ -174,8 +175,28 @@ func ParseRulesLine(line string) ParsedLine {
 		}
 	}
 
+	// Combined find+grep directive (must be checked before individual directives)
+	hasFind := findDirectiveRegex.MatchString(line)
+	hasGrep := grepDirectiveRegex.MatchString(line)
+	if hasFind && hasGrep {
+		findParts := parseSearchDirectiveLine(trimmed, "@find:")
+		grepParts := parseSearchDirectiveLine(trimmed, "@grep:")
+		parts := make(map[string]string)
+		for k, v := range findParts {
+			parts["find_"+k] = v
+		}
+		for k, v := range grepParts {
+			parts["grep_"+k] = v
+		}
+		return ParsedLine{
+			Type:    LineTypeCombinedDirective,
+			Content: line,
+			Parts:   parts,
+		}
+	}
+
 	// Find directive (standalone or inline)
-	if findDirectiveRegex.MatchString(line) {
+	if hasFind {
 		parts := parseSearchDirectiveLine(trimmed, "@find:")
 		return ParsedLine{
 			Type:    LineTypeFindDirective,
@@ -185,7 +206,7 @@ func ParseRulesLine(line string) ParsedLine {
 	}
 
 	// Grep directive (standalone or inline)
-	if grepDirectiveRegex.MatchString(line) {
+	if hasGrep {
 		parts := parseSearchDirectiveLine(trimmed, "@grep:")
 		return ParsedLine{
 			Type:    LineTypeGrepDirective,

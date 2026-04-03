@@ -1653,9 +1653,7 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	var allPatterns []string
 	for _, rule := range hotRules {
 		pattern := rule.Pattern
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			allPatterns = append(allPatterns, "!"+pattern)
 		} else {
@@ -1664,9 +1662,7 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	}
 	for _, rule := range coldRules {
 		pattern := rule.Pattern
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			allPatterns = append(allPatterns, "!"+pattern)
 		} else {

@@ -56,9 +56,7 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 	for i, rule := range hotRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			hotPatterns[i] = "!" + pattern
 		} else {
@@ -70,9 +68,7 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 	for i, rule := range coldRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			coldPatterns[i] = "!" + pattern
 		} else {
