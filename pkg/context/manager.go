@@ -67,8 +67,10 @@ type PlanRule struct {
 type Manager struct {
 	workDir         string
 	locator         *workspace.NotebookLocator // Notebook locator for centralized context paths
-	gitIgnoredCache map[string]map[string]bool // Cache for gitignored files by repository root
-	gitIgnoredMutex sync.RWMutex               // Mutex to protect gitIgnoredCache
+	gitIgnoredCache   map[string]map[string]bool // Cache for gitignored files by repository root
+	gitIgnoredMutex   sync.RWMutex               // Mutex to protect gitIgnoredCache
+	changedFilesCache map[string]map[string]bool // Cache for changed files by git ref
+	changedFilesMutex sync.Mutex                 // Mutex to protect changedFilesCache
 	aliasResolver   *alias.AliasResolver       // Lazily initialized alias resolver
 	allowedRoots    []string
 	allowedRootsErr error
@@ -98,8 +100,9 @@ func NewManager(workDir string) *Manager {
 	return &Manager{
 		workDir:         workDir,
 		locator:         workspace.NewNotebookLocator(cfg),
-		gitIgnoredCache: make(map[string]map[string]bool),
-		aliasResolver:   nil, // Lazily initialized
+		gitIgnoredCache:   make(map[string]map[string]bool),
+		changedFilesCache: make(map[string]map[string]bool),
+		aliasResolver:     nil, // Lazily initialized
 		log:             grovelogging.NewLogger("grove-context"),
 		ulog:            grovelogging.NewUnifiedLogger("cx.context"),
 		daemonClient:    daemon.NewWithAutoStart(),

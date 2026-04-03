@@ -1124,6 +1124,19 @@ func (m *Manager) matchDirective(file, directive, query string) bool {
 		}
 		return false
 	}
+	if directive == "changed" {
+		// @changed: filter files to only those in the git changed set
+		changedMap, err := m.getChangedFilesCached(query)
+		if err != nil {
+			return false
+		}
+		relPath, relErr := filepath.Rel(m.workDir, file)
+		if relErr != nil {
+			relPath = file
+		}
+		relPath = filepath.ToSlash(relPath)
+		return changedMap[relPath]
+	}
 	if directive == "grep" || directive == "grep-i" {
 		filePath := file
 		if !filepath.IsAbs(file) {

@@ -495,14 +495,15 @@ func splitByComma(s string) []string {
 	return results
 }
 
-// parseSearchDirective parses a line for search directives (@find:, @grep:, or @grep-i:)
+// parseSearchDirective parses a line for search directives (@find:, @grep:, @grep-i:, or @changed:)
 // Returns: basePattern, directive, query, hasDirective
 // Example: "pkg/**/*.go @find: \"manager\"" -> "pkg/**/*.go", "find", "manager", true
 func parseSearchDirective(line string) (basePattern, directive, query string, hasDirective bool) {
-	// Look for @find:, @grep:, or @grep-i: followed by a quoted string
+	// Look for @find:, @grep:, @grep-i:, or @changed:
 	findIdx := strings.Index(line, " @find: ")
 	grepIdx := strings.Index(line, " @grep: ")
 	grepIIdx := strings.Index(line, " @grep-i: ")
+	changedIdx := strings.Index(line, " @changed: ")
 
 	var directiveIdx int = -1
 	var directiveName string
@@ -520,6 +521,10 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 		directiveIdx = grepIIdx
 		directiveName = "grep-i"
 	}
+	if changedIdx != -1 && (directiveIdx == -1 || changedIdx < directiveIdx) {
+		directiveIdx = changedIdx
+		directiveName = "changed"
+	}
 
 	if directiveIdx == -1 {
 		// No directive found
@@ -531,6 +536,15 @@ func parseSearchDirective(line string) (basePattern, directive, query string, ha
 
 	// Extract the query (everything after the directive keyword and colon)
 	queryPart := strings.TrimSpace(line[directiveIdx+len(" @"+directiveName+": "):])
+
+	// For @changed:, quotes are optional
+	if directiveName == "changed" {
+		query = queryPart
+		if len(query) >= 2 && query[0] == '"' && query[len(query)-1] == '"' {
+			query = query[1 : len(query)-1]
+		}
+		return basePattern, directiveName, query, true
+	}
 
 	// The query may be in quotes
 	if len(queryPart) >= 2 && queryPart[0] == '"' {
@@ -690,6 +704,43 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			if queryPart != "" {
 				globalDirective = "grep"
 				globalQuery = queryPart
+			}
+			continue
+		}
+		// Handle standalone @changed: directive — expands to list of changed files
+		if strings.HasPrefix(line, "@changed:") {
+			ref := strings.TrimSpace(strings.TrimPrefix(line, "@changed:"))
+			if len(ref) >= 2 && ref[0] == '"' && ref[len(ref)-1] == '"' {
+				ref = ref[1 : len(ref)-1]
+			}
+			files, err := m.getChangedFiles(ref)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to get changed files for %q: %v\n", ref, err)
+			} else {
+				for _, file := range files {
+					ruleInfo := RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum}
+					if inColdSection {
+						results.coldRules = append(results.coldRules, ruleInfo)
+					} else {
+						results.hotRules = append(results.hotRules, ruleInfo)
+					}
+				}
+			}
+			continue
+		}
+		// Handle standalone @diff: directive — generates a .patch file
+		if strings.HasPrefix(line, "@diff:") {
+			ref := strings.TrimSpace(strings.TrimPrefix(line, "@diff:"))
+			diffFile, err := m.generateDiffFile(ref)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to generate diff for %q: %v\n", ref, err)
+			} else if diffFile != "" {
+				ruleInfo := RuleInfo{Pattern: diffFile, IsExclude: false, LineNum: lineNum}
+				if inColdSection {
+					results.coldRules = append(results.coldRules, ruleInfo)
+				} else {
+					results.hotRules = append(results.hotRules, ruleInfo)
+				}
 			}
 			continue
 		}
