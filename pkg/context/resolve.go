@@ -1,10 +1,12 @@
 package context
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,12 +22,17 @@ import (
 
 var log = logging.NewLogger("cx.context.resolve")
 
-// patternInfo holds information about a pattern including any associated directive
+// IsRelativeExternalPath checks if a pattern refers to a path outside the current directory.
+func IsRelativeExternalPath(pattern string) bool {
+	normPattern := filepath.ToSlash(filepath.Clean(pattern))
+	return normPattern == ".." || strings.HasPrefix(normPattern, "../")
+}
+
+// patternInfo holds information about a pattern including any associated directives
 type patternInfo struct {
-	pattern   string
-	directive string
-	query     string
-	isExclude bool
+	pattern    string
+	directives []SearchDirective
+	isExclude  bool
 }
 
 // patternMatcher holds pre-processed patterns and provides a method to classify files.
@@ -97,7 +104,7 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 		}
 
 		// Floating inclusion patterns should not match external files.
-		isFloatingInclusion := !info.isExclude && !strings.Contains(info.pattern, "/") && !filepath.IsAbs(info.pattern) && !strings.HasPrefix(info.pattern, "..")
+		isFloatingInclusion := !info.isExclude && !strings.Contains(info.pattern, "/") && !filepath.IsAbs(info.pattern) && !IsRelativeExternalPath(info.pattern)
 		if isFloatingInclusion && isExternal {
 			continue
 		}
@@ -108,7 +115,8 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 
 		if filepath.IsAbs(cleanPattern) {
 			matchPath = filepath.ToSlash(path)
-		} else if strings.HasPrefix(cleanPattern, "../") {
+		} else if IsRelativeExternalPath(cleanPattern) {
+			cleanPattern = filepath.ToSlash(filepath.Clean(cleanPattern))
 			relFromWorkDir, err := filepath.Rel(pm.workDir, path)
 			if err == nil {
 				matchPath = filepath.ToSlash(relFromWorkDir)
@@ -122,11 +130,17 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 			if info.isExclude {
 				isValidMatch = true
 			} else { // It's an inclusion pattern
-				if info.directive == "" {
+				if len(info.directives) == 0 {
 					isValidMatch = true
 				} else {
-					filtered, err := m.applyDirectiveFilter([]string{path}, info.directive, info.query)
-					if err == nil && len(filtered) > 0 {
+					allMatch := true
+					for _, d := range info.directives {
+						if !m.matchDirective(path, d.Name, d.Query) {
+							allMatch = false
+							break
+						}
+					}
+					if allMatch {
 						isValidMatch = true
 					}
 				}
@@ -162,9 +176,7 @@ func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, e
 	for i, rule := range mainRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			mainPatterns[i] = "!" + pattern
 		} else {
@@ -176,9 +188,7 @@ func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, e
 	for i, rule := range coldRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			coldPatterns[i] = "!" + pattern
 		} else {
@@ -250,6 +260,38 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	mainImports := parsed.mainImportedRuleSets
 	coldImports := parsed.coldImportedRuleSets
 	localView := parsed.viewPaths
+	rulesDir := filepath.Dir(absRulesPath)
+
+	// Process @include: directives before local rules so local rules can override them
+	for _, includeInfo := range parsed.mainIncludes {
+		includedHot, includedCold, includedView, includeErr := m.resolveInclude(includeInfo, rulesDir, visited)
+		if includeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve included ruleset '%s': %v\n", includeInfo.ImportIdentifier, includeErr)
+			continue
+		}
+		hotRules = append(hotRules, includedHot...)
+		coldRules = append(coldRules, includedCold...)
+		viewPaths = append(viewPaths, includedView...)
+	}
+
+	for _, includeInfo := range parsed.coldIncludes {
+		includedHot, includedCold, includedView, includeErr := m.resolveInclude(includeInfo, rulesDir, visited)
+		if includeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve included ruleset '%s': %v\n", includeInfo.ImportIdentifier, includeErr)
+			continue
+		}
+		// For cold includes, all nested rules go to cold
+		allNested := append(includedHot, includedCold...)
+		if len(includeInfo.Directives) > 0 {
+			for i := range allNested {
+				if len(allNested[i].Directives) == 0 {
+					allNested[i].Directives = includeInfo.Directives
+				}
+			}
+		}
+		coldRules = append(coldRules, allNested...)
+		viewPaths = append(viewPaths, includedView...)
+	}
 
 	// Set EffectiveLineNum for local rules
 	for i := range localHot {
@@ -283,8 +325,6 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			hotRules = append(hotRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: 0, EffectiveLineNum: 0})
 		}
 	}
-
-	rulesDir := filepath.Dir(absRulesPath)
 
 	// Process hot rule set imports
 	for _, importInfo := range mainImports {
@@ -344,18 +384,16 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				continue
 			}
 
-			// Propagate directive from import to nested rules if they don't have one
-			if importInfo.Directive != "" {
+			// Propagate directives from import to nested rules if they don't have any
+			if len(importInfo.Directives) > 0 {
 				for i := range nestedHot {
-					if nestedHot[i].Directive == "" {
-						nestedHot[i].Directive = importInfo.Directive
-						nestedHot[i].DirectiveQuery = importInfo.DirectiveQuery
+					if len(nestedHot[i].Directives) == 0 {
+						nestedHot[i].Directives = importInfo.Directives
 					}
 				}
 				for i := range nestedCold {
-					if nestedCold[i].Directive == "" {
-						nestedCold[i].Directive = importInfo.Directive
-						nestedCold[i].DirectiveQuery = importInfo.DirectiveQuery
+					if len(nestedCold[i].Directives) == 0 {
+						nestedCold[i].Directives = importInfo.Directives
 					}
 				}
 			}
@@ -416,18 +454,16 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			continue
 		}
 
-		// Propagate directive from import to nested rules if they don't have one
-		if importInfo.Directive != "" {
+		// Propagate directives from import to nested rules if they don't have any
+		if len(importInfo.Directives) > 0 {
 			for i := range nestedHot {
-				if nestedHot[i].Directive == "" {
-					nestedHot[i].Directive = importInfo.Directive
-					nestedHot[i].DirectiveQuery = importInfo.DirectiveQuery
+				if len(nestedHot[i].Directives) == 0 {
+					nestedHot[i].Directives = importInfo.Directives
 				}
 			}
 			for i := range nestedCold {
-				if nestedCold[i].Directive == "" {
-					nestedCold[i].Directive = importInfo.Directive
-					nestedCold[i].DirectiveQuery = importInfo.DirectiveQuery
+				if len(nestedCold[i].Directives) == 0 {
+					nestedCold[i].Directives = importInfo.Directives
 				}
 			}
 		}
@@ -528,12 +564,11 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			// For cold imports, everything from the imported ruleset goes into the cold section
 			allNestedRules := append(nestedHot, nestedCold...)
 
-			// Propagate directive from import to all nested rules
-			if importInfo.Directive != "" {
+			// Propagate directives from import to all nested rules
+			if len(importInfo.Directives) > 0 {
 				for i := range allNestedRules {
-					if allNestedRules[i].Directive == "" {
-						allNestedRules[i].Directive = importInfo.Directive
-						allNestedRules[i].DirectiveQuery = importInfo.DirectiveQuery
+					if len(allNestedRules[i].Directives) == 0 {
+						allNestedRules[i].Directives = importInfo.Directives
 					}
 				}
 			}
@@ -588,12 +623,11 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 
 		allNestedRules := append(nestedHot, nestedCold...)
 
-		// Propagate directive from import to all nested rules
-		if importInfo.Directive != "" {
+		// Propagate directives from import to all nested rules
+		if len(importInfo.Directives) > 0 {
 			for i := range allNestedRules {
-				if allNestedRules[i].Directive == "" {
-					allNestedRules[i].Directive = importInfo.Directive
-					allNestedRules[i].DirectiveQuery = importInfo.DirectiveQuery
+				if len(allNestedRules[i].Directives) == 0 {
+					allNestedRules[i].Directives = importInfo.Directives
 				}
 			}
 		}
@@ -822,6 +856,54 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	return hotRules, coldRules, viewPaths, nil
 }
 
+// resolveInclude resolves a single @include: directive to its constituent rules.
+// It locates the named ruleset file and recursively expands it.
+func (m *Manager) resolveInclude(includeInfo ImportInfo, rulesDir string, visited map[string]bool) (hotRules, coldRules []RuleInfo, viewPaths []string, err error) {
+	includeName := includeInfo.ImportIdentifier
+	var rulesFilePath string
+
+	if strings.Contains(includeName, "/") || strings.HasSuffix(includeName, RulesExt) {
+		// Treat as a path (relative or absolute)
+		rulesFilePath = includeName
+		if !filepath.IsAbs(rulesFilePath) {
+			rulesFilePath = filepath.Join(rulesDir, rulesFilePath)
+		}
+	} else {
+		// Treat as a named preset — resolve via FindRulesetFile
+		projectRoot := m.workDir
+		configPath, cfgErr := config.FindConfigFile(rulesDir)
+		if cfgErr == nil {
+			projectRoot = filepath.Dir(configPath)
+		}
+		resolvedPath, findErr := m.FindRulesetFile(projectRoot, includeName)
+		if findErr != nil {
+			return nil, nil, nil, fmt.Errorf("could not find included ruleset '%s': %w", includeName, findErr)
+		}
+		rulesFilePath = resolvedPath
+	}
+
+	nestedHot, nestedCold, nestedView, err := m.expandAllRules(rulesFilePath, visited, includeInfo.LineNum)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Propagate search directives from the include line to nested rules that don't have their own
+	if len(includeInfo.Directives) > 0 {
+		for i := range nestedHot {
+			if len(nestedHot[i].Directives) == 0 {
+				nestedHot[i].Directives = includeInfo.Directives
+			}
+		}
+		for i := range nestedCold {
+			if len(nestedCold[i].Directives) == 0 {
+				nestedCold[i].Directives = includeInfo.Directives
+			}
+		}
+	}
+
+	return nestedHot, nestedCold, nestedView, nil
+}
+
 // ResolveFilesFromRules dynamically resolves the list of files from the active rules file
 func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	defer profiling.Start("context.ResolveFilesFromRules").Stop()
@@ -846,9 +928,7 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	for i, rule := range hotRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			hotPatterns[i] = "!" + pattern
 		} else {
@@ -860,9 +940,7 @@ func (m *Manager) ResolveFilesFromRules() ([]string, error) {
 	for i, rule := range coldRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			coldPatterns[i] = "!" + pattern
 		} else {
@@ -929,9 +1007,7 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 	for i, rule := range hotRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			hotPatterns[i] = "!" + pattern
 		} else {
@@ -943,9 +1019,7 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 	for i, rule := range coldRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			coldPatterns[i] = "!" + pattern
 		} else {
@@ -1009,9 +1083,7 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 	for i, rule := range coldRules {
 		pattern := rule.Pattern
 		// Encode directive if present
-		if rule.Directive != "" {
-			pattern = pattern + "|||" + rule.Directive + "|||" + rule.DirectiveQuery
-		}
+		pattern = encodeDirectives(pattern, rule.Directives)
 		if rule.IsExclude {
 			coldPatterns[i] = "!" + pattern
 		} else {
@@ -1068,19 +1140,112 @@ func (m *Manager) preProcessPatterns(patterns []string) []string {
 	return processedPatterns
 }
 
+// decodeDirectives extracts directives information from an encoded pattern
+// Returns: cleanPattern, directives, hasDirectives
+func decodeDirectives(pattern string) (string, []SearchDirective, bool) {
+	parts := strings.Split(pattern, "|||")
+	if len(parts) >= 3 && len(parts)%2 == 1 {
+		basePattern := parts[0]
+		var directives []SearchDirective
+		for i := 1; i < len(parts); i += 2 {
+			directives = append(directives, SearchDirective{Name: parts[i], Query: parts[i+1]})
+		}
+		return basePattern, directives, true
+	}
+	return pattern, nil, false
+}
+
+// matchDirective checks if a single file matches a directive filter.
+// For "find", it checks if the path contains the query string.
+// For "grep", it reads the file and checks if the content matches the query as a regex (or literal fallback).
+func (m *Manager) matchDirective(file, directive, query string) bool {
+	// Handle inverted directives (@find!:, @grep!:) by stripping the ! and inverting result
+	if strings.HasSuffix(directive, "!") {
+		return !m.matchDirective(file, strings.TrimSuffix(directive, "!"), query)
+	}
+	if directive == "find" {
+		// @find: filter by filename/path using substring, glob, or regex
+		// 1. Substring match (original behavior)
+		if strings.Contains(file, query) {
+			return true
+		}
+		// 2. Basename glob match
+		if globMatch, _ := filepath.Match(query, filepath.Base(file)); globMatch {
+			return true
+		}
+		// 3. Full path/recursive glob match
+		if matchDoubleStarPattern(query, file) {
+			return true
+		}
+		// 4. Regex match
+		if re, err := regexp.Compile(query); err == nil && re.MatchString(filepath.ToSlash(file)) {
+			return true
+		}
+		return false
+	}
+	if directive == "changed" {
+		// @changed: filter files to only those in the git changed set
+		changedMap, err := m.getChangedFilesCached(query)
+		if err != nil {
+			return false
+		}
+		relPath, relErr := filepath.Rel(m.workDir, file)
+		if relErr != nil {
+			relPath = file
+		}
+		relPath = filepath.ToSlash(relPath)
+		return changedMap[relPath]
+	}
+	if directive == "grep" || directive == "grep-i" {
+		filePath := file
+		if !filepath.IsAbs(file) {
+			filePath = filepath.Join(m.workDir, file)
+		}
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return false
+		}
+		caseInsensitive := directive == "grep-i"
+		if caseInsensitive {
+			compiled, err := regexp.Compile("(?i)" + query)
+			if err != nil {
+				return bytes.Contains(bytes.ToLower(content), []byte(strings.ToLower(query)))
+			}
+			return compiled.Match(content)
+		}
+		compiled, err := regexp.Compile(query)
+		if err != nil {
+			return strings.Contains(string(content), query)
+		}
+		return compiled.Match(content)
+	}
+	if directive == "recent" {
+		// @recent: filter by modification time
+		duration, err := parseExtendedDuration(query)
+		if err != nil {
+			return false
+		}
+		cutoff := time.Now().Add(-duration)
+		filePath := file
+		if !filepath.IsAbs(file) {
+			filePath = filepath.Join(m.workDir, file)
+		}
+		stat, err := os.Stat(filePath)
+		return err == nil && stat.ModTime().After(cutoff)
+	}
+	return false
+}
+
 // parseExtendedDuration parses a duration string, adding support for 'd' (days) and 'w' (weeks)
 // on top of Go's standard time.ParseDuration units.
 func parseExtendedDuration(s string) (time.Duration, error) {
 	s = strings.TrimSpace(s)
-	// Strip quotes if present
 	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
 		s = s[1 : len(s)-1]
 	}
-
 	if s == "" {
 		return 0, fmt.Errorf("empty duration string")
 	}
-
 	if strings.HasSuffix(s, "d") {
 		days, err := strconv.ParseFloat(s[:len(s)-1], 64)
 		if err != nil {
@@ -1095,99 +1260,7 @@ func parseExtendedDuration(s string) (time.Duration, error) {
 		}
 		return time.Duration(weeks * 7 * 24 * float64(time.Hour)), nil
 	}
-
 	return time.ParseDuration(s)
-}
-
-// decodeDirective extracts directive information from an encoded pattern
-// Returns: cleanPattern, directive, query, hasDirective
-func decodeDirective(pattern string) (string, string, string, bool) {
-	parts := strings.Split(pattern, "|||")
-	if len(parts) == 3 {
-		return parts[0], parts[1], parts[2], true
-	}
-	return pattern, "", "", false
-}
-
-// applyDirectiveFilter filters a list of files based on a directive (@find or @grep)
-func (m *Manager) applyDirectiveFilter(files []string, directive, query string) ([]string, error) {
-	var filtered []string
-
-	if directive == "find" {
-		// @find: filter by filename/path
-		for _, file := range files {
-			if strings.Contains(file, query) {
-				filtered = append(filtered, file)
-			}
-		}
-	} else if directive == "grep" {
-		// @grep: filter by file content (parallelized for performance)
-		type result struct {
-			file string
-			err  error
-		}
-
-		resultChan := make(chan result, len(files))
-		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent goroutines
-
-		for _, file := range files {
-			file := file // Capture loop variable
-
-			go func() {
-				semaphore <- struct{}{} // Acquire semaphore
-				defer func() { <-semaphore }() // Release semaphore
-
-				// Construct absolute path for reading
-				filePath := file
-				if !filepath.IsAbs(file) {
-					filePath = filepath.Join(m.workDir, file)
-				}
-
-				// Read file content
-				content, err := os.ReadFile(filePath)
-				if err != nil {
-					// Skip files that can't be read
-					resultChan <- result{file: "", err: nil}
-					return
-				}
-
-				// Check if content contains the query
-				if strings.Contains(string(content), query) {
-					resultChan <- result{file: file, err: nil}
-				} else {
-					resultChan <- result{file: "", err: nil}
-				}
-			}()
-		}
-
-		// Collect results
-		for i := 0; i < len(files); i++ {
-			res := <-resultChan
-			if res.file != "" {
-				filtered = append(filtered, res.file)
-			}
-		}
-		close(resultChan)
-	} else if directive == "recent" {
-		// @recent: filter by modification time
-		duration, err := parseExtendedDuration(query)
-		if err != nil {
-			return nil, fmt.Errorf("invalid duration for @recent directive '%s': %w", query, err)
-		}
-		cutoff := time.Now().Add(-duration)
-		for _, file := range files {
-			filePath := file
-			if !filepath.IsAbs(file) {
-				filePath = filepath.Join(m.workDir, file)
-			}
-			stat, err := os.Stat(filePath)
-			if err == nil && stat.ModTime().After(cutoff) {
-				filtered = append(filtered, file)
-			}
-		}
-	}
-
-	return filtered, nil
 }
 
 // resolveFilesFromPatterns resolves files from a given set of patterns
@@ -1225,8 +1298,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	// Build a temporary patternInfos to extract base patterns
 	type tempPatternInfo struct {
 		basePattern string
-		directive   string
-		query       string
+		directives  []SearchDirective
 		isExclude   bool
 	}
 
@@ -1240,12 +1312,12 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			cleanPattern = strings.TrimPrefix(pattern, "!")
 		}
 
-		// Try to parse plain text directive first (e.g., "pattern @find: \"query\"")
-		basePattern, directive, query, hasDirective := parseSearchDirective(cleanPattern)
+		// Try to parse plain text directives first (e.g., "pattern @find: \"query\" @grep: \"term\"")
+		basePattern, directives, hasDirectives := parseSearchDirectives(cleanPattern)
 
-		// If no plain text directive, try encoded format (e.g., "pattern|||find|||query")
-		if !hasDirective {
-			basePattern, directive, query, _ = decodeDirective(cleanPattern)
+		// If no plain text directives, try encoded format (e.g., "pattern|||find|||query|||grep|||term")
+		if !hasDirectives {
+			basePattern, directives, _ = decodeDirectives(cleanPattern)
 		}
 
 		// Skip empty base patterns to prevent root-filesystem walks
@@ -1256,8 +1328,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 		tempInfos = append(tempInfos, tempPatternInfo{
 			basePattern: basePattern,
-			directive:   directive,
-			query:       query,
+			directives:  directives,
 			isExclude:   isExclude,
 		})
 
@@ -1283,10 +1354,9 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		}
 
 		patternInfos = append(patternInfos, patternInfo{
-			pattern:   cleanProcessedPattern,
-			directive: tempInfos[i].directive,
-			query:     tempInfos[i].query,
-			isExclude: isExclude,
+			pattern:    cleanProcessedPattern,
+			directives: tempInfos[i].directives,
+			isExclude:  isExclude,
 		})
 	}
 
@@ -1296,7 +1366,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	for _, info := range patternInfos {
 		cleanPattern := info.pattern
 
-		if filepath.IsAbs(cleanPattern) || strings.HasPrefix(cleanPattern, "../") {
+		if filepath.IsAbs(cleanPattern) || IsRelativeExternalPath(cleanPattern) {
 			// Resolve path for validation. For globs, validate the base path.
 			pathToValidate := cleanPattern
 			if strings.ContainsAny(pathToValidate, "*?[") {
@@ -1365,7 +1435,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			filePath = filepath.Clean(filePath)
 
 			if fstat, err := os.Stat(filePath); err == nil && !fstat.IsDir() {
-				if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
+				if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
 					uniqueFiles[filePath] = true
 				} else {
 					relPath, err := filepath.Rel(m.workDir, filePath)
@@ -1389,7 +1459,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			if isFloatingExclusion {
 				// Floating exclusions like "!tests" or "!*.tmp" or "!**/*.md" should apply globally
 				floatingExclusionInfos = append(floatingExclusionInfos, info)
-			} else if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
+			} else if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
 				deferredExclusionInfos = append(deferredExclusionInfos, info)
 			} else {
 				// Path-specific exclusions for relative patterns
@@ -1398,7 +1468,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			continue
 		}
 
-		if filepath.IsAbs(info.pattern) || strings.HasPrefix(info.pattern, "../") {
+		if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
 			basePath := info.pattern
 			if !filepath.IsAbs(info.pattern) {
 				basePath = filepath.Join(m.workDir, info.pattern)
