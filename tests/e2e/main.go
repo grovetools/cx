@@ -118,6 +118,14 @@ func main() {
 		GrepRegexVsLiteralScenario(),
 		EmptyGrepQueryScenario(),
 
+		// Git-Aware Directive Scenarios
+		ChangedStandaloneScenario(),
+		ChangedInlineFilterScenario(),
+		DiffStandaloneScenario(),
+		ChangedDeletedFilesScenario(),
+		ChangedBranchRefScenario(),
+		ChangedCombinedScenario(),
+
 		// Directive Import Scenarios
 		DirectiveWorkspaceGrepImportScenario(),
 		DirectiveWorkspaceFindImportScenario(),
