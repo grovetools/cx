@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -32,12 +33,25 @@ var validDirectives = map[string]bool{
 // directiveRegex finds tokens that look like directives (@ followed by word chars and hyphens).
 var directiveRegex = regexp.MustCompile(`@[a-zA-Z][a-zA-Z0-9-]*`)
 
+// LintRulesFile parses a specific rules file and returns a list of potential issues.
+func (m *Manager) LintRulesFile(rulesFilePath string) ([]LintIssue, error) {
+	content, err := os.ReadFile(rulesFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read rules file: %w", err)
+	}
+	return m.lintRulesContent(content)
+}
+
 // LintRules parses the active context rules and returns a list of potential issues.
 func (m *Manager) LintRules() ([]LintIssue, error) {
 	content, _, err := m.LoadRulesContent()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load rules content: %w", err)
 	}
+	return m.lintRulesContent(content)
+}
+
+func (m *Manager) lintRulesContent(content []byte) ([]LintIssue, error) {
 	if len(content) == 0 {
 		return nil, nil
 	}

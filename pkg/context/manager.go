@@ -186,6 +186,42 @@ func (m *Manager) ResolveRulesWritePath() string {
 	return p
 }
 
+// GetRulesFileFromJob parses the frontmatter of a markdown job file to find a `rules_file` key.
+// It returns the absolute resolved path to the rules file.
+func (m *Manager) GetRulesFileFromJob(jobFilePath string) (string, error) {
+	file, err := os.Open(jobFilePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	inFrontmatter := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "---" {
+			if !inFrontmatter {
+				inFrontmatter = true
+				continue
+			} else {
+				break
+			}
+		}
+
+		if inFrontmatter {
+			if strings.HasPrefix(line, "rules_file:") {
+				rulesFileName := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+				if filepath.IsAbs(rulesFileName) {
+					return rulesFileName, nil
+				}
+				return filepath.Abs(filepath.Join(filepath.Dir(jobFilePath), rulesFileName))
+			}
+		}
+	}
+	return "", fmt.Errorf("rules_file key not found in frontmatter of %s", jobFilePath)
+}
+
 // ResolveContextPath returns the path to the generated context file.
 // It checks for an existing file in order: plan-scoped, notebook, .grove/context.
 // If no file exists, returns the plan-scoped path (if plan active) or notebook path.
@@ -1019,12 +1055,13 @@ func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version, ru
 
 // ShowContext outputs the context file content
 func (m *Manager) ShowContext() error {
-	content, err := os.ReadFile(ContextFile)
+	contextPath := m.ResolveContextPath()
+	content, err := os.ReadFile(contextPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("%s file not found. Run 'grove cx generate' to create it", ContextFile)
+			return fmt.Errorf("%s file not found. Run 'grove cx generate' to create it", contextPath)
 		}
-		return fmt.Errorf("error reading %s: %w", ContextFile, err)
+		return fmt.Errorf("error reading %s: %w", contextPath, err)
 	}
 
 	fmt.Print(string(content))

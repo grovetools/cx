@@ -31,41 +31,7 @@ func NewStatsCmd() *cobra.Command {
 		TotalTokens    int `json:"total_tokens"`
 	}
 
-	// getRulesFileFromChatFile parses the frontmatter of a markdown file to find a `rules_file` key.
-	// It returns the resolved path to the rules file, or an empty string if not found.
-	getRulesFileFromChatFile := func(chatFilePath string) (string, error) {
-		file, err := os.Open(chatFilePath)
-		if err != nil {
-			return "", err
-		}
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-		inFrontmatter := false
-		frontmatterEnd := false
-
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.TrimSpace(line) == "---" {
-				if !inFrontmatter {
-					inFrontmatter = true
-					continue
-				} else {
-					frontmatterEnd = true
-					break
-				}
-			}
-
-			if inFrontmatter && !frontmatterEnd {
-				if strings.HasPrefix(line, "rules_file:") {
-					rulesFileName := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
-					// Resolve path relative to the chat file's directory
-					return filepath.Join(filepath.Dir(chatFilePath), rulesFileName), nil
-				}
-			}
-		}
-		return "", nil // Not found
-	}
+	var jobFile, rulesFileFlag string
 
 	cmd := &cobra.Command{
 		Use:   "stats [rules-file]",
@@ -77,18 +43,26 @@ Otherwise, stats will be computed from the active rules file (.grove/rules).
 
 Examples:
   cx stats                              # Use active .grove/rules
-  cx stats plans/my-plan/rules/job.rules  # Use custom rules file`,
+  cx stats plans/my-plan/rules/job.rules  # Use custom rules file
+  cx stats --job 02-spec.md             # Use job's saved rules`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Handle --chat-file flag
+			mgr := context.NewManager("")
+
+			// Legacy --chat-file fallback
+			if chatFile != "" && jobFile == "" {
+				jobFile = chatFile
+			}
+
+			// Handle --chat-file / --job flag for chat stats mode
 			if chatFile != "" {
 				statsProvider := context.GetStatsProvider()
-				mgr := context.NewManager("")
 
 				// 1. Determine the rules file to use
-				rulesFilePath, err := getRulesFileFromChatFile(chatFile)
+				rulesFilePath, err := mgr.GetRulesFileFromJob(chatFile)
 				if err != nil {
-					return fmt.Errorf("error reading chat file frontmatter: %w", err)
+					// Not an error if rules_file not found — fall back to active rules
+					rulesFilePath = ""
 				}
 
 				// 2. Resolve context files
@@ -143,19 +117,26 @@ Examples:
 			}
 
 			opts := cli.GetOptions(cmd)
-			mgr := context.NewManager("")
+
+			// Resolve target rules file from flags
+			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFileFlag)
+			if err != nil {
+				return err
+			}
+
+			// Positional arg fallback (legacy support)
+			if targetRulesFile == "" && len(args) > 0 {
+				targetRulesFile = args[0]
+			}
 
 			// Collect stats for both hot and cold contexts
 			var allStats []*context.ContextStats
 			var hotFiles, coldFiles []string
-			var err error
 
 			// Check if a custom rules file was provided
-			if len(args) > 0 {
-				rulesFilePath := args[0]
-
+			if targetRulesFile != "" {
 				// Resolve files from the custom rules file
-				hotFiles, coldFiles, err = mgr.ResolveFilesFromCustomRulesFile(rulesFilePath)
+				hotFiles, coldFiles, err = mgr.ResolveFilesFromCustomRulesFile(targetRulesFile)
 				if err != nil {
 					return fmt.Errorf("failed to resolve files from custom rules file: %w", err)
 				}
@@ -231,7 +212,9 @@ Examples:
 	
 	cmd.Flags().IntVar(&topN, "top", 5, "Number of largest files to show")
 	cmd.Flags().BoolVar(&perLine, "per-line", false, "Provide stats for each line in the rules file")
-	cmd.Flags().StringVar(&chatFile, "chat-file", "", "Provide token stats for a chat file and its context")
+	cmd.Flags().StringVar(&chatFile, "chat-file", "", "Legacy alias for --job")
+	cmd.Flags().MarkHidden("chat-file")
+	AddRulesFileFlags(cmd, &jobFile, &rulesFileFlag)
 
 	return cmd
 }

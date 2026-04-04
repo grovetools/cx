@@ -1360,14 +1360,8 @@ func (m *Manager) SetActiveRules(sourcePath string) error {
 		return fmt.Errorf("error reading source rules file %s: %w", sourcePath, err)
 	}
 
-	// Ensure .grove directory exists
-	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
-		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
-	}
-
-	// Write to active rules file, overwriting if it exists
-	activeRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	// Write to active rules file (handles plan-scoped paths and creates parent dirs)
+	activeRulesPath := m.ResolveRulesWritePath()
 	if err := os.WriteFile(activeRulesPath, content, 0644); err != nil {
 		return fmt.Errorf("error writing active rules file: %w", err)
 	}
@@ -1481,12 +1475,7 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 	// Find or create the rules file
 	rulesFilePath := m.findActiveRulesFile()
 	if rulesFilePath == "" {
-		// Create .grove/rules file
-		groveDir := filepath.Join(m.workDir, GroveDir)
-		if err := os.MkdirAll(groveDir, 0755); err != nil {
-			return fmt.Errorf("error creating %s directory: %w", groveDir, err)
-		}
-		rulesFilePath = filepath.Join(m.workDir, ActiveRulesFile)
+		rulesFilePath = m.ResolveRulesWritePath()
 	}
 
 	// Read existing content
@@ -1553,12 +1542,7 @@ func (m *Manager) ToggleViewDirective(path string) error {
 
 	rulesFilePath := m.findActiveRulesFile()
 	if rulesFilePath == "" {
-		// Create .grove/rules file if it doesn't exist
-		groveDir := filepath.Join(m.workDir, GroveDir)
-		if err := os.MkdirAll(groveDir, 0755); err != nil {
-			return fmt.Errorf("error creating %s directory: %w", groveDir, err)
-		}
-		rulesFilePath = filepath.Join(m.workDir, ActiveRulesFile)
+		rulesFilePath = m.ResolveRulesWritePath()
 	}
 
 	content, err := os.ReadFile(rulesFilePath)

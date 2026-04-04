@@ -9,18 +9,34 @@ import (
 )
 
 func NewLintCmd() *cobra.Command {
-	return &cobra.Command{
+	var jobFile, rulesFile string
+
+	cmd := &cobra.Command{
 		Use:   "lint",
 		Short: "Validate rules syntax and check for potential issues",
 		Long:  `Analyzes the active rules file for syntax errors, directive typos, overly broad patterns, and patterns that match zero files.`,
 		Example: `  # Lint the active rules file
   cx lint
 
+  # Lint a specific job's rules
+  cx lint --job 02-spec.md
+
   # Use in CI to catch unsafe rules (exits 1 on errors)
   cx lint && echo "rules ok"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager("")
-			issues, err := mgr.LintRules()
+
+			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
+			if err != nil {
+				return err
+			}
+
+			var issues []context.LintIssue
+			if targetRulesFile != "" {
+				issues, err = mgr.LintRulesFile(targetRulesFile)
+			} else {
+				issues, err = mgr.LintRules()
+			}
 			if err != nil {
 				return fmt.Errorf("failed to lint rules: %w", err)
 			}
@@ -46,4 +62,8 @@ func NewLintCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	AddRulesFileFlags(cmd, &jobFile, &rulesFile)
+
+	return cmd
 }
