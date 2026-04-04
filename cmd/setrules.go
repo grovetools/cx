@@ -26,7 +26,7 @@ func NewSetRulesCmd() *cobra.Command {
 			setRulesLog.WithField("source", sourcePath).Info("Setting active rules")
 			setRulesPrettyLog.InfoPretty(fmt.Sprintf("Setting active rules from: %s", sourcePath))
 			
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			if err := mgr.SetActiveRules(sourcePath); err != nil {
 				return fmt.Errorf("failed to set active rules: %w", err)
 			}

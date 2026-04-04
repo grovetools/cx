@@ -28,7 +28,7 @@ It is recommended to enclose the command in quotes to ensure it is passed correc
 			command := strings.Join(args, " ")
 
 			// Create context manager
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			// Update from command output
 			if err := mgr.UpdateFromCmd(command); err != nil {

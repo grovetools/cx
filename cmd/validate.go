@@ -17,7 +17,7 @@ func NewValidateCmd() *cobra.Command {
 		Long:  `Check all files in .grove/context-files exist, verify file permissions, detect duplicates, and report any issues.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {

@@ -24,7 +24,7 @@ func NewLintCmd() *cobra.Command {
   # Use in CI to catch unsafe rules (exits 1 on errors)
   cx lint && echo "rules ok"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {

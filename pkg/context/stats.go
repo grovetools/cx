@@ -40,7 +40,9 @@ type TokenDistribution struct {
 
 // ContextStats contains comprehensive statistics about the context
 type ContextStats struct {
-	ContextType  string                    `json:"context_type"`
+	ContextType   string                    `json:"context_type"`
+	WorkspaceName string                    `json:"workspace_name,omitempty"`
+	RulesPath     string                    `json:"rules_path,omitempty"`
 	TotalFiles   int                       `json:"total_files"`
 	TotalTokens  int                       `json:"total_tokens"`
 	TotalSize    int64                     `json:"total_size"`
@@ -244,11 +246,19 @@ func (s *ContextStats) String(title string) string {
 	b.WriteString(theme.Title.Render(title) + "\n\n")
 
 	// Summary box
-	summaryItems := []string{
+	var summaryItems []string
+	if s.WorkspaceName != "" {
+		summaryItems = append(summaryItems, fmt.Sprintf("Workspace:      %s", s.WorkspaceName))
+	}
+	if s.RulesPath != "" {
+		summaryItems = append(summaryItems, fmt.Sprintf("Rules File:     %s", s.RulesPath))
+		summaryItems = append(summaryItems, "")
+	}
+	summaryItems = append(summaryItems,
 		fmt.Sprintf("Total Files:    %d", s.TotalFiles),
 		fmt.Sprintf("Total Tokens:   ~%s", FormatTokenCount(s.TotalTokens)),
 		fmt.Sprintf("Total Size:     %s", FormatBytes(int(s.TotalSize))),
-	}
+	)
 	summaryBox := theme.Box.Copy().
 		BorderForeground(theme.Colors.Cyan).
 		Padding(1, 2).

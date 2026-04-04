@@ -38,7 +38,7 @@ For dynamic git-aware rules that re-evaluate each time, use directives in .grove
   # Add files changed in a branch compared to main
   cx from-git --branch main..HEAD -f`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			
 			// Get flags
 			since, _ := cmd.Flags().GetString("since")

@@ -14,7 +14,7 @@ func NewFixCmd() *cobra.Command {
 		Short: "Automatically fix context validation issues",
 		Long:  `Remove missing files and duplicates from the context file list.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			
 			fixPrettyLog.InfoPretty("Fixing context validation issues...")
 			

@@ -29,7 +29,7 @@ func NewEditCmd() *cobra.Command {
   #   @diff: staged               # include unified diff of staged changes as .patch`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			if printPath {
 				rulesPath, err := mgr.EnsureAndGetRulesPath()

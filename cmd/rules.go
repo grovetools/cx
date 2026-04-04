@@ -24,7 +24,7 @@ func NewRulesCmd() *cobra.Command {
 		Long:  `Provides commands to list, set, and save named context rule sets stored in the .cx/ directory.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// If no subcommand is given, run the interactive selector
-			return rules.Run()
+			return rules.Run(GetWorkDir())
 		},
 	}
 
@@ -47,7 +47,7 @@ func newRulesSelectCmd() *cobra.Command {
 		Use:   "select",
 		Short: "Select the active rule set interactively",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return rules.Run()
+			return rules.Run(GetWorkDir())
 		},
 	}
 }
@@ -94,7 +94,7 @@ Examples:
 			var sourcePath string
 
 			// First, try to find as a named ruleset.
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			path, err := mgr.FindRulesetFile(".", nameOrPath)
 			if err == nil {
 				sourcePath = path
@@ -238,7 +238,7 @@ func newRulesListCmd() *cobra.Command {
 
 			// New: Collect plan rules and notebook presets
 			ctx := stdctx.Background()
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			// Collect from notebook presets directories first
 			var nbPresetRules, nbWorkRules []string
@@ -357,7 +357,7 @@ You can also provide a direct file path to a rules file (including plan-specific
 			var sourcePath string
 
 			// First, try to find as a named ruleset.
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			path, err := mgr.FindRulesetFile(".", nameOrPath)
 			if err == nil {
 				sourcePath = path
@@ -406,7 +406,7 @@ Use the --work flag to save to .cx.work/ for temporary, untracked sets.`,
 			ctx := stdctx.Background()
 			name := args[0]
 
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			content, _, err := mgr.LoadRulesContent()
 			if err != nil {
 				return fmt.Errorf("failed to load active rules to save: %w", err)
@@ -469,7 +469,7 @@ Rule sets in .cx.work/ can be deleted without force.`,
 			name := args[0]
 
 			// Find the ruleset file
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			rulesPath, err := mgr.FindRulesetFile(".", name)
 			if err != nil {
 				return err // Returns a helpful "not found" error
@@ -520,9 +520,16 @@ func newRulesWhereCmd() *cobra.Command {
 		Long:  `Shows the resolved paths for all context-related directories: active rules, presets, generated context, and cache.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			paths := make(map[string]string)
+
+			// Resolved workspace
+			if node, wsErr := workspace.GetProjectByPath(mgr.GetWorkDir()); wsErr == nil && node.Kind != workspace.KindNonGroveRepo {
+				paths["workspace"] = fmt.Sprintf("%s (from %s)", node.Identifier(":"), node.Path)
+			} else {
+				paths["workspace"] = fmt.Sprintf("None (from %s)", mgr.GetWorkDir())
+			}
 
 			// Active rules file
 			if rulesPath, err := mgr.EnsureAndGetRulesPath(); err == nil {
@@ -598,6 +605,7 @@ func newRulesWhereCmd() *cobra.Command {
 
 			ulog.Info("Context Locations").Log(ctx)
 			order := []struct{ key, label string }{
+				{"workspace", "Workspace"},
 				{"rules", "Active Rules"},
 				{"context_dir", "Context Dir"},
 				{"presets", "Presets"},
@@ -652,7 +660,7 @@ This isolates context edits to the current worktree/plan so they don't affect ot
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			planName := mgr.GetActivePlanName()
 			if planName == "" {
@@ -733,7 +741,7 @@ func newRulesPrintPathCmd() *cobra.Command {
 		Short: "Print the absolute path to the active rules file",
 		Long:  `Prints the absolute path to the currently active rules file. Useful for scripting and integration with external tools.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			rulesPath, err := mgr.EnsureAndGetRulesPath()
 			if err != nil {
 				return fmt.Errorf("failed to get rules path: %w", err)

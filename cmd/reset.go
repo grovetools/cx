@@ -30,7 +30,7 @@ func NewResetCmd() *cobra.Command {
 				return fmt.Errorf("cannot create rules file: worktree has been deleted")
 			}
 
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			// Get ONLY the default rules content (not the current rules)
 			rulesContent, rulesPath := mgr.LoadDefaultRulesContent()

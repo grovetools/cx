@@ -25,7 +25,8 @@ func NewViewCmd() *cobra.Command {
 		Short: "Display an interactive visualization of context composition",
 		Long:  `Launch an interactive terminal UI that shows which files are included, excluded, or ignored in your context based on rules and git ignore patterns.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := newPagerModel(startPage)
+			workDir, _ := cmd.Flags().GetString("dir")
+			m, err := newPagerModel(startPage, workDir)
 			if err != nil {
 				return err
 			}
@@ -68,14 +69,14 @@ type pagerModel struct {
 	editingFilePath  string
 }
 
-func newPagerModel(startPage string) (*pagerModel, error) {
+func newPagerModel(startPage string, workDir string) (*pagerModel, error) {
 	if startPage == "repo" {
 		fmt.Println("The 'repo' view is deprecated and has been removed.")
 		fmt.Println("Please use 'gmux sessionize' (or 'gmux sz') for a more powerful workspace view.")
 		return nil, fmt.Errorf("repo view deprecated")
 	}
 
-	state := &sharedState{loading: true}
+	state := &sharedState{workDir: workDir, loading: true}
 
 	pages := []Page{
 		NewTreePage(state),
@@ -113,7 +114,7 @@ func newPagerModel(startPage string) (*pagerModel, error) {
 }
 
 func (m *pagerModel) Init() tea.Cmd {
-	return tea.Batch(m.pages[m.activePage].Init(), refreshSharedStateCmd())
+	return tea.Batch(m.pages[m.activePage].Init(), refreshSharedStateCmd(m.state.workDir))
 }
 
 func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -127,7 +128,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editorModel.Close()
 				m.isEditing = false
 				m.editorModel = nil
-				return m, refreshSharedStateCmd()
+				return m, refreshSharedStateCmd(m.state.workDir)
 			}
 			if msg.Type == tea.KeyTab || msg.Type == tea.KeyShiftTab {
 				m.editorModel.Save()
@@ -139,7 +140,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.nextPage()
 				}
-				return m, tea.Batch(refreshSharedStateCmd(), m.pages[m.activePage].Focus())
+				return m, tea.Batch(refreshSharedStateCmd(m.state.workDir), m.pages[m.activePage].Focus())
 			}
 		case tea.WindowSizeMsg:
 			var cmd tea.Cmd
@@ -198,7 +199,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pages[m.activePage].Name() == "rules" {
 				rulesPath := m.state.rulesPath
 				if rulesPath == "" {
-					mgr := context.NewManager("")
+					mgr := context.NewManager(m.state.workDir)
 					var err error
 					rulesPath, err = mgr.EnsureAndGetRulesPath()
 					if err != nil {
@@ -242,7 +243,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 
-				mgr := context.NewManager("")
+				mgr := context.NewManager(m.state.workDir)
 				editorCmd, err := mgr.EditRulesCmd()
 				if err != nil {
 					m.state.err = fmt.Errorf("failed to prepare editor command: %w", err)
@@ -273,7 +274,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refreshStateMsg:
 		m.state.loading = true
-		return m, refreshSharedStateCmd()
+		return m, refreshSharedStateCmd(m.state.workDir)
 	}
 
 	activePage, pageCmd := m.pages[m.activePage].Update(msg)

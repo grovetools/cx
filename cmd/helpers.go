@@ -5,6 +5,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// GlobalWorkDir holds the value of the --dir / -C persistent flag.
+var GlobalWorkDir string
+
+// GetWorkDir returns the global --dir flag value, or empty string to let NewManager use CWD.
+func GetWorkDir() string {
+	return GlobalWorkDir
+}
+
 // AddRulesFileFlags adds standard --job and --rules-file flags to a command.
 func AddRulesFileFlags(cmd *cobra.Command, jobFile, rulesFile *string) {
 	cmd.Flags().StringVar(jobFile, "job", "", "Resolve rules from job file frontmatter")

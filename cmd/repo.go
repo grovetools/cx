@@ -171,7 +171,7 @@ func newRepoAuditCmd() *cobra.Command {
 			repoStr := args[0]
 
 			// Use context manager to parse the git rule
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Ignore ruleset part here
 
 			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
@@ -295,7 +295,7 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 			repoStr := args[0]
 
 			// Use context manager to parse the git rule
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Capture version
 
 			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
@@ -557,7 +557,7 @@ If no ruleset name is provided, it defaults to 'default'.`,
 			}
 
 			// Use context manager to parse the git rule string
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Ignore ruleset part here
 
 			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'

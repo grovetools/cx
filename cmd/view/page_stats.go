@@ -514,7 +514,7 @@ func (p *statsPage) excludeItemCmd() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		mgr := context.NewManager("")
+		mgr := context.NewManager(p.sharedState.workDir)
 		for _, pattern := range patterns {
 			// AppendRule adds the '!' prefix internally for "exclude" type
 			if err := mgr.AppendRule(pattern, "exclude"); err != nil {

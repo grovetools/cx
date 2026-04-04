@@ -50,7 +50,7 @@ func newWorkspaceListCmd() *cobra.Command {
 				for i, p := range projects {
 					jsonProjects[i] = workspaceJSON{
 						WorkspaceNode: p,
-						Identifier:    p.Identifier(),
+						Identifier:    p.Identifier("_"),
 					}
 				}
 
@@ -62,7 +62,7 @@ func newWorkspaceListCmd() *cobra.Command {
 			} else {
 				// Simple text output for human consumption.
 				for _, p := range projects {
-					fmt.Printf("- %s (%s)\n", p.Identifier(), p.Path)
+					fmt.Printf("- %s (%s)\n", p.Identifier("_"), p.Path)
 				}
 			}
 			return nil

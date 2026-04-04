@@ -2,7 +2,9 @@ package cmd
 
 import (
 	stdctx "context"
+	"fmt"
 
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
 )
@@ -20,11 +22,23 @@ func NewGenerateCmd() *cobra.Command {
 		Long:  `Reads the .grove/context-files list and generates a concatenated .grove/context file with all specified files.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
-			mgr := context.NewManager(".")
+			mgr := context.NewManager(GetWorkDir())
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {
 				return err
+			}
+
+			if node, err := workspace.GetProjectByPath(mgr.GetWorkDir()); err == nil && node.Kind != workspace.KindNonGroveRepo {
+				rulesDisplay := targetRulesFile
+				if rulesDisplay == "" {
+					rulesDisplay = mgr.ResolveRulesPath()
+				}
+				ulog.Info("Resolution context").
+					Field("workspace", node.Identifier(":")).
+					Field("rules", rulesDisplay).
+					Pretty(fmt.Sprintf("Workspace: %s | Rules: %s", node.Identifier(":"), rulesDisplay)).
+					Log(ctx)
 			}
 
 			ulog.Progress("Generating context file").Log(ctx)

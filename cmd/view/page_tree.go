@@ -131,7 +131,7 @@ func (p *treePage) SetSize(width, height int) {
 
 func (p *treePage) loadTreeCmd() tea.Cmd {
 	return func() tea.Msg {
-		manager := context.NewManager("")
+		manager := context.NewManager(p.sharedState.workDir)
 		projectTree, err := tree.AnalyzeProjectTree(manager, p.showGitIgnored)
 		return treeLoadedMsg{tree: projectTree, err: err}
 	}
@@ -139,7 +139,7 @@ func (p *treePage) loadTreeCmd() tea.Cmd {
 
 func (p *treePage) toggleRuleCmd(path, targetType string, isDirectory bool) tea.Cmd {
 	return func() tea.Msg {
-		manager := context.NewManager("")
+		manager := context.NewManager(p.sharedState.workDir)
 
 		// Check current status
 		currentStatus := manager.GetRuleStatus(path)
@@ -348,7 +348,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		p.statusMessage = msg.successMsg
 		if msg.refreshNeeded {
 			// Reload shared state and tree
-			return p, tea.Batch(refreshSharedStateCmd(), p.loadTreeCmd())
+			return p, tea.Batch(refreshSharedStateCmd(p.sharedState.workDir), p.loadTreeCmd())
 		}
 		return p, nil
 
@@ -598,7 +598,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		// Refresh both tree and rules
 		case key.Matches(msg, p.keys.Refresh):
 			p.statusMessage = "Refreshing..."
-			return p, tea.Batch(refreshSharedStateCmd(), p.loadTreeCmd())
+			return p, tea.Batch(refreshSharedStateCmd(p.sharedState.workDir), p.loadTreeCmd())
 
 		// Toggle expand
 		case key.Matches(msg, p.keys.ToggleExpand):
@@ -1103,7 +1103,7 @@ func (p *treePage) getStyle(node *tree.FileNode) lipgloss.Style {
 // getFilePathRule generates a context rule using a relative or absolute file path.
 // This is the fallback when an alias cannot be generated.
 func (p *treePage) getFilePathRule(node *tree.FileNode) (string, error) {
-	manager := context.NewManager("")
+	manager := context.NewManager(p.sharedState.workDir)
 	workDir := manager.GetWorkDir()
 
 	// Get relative path from current working directory

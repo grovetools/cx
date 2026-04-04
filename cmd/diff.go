@@ -16,7 +16,7 @@ func NewDiffCmd() *cobra.Command {
 		Long:  `Compare the current context with a named rule set from .cx/ or .cx.work/ to see added/removed files, token count changes, and size differences.`,
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			
 			compareName := "empty"
 			if len(args) > 0 {

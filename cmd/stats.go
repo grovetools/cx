@@ -11,9 +11,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/cli"
 	"github.com/grovetools/core/pkg/repo"
+	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +48,7 @@ Examples:
   cx stats --job 02-spec.md             # Use job's saved rules`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			// Legacy --chat-file fallback
 			if chatFile != "" && jobFile == "" {
@@ -171,6 +172,20 @@ Examples:
 				allStats = append(allStats, coldStats)
 			}
 			
+			// Populate workspace info on all stats
+			workspaceName := ""
+			if node, wsErr := workspace.GetProjectByPath(mgr.GetWorkDir()); wsErr == nil && node.Kind != workspace.KindNonGroveRepo {
+				workspaceName = node.Identifier(":")
+			}
+			rulesDisplay := targetRulesFile
+			if rulesDisplay == "" {
+				rulesDisplay = mgr.ResolveRulesPath()
+			}
+			for _, stats := range allStats {
+				stats.WorkspaceName = workspaceName
+				stats.RulesPath = rulesDisplay
+			}
+
 			// Handle case where no files found in either context
 			if len(allStats) == 0 {
 				if opts.JSONOutput {

@@ -13,7 +13,7 @@ func NewShowCmd() *cobra.Command {
 		Short: "Print the entire context file",
 		Long:  `Outputs the contents of .grove/context for piping to other applications.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {

@@ -15,7 +15,7 @@ func NewListCacheCmd() *cobra.Command {
 		Short: "List cached cold context files",
 		Long:  `Lists the absolute paths of all files in the cached cold context.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {

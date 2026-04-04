@@ -25,7 +25,7 @@ func NewWriteRulesCmd() *cobra.Command {
 			writeRulesLog.WithField("destination", destPath).Info("Writing active rules")
 			writeRulesPrettyLog.InfoPretty(fmt.Sprintf("Writing active rules to: %s", destPath))
 
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			if err := mgr.WriteRulesTo(destPath); err != nil {
 				return fmt.Errorf("failed to write rules: %w", err)
 			}

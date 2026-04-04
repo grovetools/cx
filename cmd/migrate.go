@@ -34,7 +34,7 @@ func NewMigrateRulesNbCmd() *cobra.Command {
 After migration, empty .cx/, .cx.work/, and .grove/ directories are removed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
-			mgr := context.NewManager("")
+			mgr := context.NewManager(GetWorkDir())
 			workDir := mgr.GetWorkDir()
 
 			node, err := workspace.GetProjectByPath(workDir)

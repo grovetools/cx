@@ -13,6 +13,9 @@ import (
 	"github.com/grovetools/cx/pkg/context"
 )
 
+// rulesWorkDir holds the working directory override for context resolution.
+var rulesWorkDir string
+
 // --- TUI Commands ---
 
 type rulesLoadedMsg struct {
@@ -24,7 +27,7 @@ func loadRulesCmd() tea.Msg {
 	var items []ruleItem
 	activeSource, _ := state.GetString(context.StateSourceKey)
 
-	mgr := context.NewManager("")
+	mgr := context.NewManager(rulesWorkDir)
 	seen := make(map[string]bool)
 
 	// Check for active rules file: notebook location first, then legacy .grove/rules
@@ -207,7 +210,7 @@ func loadRuleCmd(item ruleItem) tea.Cmd {
 		}
 
 		// Resolve the active rules write path (plan-scoped > notebook > local)
-		mgr := context.NewManager("")
+		mgr := context.NewManager(rulesWorkDir)
 		rulesPath := mgr.ResolveRulesWritePath()
 
 		// Write to resolved rules path
@@ -242,7 +245,7 @@ func performLoadCmd(item ruleItem) tea.Cmd {
 		}
 
 		// Resolve the active rules write path (plan-scoped > notebook > local)
-		mgr := context.NewManager("")
+		mgr := context.NewManager(rulesWorkDir)
 		rulesPath := mgr.ResolveRulesWritePath()
 
 		// Write to resolved rules path
@@ -308,7 +311,7 @@ func editRuleCmd(item ruleItem) tea.Cmd {
 
 func performSaveCmd(name string, toWork bool) tea.Cmd {
 	return func() tea.Msg {
-		mgr := context.NewManager("")
+		mgr := context.NewManager(rulesWorkDir)
 		content, _, err := mgr.LoadRulesContent()
 		if err != nil {
 			return saveCompleteMsg{err: fmt.Errorf("failed to load active rules: %w", err)}

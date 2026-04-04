@@ -15,6 +15,7 @@ import (
 
 // sharedState holds all the data that is shared across different pages of the TUI.
 type sharedState struct {
+	workDir         string
 	loading         bool
 	err             error
 	hotFiles        []string
@@ -40,10 +41,10 @@ type stateRefreshedMsg struct {
 type refreshStateMsg struct{}
 
 // refreshSharedStateCmd fetches all context data and returns it in a stateRefreshedMsg.
-func refreshSharedStateCmd() tea.Cmd {
+func refreshSharedStateCmd(workDir string) tea.Cmd {
 	return func() tea.Msg {
-		mgr := context.NewManager("")
-		newState := sharedState{loading: false}
+		mgr := context.NewManager(workDir)
+		newState := sharedState{workDir: workDir, loading: false}
 
 		// Load rules content
 		rulesBytes, rulesPath, err := mgr.LoadRulesContent()

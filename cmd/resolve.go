@@ -146,7 +146,7 @@ func NewResolveCmd() *cobra.Command {
 				return nil
 			}
 
-			mgr := context.NewManager(".")
+			mgr := context.NewManager(GetWorkDir())
 
 			var files []string
 			var err error

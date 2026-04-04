@@ -7,7 +7,9 @@ import (
 )
 
 // Run launches the interactive rule set selector TUI.
-func Run() error {
+// workDir overrides the working directory for context resolution (empty uses CWD).
+func Run(workDir string) error {
+	rulesWorkDir = workDir
 	m := newRulesPickerModel()
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	finalModel, err := p.Run()

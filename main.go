@@ -31,6 +31,9 @@ func main() {
 		"LLM context management (formerly grove cx)",
 	)
 
+	// Global flags
+	rootCmd.PersistentFlags().StringVarP(&cmd.GlobalWorkDir, "dir", "C", "", "Set working directory for context resolution")
+
 	// Setup profiling
 	profiler := profiling.NewCobraProfiler()
 	profiler.AddFlags(rootCmd)
@@ -60,6 +63,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewResolveCmd())
 	rootCmd.AddCommand(cmd.NewMigrateRulesNbCmd())
 	rootCmd.AddCommand(cmd.NewLintCmd())
+	rootCmd.AddCommand(cmd.NewAliasCmd())
 
 	if err := cli.Execute(rootCmd); err != nil {
 		os.Exit(1)
