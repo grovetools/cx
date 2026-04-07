@@ -172,6 +172,14 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.loadRulesCmd
 
+	case embed.SetWorkspaceMsg:
+		// Host switched workspace context; repoint our working
+		// directory and reload the rules list for the new workspace.
+		if msg.Node != nil {
+			m.workDir = msg.Node.Path
+		}
+		return m, m.loadRulesCmd
+
 	case rulesLoadedMsg:
 		if msg.err != nil {
 			m.err = msg.err
