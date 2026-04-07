@@ -134,13 +134,16 @@ func (m *Manager) GetPlanRulesPath(planName string) string {
 // ResolveRulesPath returns the path to the active rules file.
 // It checks for an existing file in order: plan-scoped rules, notebook location, .grove/rules, .grovectx.
 // If no file exists, returns the notebook path (preferred location for new files).
+//
+// IMPORTANT: When a plan is active in the current worktree, plan-scoped rules
+// are the ONLY rules that apply — even if the plan-scoped file doesn't exist
+// yet. We return its path unconditionally so callers create new rules in the
+// plan dir instead of falling through to workspace-level notebook rules.
 func (m *Manager) ResolveRulesPath() string {
-	// Check plan-scoped rules first
+	// Plan-scoped rules — preferred and exclusive when a plan is active.
 	if planName := m.GetActivePlanName(); planName != "" {
 		if planRulesPath := m.GetPlanRulesPath(planName); planRulesPath != "" {
-			if _, statErr := os.Stat(planRulesPath); statErr == nil {
-				return planRulesPath
-			}
+			return planRulesPath
 		}
 	}
 

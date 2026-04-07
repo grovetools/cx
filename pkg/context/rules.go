@@ -331,7 +331,11 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		// A warning could be logged here in a future iteration.
 	}
 
-	// 2. Check for plan-scoped rules
+	// 2. Plan-scoped rules — preferred and exclusive when a plan is active.
+	// We never fall through to workspace-level notebook rules from inside a
+	// worktree with an active plan: the plan dir is the single source of truth
+	// for that worktree. If the plan-scoped file doesn't exist yet, return
+	// (nil, "", nil) so the caller can create it at the plan-scoped path.
 	if planName := m.GetActivePlanName(); planName != "" {
 		if planRulesPath := m.GetPlanRulesPath(planName); planRulesPath != "" {
 			if _, err := os.Stat(planRulesPath); err == nil {
@@ -341,6 +345,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 				}
 				return content, planRulesPath, nil
 			}
+			return nil, "", nil
 		}
 	}
 
