@@ -3,12 +3,12 @@ package rules
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
+	"github.com/grovetools/core/tui/embed"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/cx/pkg/context"
 )
@@ -148,85 +148,6 @@ func (m *rulesPickerModel) loadRulesCmd() tea.Msg {
 	return rulesLoadedMsg{items: items, err: nil}
 }
 
-func setRuleCmd(item ruleItem) tea.Cmd {
-	return func() tea.Msg {
-		sourcePath := item.path
-
-		// If selecting .grove/rules, unset the state (fall back to default)
-		if sourcePath == context.ActiveRulesFile {
-			if err := state.Delete(context.StateSourceKey); err != nil {
-				fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
-				return tea.Quit()
-			}
-			fmt.Println(theme.DefaultTheme.Success.Render("Using .grove/rules (default)"))
-			return tea.Quit()
-		}
-
-		// For named rule sets in .cx/, set the state
-		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Error: rule set '%s' not found at %s\n", item.name, sourcePath)
-			return tea.Quit()
-		}
-
-		if err := state.Set(context.StateSourceKey, sourcePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error updating state: %v\n", err)
-			return tea.Quit()
-		}
-
-		// Warn user if a .grove/rules file exists, as it will now be ignored.
-		if _, err := os.Stat(context.ActiveRulesFile); err == nil {
-			fmt.Fprintf(os.Stderr, "Warning: %s exists but will be ignored while '%s' is active.\n", context.ActiveRulesFile, item.name)
-		}
-
-		fmt.Println(theme.DefaultTheme.Success.Render(fmt.Sprintf("Active context rules set to '%s'", item.name)))
-		return tea.Quit()
-	}
-}
-
-func (m *rulesPickerModel) loadRuleCmd(item ruleItem) tea.Cmd {
-	workDir := m.workDir
-	return func() tea.Msg {
-		// Check for zombie worktree - refuse to create rules in deleted worktrees
-		if context.IsZombieWorktreeCwd() {
-			fmt.Fprintf(os.Stderr, "Error: Cannot create rules file in deleted worktree\n")
-			return tea.Quit()
-		}
-
-		sourcePath := item.path
-
-		// Can't load .grove/rules into itself
-		if sourcePath == context.ActiveRulesFile {
-			fmt.Fprintf(os.Stderr, "Error: Cannot load .grove/rules into itself\n")
-			return tea.Quit()
-		}
-
-		// Read the source file
-		content, err := os.ReadFile(sourcePath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading rule set: %v\n", err)
-			return tea.Quit()
-		}
-
-		// Resolve the active rules write path (plan-scoped > notebook > local)
-		mgr := context.NewManager(workDir)
-		rulesPath := mgr.ResolveRulesWritePath()
-
-		// Write to resolved rules path
-		if err := os.WriteFile(rulesPath, content, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing rules: %v\n", err)
-			return tea.Quit()
-		}
-
-		// Unset any active rule set state so the resolved path becomes active
-		if err := state.Delete(context.StateSourceKey); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not unset active rule set in state: %v\n", err)
-		}
-
-		fmt.Println(theme.DefaultTheme.Success.Render(fmt.Sprintf("%s Loaded '%s' to %s as working copy", theme.IconSuccess, item.name, rulesPath)))
-		return tea.Quit()
-	}
-}
-
 func (m *rulesPickerModel) performLoadCmd(item ruleItem) tea.Cmd {
 	workDir := m.workDir
 	return func() tea.Msg {
@@ -284,28 +205,23 @@ func performSetCmd(item ruleItem) tea.Cmd {
 	}
 }
 
+// editRuleCmd asks the host to open the rule file in $EDITOR via the embed
+// contract. The host (StandaloneHost or a composed host like cx view) is
+// responsible for suspending the TUI, running the editor, and dispatching an
+// embed.EditFinishedMsg back to this model.
 func editRuleCmd(item ruleItem) tea.Cmd {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi" // fallback to vi if EDITOR not set
-	}
-
-	// Check if file exists
+	// Check if file exists before bothering the host.
 	if _, err := os.Stat(item.path); os.IsNotExist(err) {
+		path := item.path
+		name := item.name
 		return func() tea.Msg {
-			fmt.Fprintf(os.Stderr, "Error: rule set '%s' not found at %s\n", item.name, item.path)
-			return tea.Quit()
+			fmt.Fprintf(os.Stderr, "Error: rule set '%s' not found at %s\n", name, path)
+			return embed.CloseRequestMsg{}
 		}
 	}
-
-	// Use tea.ExecProcess to properly suspend the TUI and run the editor
-	c := exec.Command(editor, item.path)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening editor: %v\n", err)
-		}
-		return tea.Quit()
-	})
+	return func() tea.Msg {
+		return embed.EditRequestMsg{Path: item.path}
+	}
 }
 
 func (m *rulesPickerModel) performSaveCmd(name string, toWork bool) tea.Cmd {

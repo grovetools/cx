@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/grovetools/core/tui/embed"
 	"github.com/grovetools/cx/pkg/context"
 )
 
@@ -164,10 +165,17 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updatePreviewSize()
 		return m, nil
 
+	case embed.EditFinishedMsg:
+		// Editor closed; reload the rules so the preview reflects any edits.
+		if msg.Err != nil {
+			m.err = msg.Err
+		}
+		return m, m.loadRulesCmd
+
 	case rulesLoadedMsg:
 		if msg.err != nil {
 			m.err = msg.err
-			return m, tea.Quit
+			return m, func() tea.Msg { return embed.DoneMsg{Err: msg.err} }
 		}
 		m.items = msg.items
 		// Set initial selection to the active rule
@@ -217,7 +225,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			m.quitting = true
-			return m, tea.Quit
+			return m, func() tea.Msg { return embed.CloseRequestMsg{} }
 		case key.Matches(msg, m.keys.Select):
 			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
 				m.settingIdx = m.selectedIndex
