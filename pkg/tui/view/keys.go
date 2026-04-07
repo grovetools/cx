@@ -75,12 +75,12 @@ func newPagerKeyMap(cfg *config.Config) pagerKeyMap {
 	km := pagerKeyMap{
 		Base: keymap.Load(cfg, "cx.view"),
 		NextPage: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "next page"),
+			key.WithKeys("]"),
+			key.WithHelp("]", "next page"),
 		),
 		PrevPage: key.NewBinding(
-			key.WithKeys("shift+tab"),
-			key.WithHelp("shift+tab", "prev page"),
+			key.WithKeys("["),
+			key.WithHelp("[", "prev page"),
 		),
 		Edit: key.NewBinding(
 			key.WithKeys("e"),
@@ -254,7 +254,7 @@ func (k treeViewKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "Toggle hot context")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Toggle cold context")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "Toggle exclude")),
-			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "Next Page")),
+			key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "Next Page")),
 			key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "Toggle gitignored")),
 			key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "Refresh view")),
 			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "Quit")),
