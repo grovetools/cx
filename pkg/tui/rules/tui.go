@@ -4,24 +4,23 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/grovetools/core/tui/embed"
 )
 
-// Run launches the interactive rule set selector TUI as a standalone program.
-// workDir overrides the working directory for context resolution (empty uses CWD).
+// Run launches the interactive rule set selector TUI as a standalone program
+// by wrapping the model in an embed.StandaloneHost. workDir overrides the
+// working directory for context resolution (empty uses CWD).
 //
-// Deprecated: callers should construct the model via New and host it via
-// embed.RunStandalone. This helper exists for backward compatibility during
-// the embeddable-TUI refactor.
+// This is a thin convenience wrapper for cobra entrypoints; embedding hosts
+// (such as cx view or grove-terminal) should call New directly and route
+// messages themselves rather than going through Run.
 func Run(workDir string) error {
 	m := New(workDir, nil)
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
+	if _, err := embed.RunStandalone(m, tea.WithAltScreen()); err != nil {
 		return fmt.Errorf("error running TUI: %w", err)
 	}
-	// Check for errors that occurred within the model
-	if finalModel.(*rulesPickerModel).err != nil {
-		return finalModel.(*rulesPickerModel).err
+	if m.err != nil {
+		return m.err
 	}
 	return nil
 }
