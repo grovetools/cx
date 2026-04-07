@@ -344,7 +344,30 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		}
 	}
 
-	// 3. Look for local .grove/rules
+	// 3. Check the notebook-scoped rules file (preferred location).
+	// This must be checked BEFORE local .grove/rules so the notebook is the
+	// single source of truth — .grove/rules is legacy and should only be
+	// consulted as a fallback for projects that haven't migrated yet.
+	if node, wsErr := workspace.GetProjectByPath(m.workDir); wsErr == nil {
+		if nbRulesFile, locErr := m.locator.GetContextRulesFile(node); locErr == nil {
+			if _, statErr := os.Stat(nbRulesFile); statErr == nil {
+				content, err := os.ReadFile(nbRulesFile)
+				if err != nil {
+					return nil, "", fmt.Errorf("reading notebook rules file %s: %w", nbRulesFile, err)
+				}
+				// Warn if a stale .grove/rules also exists — it's now ignored.
+				localRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+				if _, err := os.Stat(localRulesPath); err == nil {
+					rulesLog.WithField("legacy_file", localRulesPath).
+						WithField("active_file", nbRulesFile).
+						Warn("ignoring legacy .grove/rules — notebook rules file is now active; delete .grove/rules to silence this warning")
+				}
+				return content, nbRulesFile, nil
+			}
+		}
+	}
+
+	// 4. Look for local .grove/rules (legacy fallback)
 	localRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
 	if _, err := os.Stat(localRulesPath); err == nil {
 		content, err := os.ReadFile(localRulesPath)
@@ -354,7 +377,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 		return content, localRulesPath, nil
 	}
 
-	// 3. If not found, look for legacy .grovectx
+	// 5. If not found, look for legacy .grovectx
 	legacyRulesPath := filepath.Join(m.workDir, RulesFile)
 	if _, err := os.Stat(legacyRulesPath); err == nil {
 		content, err := os.ReadFile(legacyRulesPath)
