@@ -3,6 +3,7 @@ package view
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -11,9 +12,10 @@ import (
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/components/nvim"
+	"github.com/grovetools/core/tui/embed"
 	core_theme "github.com/grovetools/core/tui/theme"
-	"github.com/grovetools/core/util/delegation"
 	"github.com/grovetools/cx/pkg/context"
+	rulestui "github.com/grovetools/cx/pkg/tui/rules"
 	"github.com/spf13/cobra"
 )
 
@@ -67,6 +69,11 @@ type pagerModel struct {
 	isEditing        bool
 	nvimEmbedEnabled bool
 	editingFilePath  string
+
+	// Embedded rules picker (replaces the old `cx rules` subprocess delegation).
+	cfg      *config.Config
+	rulesTUI rulestui.Model
+	showRules bool
 }
 
 func newPagerModel(startPage string, workDir string) (*pagerModel, error) {
@@ -110,6 +117,7 @@ func newPagerModel(startPage string, workDir string) (*pagerModel, error) {
 		exitForNvimEdit:  false,
 		nvimEditPath:     "",
 		nvimEmbedEnabled: nvimEmbedEnabled,
+		cfg:              cfg,
 	}, nil
 }
 
@@ -119,6 +127,34 @@ func (m *pagerModel) Init() tea.Cmd {
 
 func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// When the embedded rules picker is active, give it first crack at the
+	// message and translate the embed contract messages it emits.
+	if m.showRules && m.rulesTUI != nil {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+		case embed.CloseRequestMsg, embed.CloseConfirmMsg, embed.DoneMsg:
+			m.showRules = false
+			m.rulesTUI = nil
+			return m, refreshSharedStateCmd(m.state.workDir)
+		case embed.EditRequestMsg:
+			editor := os.Getenv("EDITOR")
+			if editor == "" {
+				editor = "vi"
+			}
+			editCmd := exec.Command(editor, msg.Path)
+			return m, tea.ExecProcess(editCmd, func(err error) tea.Msg {
+				return embed.EditFinishedMsg{Err: err}
+			})
+		}
+		updated, cmd := m.rulesTUI.Update(msg)
+		if rm, ok := updated.(rulestui.Model); ok {
+			m.rulesTUI = rm
+		}
+		return m, cmd
+	}
 
 	if m.isEditing && m.editorModel != nil {
 		switch msg := msg.(type) {
@@ -255,13 +291,18 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.SelectRules):
 			if m.pages[m.activePage].Name() == "rules" {
-				cxCmd := delegation.Command("cx", "rules")
-				cxCmd.Stdin = os.Stdin
-				cxCmd.Stdout = os.Stdout
-				cxCmd.Stderr = os.Stderr
-				return m, tea.ExecProcess(cxCmd, func(err error) tea.Msg {
-					return refreshStateMsg{}
-				})
+				// Embed the rules picker model in-process instead of
+				// shelling out to `cx rules`. The picker speaks the
+				// embed contract so we can route messages and editor
+				// requests through this host.
+				m.rulesTUI = rulestui.New(m.state.workDir, m.cfg)
+				m.showRules = true
+				return m, tea.Batch(
+					m.rulesTUI.Init(),
+					func() tea.Msg {
+						return tea.WindowSizeMsg{Width: m.width, Height: m.height}
+					},
+				)
 			}
 		case key.Matches(msg, m.keys.Help):
 			m.help.Toggle()
@@ -285,6 +326,9 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *pagerModel) View() string {
+	if m.showRules && m.rulesTUI != nil {
+		return m.rulesTUI.View()
+	}
 	if m.state.loading {
 		return "Loading context..."
 	}
