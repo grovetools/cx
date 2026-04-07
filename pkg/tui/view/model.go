@@ -118,6 +118,24 @@ func (m *pagerModel) Init() tea.Cmd {
 func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// Host-level embed contract messages take priority. A workspace
+	// switch rebuilds the shared state so every page reacts. Focus
+	// and blur are forwarded to the active page if it implements
+	// them; pages without a Focus action simply no-op.
+	switch msg := msg.(type) {
+	case embed.SetWorkspaceMsg:
+		if msg.Node != nil {
+			m.state.workDir = msg.Node.Path
+		}
+		m.state.loading = true
+		return m, refreshSharedStateCmd(m.state.workDir)
+	case embed.FocusMsg:
+		return m, m.pages[m.activePage].Focus()
+	case embed.BlurMsg:
+		m.pages[m.activePage].Blur()
+		return m, nil
+	}
+
 	// When the embedded rules picker is active, give it first crack at the
 	// message and translate the embed contract messages it emits.
 	if m.showRules && m.rulesTUI != nil {
