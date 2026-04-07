@@ -59,7 +59,7 @@ func clearDeleteCmd() tea.Cmd {
 }
 
 func (m *rulesPickerModel) Init() tea.Cmd {
-	return loadRulesCmd
+	return m.loadRulesCmd
 }
 
 func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -77,12 +77,12 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Set status message
 		if m.loadingFromIdx >= 0 && m.loadingFromIdx < len(m.items) {
-			mgr := context.NewManager(rulesWorkDir)
+			mgr := context.NewManager(m.workDir)
 			m.statusMessage = fmt.Sprintf("Loaded '%s' to %s as working copy", m.items[m.loadingFromIdx].name, mgr.ResolveRulesWritePath())
 		}
 
 		// Reload the rules to reflect the new state
-		return m, tea.Batch(clearLoadCmd(), loadRulesCmd)
+		return m, tea.Batch(clearLoadCmd(), m.loadRulesCmd)
 
 	case clearLoadMsg:
 		m.loadingComplete = false
@@ -111,7 +111,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Reload the rules to reflect the new state
-		return m, tea.Batch(clearSetCmd(), loadRulesCmd)
+		return m, tea.Batch(clearSetCmd(), m.loadRulesCmd)
 
 	case clearSetMsg:
 		m.settingComplete = false
@@ -128,7 +128,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = fmt.Sprintf("Saved to %s", m.saveInput.Value()+".rules")
 
 		// Reload the rules to show the new file
-		return m, tea.Batch(clearSaveCmd(), loadRulesCmd)
+		return m, tea.Batch(clearSaveCmd(), m.loadRulesCmd)
 
 	case clearSaveMsg:
 		m.statusMessage = ""
@@ -152,7 +152,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Reload the rules to reflect deletion
-		return m, tea.Batch(clearDeleteCmd(), loadRulesCmd)
+		return m, tea.Batch(clearDeleteCmd(), m.loadRulesCmd)
 
 	case clearDeleteMsg:
 		m.deletingComplete = false
@@ -199,7 +199,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				name := m.saveInput.Value()
 				if name != "" {
 					m.saveMode = false
-					return m, performSaveCmd(name, m.saveToWork)
+					return m, m.performSaveCmd(name, m.saveToWork)
 				}
 				return m, nil
 			default:
@@ -243,7 +243,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loadingFromIdx = m.selectedIndex
 				m.loadingToIdx = groveRulesIdx
 				m.loadingActive = true
-				return m, performLoadCmd(m.items[m.selectedIndex])
+				return m, m.performLoadCmd(m.items[m.selectedIndex])
 			}
 		case key.Matches(msg, m.keys.Edit):
 			if len(m.items) > 0 && m.selectedIndex < len(m.items) {

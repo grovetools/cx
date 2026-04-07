@@ -13,9 +13,6 @@ import (
 	"github.com/grovetools/cx/pkg/context"
 )
 
-// rulesWorkDir holds the working directory override for context resolution.
-var rulesWorkDir string
-
 // --- TUI Commands ---
 
 type rulesLoadedMsg struct {
@@ -23,11 +20,11 @@ type rulesLoadedMsg struct {
 	err   error
 }
 
-func loadRulesCmd() tea.Msg {
+func (m *rulesPickerModel) loadRulesCmd() tea.Msg {
 	var items []ruleItem
 	activeSource, _ := state.GetString(context.StateSourceKey)
 
-	mgr := context.NewManager(rulesWorkDir)
+	mgr := context.NewManager(m.workDir)
 	seen := make(map[string]bool)
 
 	// Check for active rules file: notebook location first, then legacy .grove/rules
@@ -186,7 +183,8 @@ func setRuleCmd(item ruleItem) tea.Cmd {
 	}
 }
 
-func loadRuleCmd(item ruleItem) tea.Cmd {
+func (m *rulesPickerModel) loadRuleCmd(item ruleItem) tea.Cmd {
+	workDir := m.workDir
 	return func() tea.Msg {
 		// Check for zombie worktree - refuse to create rules in deleted worktrees
 		if context.IsZombieWorktreeCwd() {
@@ -210,7 +208,7 @@ func loadRuleCmd(item ruleItem) tea.Cmd {
 		}
 
 		// Resolve the active rules write path (plan-scoped > notebook > local)
-		mgr := context.NewManager(rulesWorkDir)
+		mgr := context.NewManager(workDir)
 		rulesPath := mgr.ResolveRulesWritePath()
 
 		// Write to resolved rules path
@@ -229,7 +227,8 @@ func loadRuleCmd(item ruleItem) tea.Cmd {
 	}
 }
 
-func performLoadCmd(item ruleItem) tea.Cmd {
+func (m *rulesPickerModel) performLoadCmd(item ruleItem) tea.Cmd {
+	workDir := m.workDir
 	return func() tea.Msg {
 		// Check for zombie worktree - refuse to create rules in deleted worktrees
 		if context.IsZombieWorktreeCwd() {
@@ -245,7 +244,7 @@ func performLoadCmd(item ruleItem) tea.Cmd {
 		}
 
 		// Resolve the active rules write path (plan-scoped > notebook > local)
-		mgr := context.NewManager(rulesWorkDir)
+		mgr := context.NewManager(workDir)
 		rulesPath := mgr.ResolveRulesWritePath()
 
 		// Write to resolved rules path
@@ -309,9 +308,10 @@ func editRuleCmd(item ruleItem) tea.Cmd {
 	})
 }
 
-func performSaveCmd(name string, toWork bool) tea.Cmd {
+func (m *rulesPickerModel) performSaveCmd(name string, toWork bool) tea.Cmd {
+	workDir := m.workDir
 	return func() tea.Msg {
-		mgr := context.NewManager(rulesWorkDir)
+		mgr := context.NewManager(workDir)
 		content, _, err := mgr.LoadRulesContent()
 		if err != nil {
 			return saveCompleteMsg{err: fmt.Errorf("failed to load active rules: %w", err)}

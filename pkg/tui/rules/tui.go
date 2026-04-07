@@ -6,11 +6,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Run launches the interactive rule set selector TUI.
+// Run launches the interactive rule set selector TUI as a standalone program.
 // workDir overrides the working directory for context resolution (empty uses CWD).
+//
+// Deprecated: callers should construct the model via New and host it via
+// embed.RunStandalone. This helper exists for backward compatibility during
+// the embeddable-TUI refactor.
 func Run(workDir string) error {
-	rulesWorkDir = workDir
-	m := newRulesPickerModel()
+	m := New(workDir, nil)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	finalModel, err := p.Run()
 	if err != nil {

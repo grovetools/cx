@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grovetools/cx/cmd/rules"
 	"github.com/grovetools/cx/pkg/context"
+	rules "github.com/grovetools/cx/pkg/tui/rules"
 	"github.com/grovetools/core/pkg/alias"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
