@@ -82,7 +82,27 @@ type Manager struct {
 	daemonClient    daemon.Client // Daemon client for cached workspace/git data
 }
 
-// NewManager creates a new context manager
+// managerCache memoizes Manager instances by absolute workDir. NewManager
+// is called hundreds of times per second from TUI render paths (e.g.
+// cx/pkg/tui/view/page_tree.go's renderNode -> getFilePathRule), and
+// each construction runs config.LoadFrom which reads and parses
+// grove.toml + compiles the JSONSchema validator — ~15ms per call.
+// Manager itself is concurrent-safe (its internal caches are mutex-
+// guarded) and designed to be long-lived, so sharing a single instance
+// per workDir is the natural pattern. Tests that need a fresh Manager
+// can call ClearManagerCache.
+var managerCache sync.Map
+
+// ClearManagerCache evicts all cached Manager instances. Intended for
+// tests and long-running processes that need to re-read config after
+// a grove.toml change.
+func ClearManagerCache() {
+	managerCache = sync.Map{}
+}
+
+// NewManager creates (or returns a cached) context manager for the
+// given workDir. Instances are memoized by absolute workDir — see
+// managerCache.
 func NewManager(workDir string) *Manager {
 	if workDir == "" {
 		workDir, _ = os.Getwd()
@@ -92,21 +112,29 @@ func NewManager(workDir string) *Manager {
 	if err == nil {
 		workDir = absWorkDir
 	}
+	if cached, ok := managerCache.Load(workDir); ok {
+		return cached.(*Manager)
+	}
 	cfg, err := config.LoadFrom(workDir)
 	if err != nil {
 		cfg, _ = config.LoadDefault()
 	}
 
-	return &Manager{
-		workDir:         workDir,
-		locator:         workspace.NewNotebookLocator(cfg),
+	mgr := &Manager{
+		workDir:           workDir,
+		locator:           workspace.NewNotebookLocator(cfg),
 		gitIgnoredCache:   make(map[string]map[string]bool),
 		changedFilesCache: make(map[string]map[string]bool),
 		aliasResolver:     nil, // Lazily initialized
-		log:             grovelogging.NewLogger("grove-context"),
-		ulog:            grovelogging.NewUnifiedLogger("cx.context"),
-		daemonClient:    daemon.NewWithAutoStart(),
+		log:               grovelogging.NewLogger("grove-context"),
+		ulog:              grovelogging.NewUnifiedLogger("cx.context"),
+		daemonClient:      daemon.NewWithAutoStart(),
 	}
+	// LoadOrStore resolves the rare race where two goroutines miss the
+	// cache simultaneously — the first to store wins, and every caller
+	// returns the same Manager instance.
+	actual, _ := managerCache.LoadOrStore(workDir, mgr)
+	return actual.(*Manager)
 }
 
 // GetWorkDir returns the current working directory
