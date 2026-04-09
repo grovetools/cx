@@ -109,9 +109,16 @@ func (p *treePage) Init() tea.Cmd {
 }
 
 func (p *treePage) Focus() tea.Cmd {
-	// When focused, refresh the tree view in case rules have changed
-	p.statusMessage = "Refreshing tree..."
-	return p.loadTreeCmd()
+	// Focus used to return loadTreeCmd on every gain-focus event, which
+	// combined with an embed.FocusMsg + a stateRefreshedMsg handler in
+	// model.go produced a 3x tree rebuild on every init/tab switch (see
+	// plans/groveterm-pt3/25-sluggish-terminal.md for the pprof capture).
+	// loadTreeCmd walks the entire project tree and calls
+	// pathutil.NormalizeForLookup per node — multiple seconds of CPU per
+	// rebuild. The tree is now only loaded explicitly: once at Init, on
+	// `r` (Refresh), on rule toggle/apply, and when toggling gitignored
+	// visibility. Focus is a no-op.
+	return nil
 }
 
 func (p *treePage) Blur() {

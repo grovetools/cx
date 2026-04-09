@@ -319,7 +319,12 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stateRefreshedMsg:
 		*m.state = msg.state
-		return m, m.pages[m.activePage].Focus()
+		// Previously re-fired the active page's Focus() on every shared-
+		// state refresh, which on the tree page triggered a full
+		// AnalyzeProjectTree walk (third rebuild in the init cascade).
+		// State snapshots are now applied in place; pages that want to
+		// react can do so via their own Update handler on this message.
+		return m, nil
 
 	case refreshStateMsg:
 		m.state.loading = true
