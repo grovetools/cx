@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,8 +11,8 @@ import (
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/components/nvim"
+	"github.com/grovetools/core/tui/components/pager"
 	"github.com/grovetools/core/tui/embed"
-	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/cx/pkg/context"
 	rulestui "github.com/grovetools/cx/pkg/tui/rules"
 )
@@ -71,12 +70,12 @@ func NewWithStartPage(startPage, workDir string, cfg *config.Config) (Model, err
 		nvimEmbedEnabled = cfg.TUI.NvimEmbed.UserConfig
 	}
 
+	keys := pagerKeys
 	return &pagerModel{
-		pages:            pages,
-		activePage:       activePage,
+		pager:            pager.NewAt(pages, pager.KeyMapFromBase(keys.Base), activePage),
 		state:            state,
-		keys:             pagerKeys,
-		help:             help.New(pagerKeys),
+		keys:             keys,
+		help:             help.New(keys),
 		ExitForNvimEdit:  false,
 		NvimEditPath:     "",
 		nvimEmbedEnabled: nvimEmbedEnabled,
@@ -85,13 +84,12 @@ func NewWithStartPage(startPage, workDir string, cfg *config.Config) (Model, err
 }
 
 type pagerModel struct {
-	pages      []Page
-	activePage int
-	state      *sharedState
-	width      int
-	height     int
-	keys       pagerKeyMap
-	help       help.Model
+	pager  pager.Model
+	state  *sharedState
+	width  int
+	height int
+	keys   pagerKeyMap
+	help   help.Model
 
 	// Exported Neovim IPC state so standalone CLI wrappers can detect
 	// a "quit to let nvim edit this file" exit and print the
@@ -112,7 +110,17 @@ type pagerModel struct {
 }
 
 func (m *pagerModel) Init() tea.Cmd {
-	return tea.Batch(m.pages[m.activePage].Init(), refreshSharedStateCmd(m.state.workDir))
+	return tea.Batch(m.pager.Init(), refreshSharedStateCmd(m.state.workDir))
+}
+
+// activePageName returns the Name() of whichever cx page is currently
+// focused in the pager. Used by key handlers that only apply to
+// specific tabs (e.g. SelectRules only fires on the rules page).
+func (m *pagerModel) activePageName() string {
+	if p := m.pager.Active(); p != nil {
+		return p.Name()
+	}
+	return ""
 }
 
 func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -130,10 +138,13 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state.loading = true
 		return m, refreshSharedStateCmd(m.state.workDir)
 	case embed.FocusMsg:
-		return m, m.pages[m.activePage].Focus()
+		var cmd tea.Cmd
+		m.pager, cmd = m.pager.Update(msg)
+		return m, cmd
 	case embed.BlurMsg:
-		m.pages[m.activePage].Blur()
-		return m, nil
+		var cmd tea.Cmd
+		m.pager, cmd = m.pager.Update(msg)
+		return m, cmd
 	}
 
 	// When the embedded rules picker is active, give it first crack at the
@@ -179,12 +190,17 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editorModel.Close()
 				m.isEditing = false
 				m.editorModel = nil
+				// Cycle the pager manually so the editor-exit Tab
+				// keystroke advances to the next/prev tab, then
+				// refresh shared state so the new tab sees any edits
+				// that were just saved.
+				var cycleCmd tea.Cmd
 				if msg.Type == tea.KeyShiftTab {
-					m.prevPage()
+					m.pager, cycleCmd = m.pager.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
 				} else {
-					m.nextPage()
+					m.pager, cycleCmd = m.pager.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 				}
-				return m, tea.Batch(refreshSharedStateCmd(m.state.workDir), m.pages[m.activePage].Focus())
+				return m, tea.Batch(refreshSharedStateCmd(m.state.workDir), cycleCmd)
 			}
 		case tea.WindowSizeMsg:
 			var cmd tea.Cmd
@@ -214,10 +230,18 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.SetSize(m.width, m.height)
-		pageHeight := m.height - 6
-		for _, p := range m.pages {
-			p.SetSize(m.width, pageHeight)
+		// The cx meta-panel reserves ~4 vertical rows for footer/
+		// help/padding chrome of its own. The pager subtracts its
+		// own 2-row tab bar on top, leaving pages with height-6
+		// which matches the pre-refactor layout.
+		chromeHeight := 4
+		pageHeight := m.height - chromeHeight
+		if pageHeight < 1 {
+			pageHeight = 1
 		}
+		var cmd tea.Cmd
+		m.pager, cmd = m.pager.Update(tea.WindowSizeMsg{Width: m.width, Height: pageHeight})
+		cmds = append(cmds, cmd)
 
 	case tea.KeyMsg:
 		// If help is showing, let it handle all keys except quit
@@ -233,14 +257,8 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
-		case key.Matches(msg, m.keys.NextPage):
-			m.nextPage()
-			return m, m.pages[m.activePage].Focus()
-		case key.Matches(msg, m.keys.PrevPage):
-			m.prevPage()
-			return m, m.pages[m.activePage].Focus()
 		case key.Matches(msg, m.keys.Edit):
-			if m.pages[m.activePage].Name() == "rules" {
+			if m.activePageName() == "rules" {
 				rulesPath := m.state.rulesPath
 				if rulesPath == "" {
 					mgr := context.NewManager(m.state.workDir)
@@ -298,7 +316,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				})
 			}
 		case key.Matches(msg, m.keys.SelectRules):
-			if m.pages[m.activePage].Name() == "rules" {
+			if m.activePageName() == "rules" {
 				// Embed the rules picker model in-process instead of
 				// shelling out to `cx rules`. The picker speaks the
 				// embed contract so we can route messages and editor
@@ -331,9 +349,9 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, refreshSharedStateCmd(m.state.workDir)
 	}
 
-	activePage, pageCmd := m.pages[m.activePage].Update(msg)
-	m.pages[m.activePage] = activePage
-	cmds = append(cmds, pageCmd)
+	var pagerCmd tea.Cmd
+	m.pager, pagerCmd = m.pager.Update(msg)
+	cmds = append(cmds, pagerCmd)
 
 	return m, tea.Batch(cmds...)
 }
@@ -354,13 +372,13 @@ func (m *pagerModel) View() string {
 		return m.help.View()
 	}
 
-	header := m.renderTabs()
-
-	var pageContent string
+	var bodyContent string
 	if m.isEditing && m.editorModel != nil {
-		pageContent = "\n" + m.editorModel.View()
+		// In editor mode the tab bar is still useful context for
+		// the user, but the body is replaced by the nvim viewport.
+		bodyContent = m.pager.RenderTabBar() + "\n\n" + m.editorModel.View()
 	} else {
-		pageContent = m.pages[m.activePage].View()
+		bodyContent = m.pager.View()
 	}
 
 	var footer string
@@ -370,77 +388,10 @@ func (m *pagerModel) View() string {
 		footer = m.help.View()
 	}
 
-	fullContent := lipgloss.JoinVertical(lipgloss.Left, header, pageContent, footer)
+	fullContent := lipgloss.JoinVertical(lipgloss.Left, bodyContent, footer)
 
 	if m.isEditing {
 		return lipgloss.NewStyle().Padding(0, 2).Render(fullContent)
 	}
 	return lipgloss.NewStyle().Padding(1, 2).Render(fullContent)
-}
-
-func (m *pagerModel) nextPage() {
-	m.pages[m.activePage].Blur()
-	m.activePage = (m.activePage + 1) % len(m.pages)
-}
-
-func (m *pagerModel) prevPage() {
-	m.pages[m.activePage].Blur()
-	m.activePage--
-	if m.activePage < 0 {
-		m.activePage = len(m.pages) - 1
-	}
-}
-
-func (m *pagerModel) renderTabs() string {
-	theme := core_theme.DefaultTheme
-
-	inactiveTab := lipgloss.NewStyle().
-		Foreground(theme.Colors.MutedText).
-		Padding(0, 2).
-		UnderlineSpaces(false).
-		Underline(false)
-
-	activeTab := lipgloss.NewStyle().
-		Foreground(theme.Colors.Green).
-		Bold(true).
-		Padding(0, 2).
-		UnderlineSpaces(false).
-		Underline(false)
-
-	// First tab styles with no left padding to align with content
-	inactiveFirstTab := lipgloss.NewStyle().
-		Foreground(theme.Colors.MutedText).
-		PaddingRight(2).
-		UnderlineSpaces(false).
-		Underline(false)
-
-	activeFirstTab := lipgloss.NewStyle().
-		Foreground(theme.Colors.Green).
-		Bold(true).
-		PaddingRight(2).
-		UnderlineSpaces(false).
-		Underline(false)
-
-	var tabs []string
-	for i, p := range m.pages {
-		var style lipgloss.Style
-		if i == 0 {
-			// First tab: no left padding
-			if i == m.activePage {
-				style = activeFirstTab
-			} else {
-				style = inactiveFirstTab
-			}
-		} else {
-			// Other tabs: normal padding
-			if i == m.activePage {
-				style = activeTab
-			} else {
-				style = inactiveTab
-			}
-		}
-		tabs = append(tabs, style.Render(strings.ToUpper(p.Name())))
-	}
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
 }
