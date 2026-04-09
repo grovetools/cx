@@ -71,8 +71,13 @@ func NewWithStartPage(startPage, workDir string, cfg *config.Config) (Model, err
 	}
 
 	keys := pagerKeys
+	p := pager.NewAt(pages, pager.KeyMapFromBase(keys.Base), activePage)
+	p.SetConfig(pager.Config{
+		OuterPadding: [4]int{1, 2, 1, 2},
+		FooterHeight: 1,
+	})
 	return &pagerModel{
-		pager:            pager.NewAt(pages, pager.KeyMapFromBase(keys.Base), activePage),
+		pager:            p,
 		state:            state,
 		keys:             keys,
 		help:             help.New(keys),
@@ -230,17 +235,11 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.SetSize(m.width, m.height)
-		// The cx meta-panel reserves ~4 vertical rows for footer/
-		// help/padding chrome of its own. The pager subtracts its
-		// own 2-row tab bar on top, leaving pages with height-6
-		// which matches the pre-refactor layout.
-		chromeHeight := 4
-		pageHeight := m.height - chromeHeight
-		if pageHeight < 1 {
-			pageHeight = 1
-		}
+		// Pager owns the chrome budget now: OuterPadding(1,2,1,2)
+		// + tab bar (2) + footer slot (1) are subtracted via SubSize
+		// internally, so we just forward the raw dimensions.
 		var cmd tea.Cmd
-		m.pager, cmd = m.pager.Update(tea.WindowSizeMsg{Width: m.width, Height: pageHeight})
+		m.pager, cmd = m.pager.Update(msg)
 		cmds = append(cmds, cmd)
 
 	case tea.KeyMsg:
@@ -372,26 +371,21 @@ func (m *pagerModel) View() string {
 		return m.help.View()
 	}
 
-	var bodyContent string
+	// Normal mode: pager owns the outer Padding(1,2) via its Config;
+	// the host just appends its footer below the padded pager block.
+	// The footer gets its own left/right padding so it keeps the
+	// same visual indent as the padded body.
 	if m.isEditing && m.editorModel != nil {
-		// In editor mode the tab bar is still useful context for
-		// the user, but the body is replaced by the nvim viewport.
-		bodyContent = m.pager.RenderTabBar() + "\n\n" + m.editorModel.View()
-	} else {
-		bodyContent = m.pager.View()
+		// Editor mode bypasses the pager's own View() because the
+		// nvim viewport replaces the body entirely, but we still
+		// want the pager's tab bar as context. Render it manually
+		// inside a matching Padding(0, 2) wrap.
+		bodyContent := m.pager.RenderTabBar() + "\n\n" + m.editorModel.View()
+		return lipgloss.NewStyle().Padding(0, 2).Render(bodyContent)
 	}
 
-	var footer string
-	if m.isEditing && m.editorModel != nil {
-		footer = ""
-	} else {
-		footer = m.help.View()
-	}
-
-	fullContent := lipgloss.JoinVertical(lipgloss.Left, bodyContent, footer)
-
-	if m.isEditing {
-		return lipgloss.NewStyle().Padding(0, 2).Render(fullContent)
-	}
-	return lipgloss.NewStyle().Padding(1, 2).Render(fullContent)
+	body := m.pager.View()
+	footer := m.help.View()
+	footer = lipgloss.NewStyle().PaddingLeft(2).PaddingRight(2).Render(footer)
+	return lipgloss.JoinVertical(lipgloss.Left, body, footer)
 }
