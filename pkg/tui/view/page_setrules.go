@@ -41,7 +41,26 @@ func (p *setRulesPage) Update(msg tea.Msg) (pager.Page, tea.Cmd) {
 	if m, ok := updated.(rules.Model); ok {
 		p.inner = m
 	}
+	// Swallow CloseRequestMsg — the picker's quit key shouldn't
+	// propagate out of the pager tab. The user switches tabs with
+	// numeric keys or [/].
+	if cmd != nil {
+		cmd = interceptClose(cmd)
+	}
 	return p, cmd
+}
+
+// interceptClose filters out embed.CloseRequestMsg from a tea.Cmd
+// so the picker's quit action doesn't bubble to the host.
+func interceptClose(cmd tea.Cmd) tea.Cmd {
+	return func() tea.Msg {
+		msg := cmd()
+		switch msg.(type) {
+		case embed.CloseRequestMsg:
+			return nil
+		}
+		return msg
+	}
 }
 
 func (p *setRulesPage) Focus() tea.Cmd {
