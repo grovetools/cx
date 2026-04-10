@@ -26,7 +26,8 @@ func NewRulesPage(state *sharedState) Page {
 	}
 }
 
-func (p *rulesPage) Name() string { return "rules" }
+func (p *rulesPage) Name() string  { return "rules" }
+func (p *rulesPage) TabID() string { return "rules" }
 
 func (p *rulesPage) Keys() interface{} {
 	return pagerKeys

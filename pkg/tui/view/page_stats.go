@@ -193,7 +193,8 @@ func NewStatsPage(state *sharedState) Page {
 	}
 }
 
-func (p *statsPage) Name() string { return "stats" }
+func (p *statsPage) Name() string  { return "stats" }
+func (p *statsPage) TabID() string { return "stats" }
 
 func (p *statsPage) Keys() interface{} {
 	return p.keys

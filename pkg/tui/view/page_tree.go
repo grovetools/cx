@@ -98,7 +98,8 @@ func NewTreePage(state *sharedState) Page {
 
 // --- Page Interface ---
 
-func (p *treePage) Name() string { return "tree" }
+func (p *treePage) Name() string  { return "tree" }
+func (p *treePage) TabID() string { return "tree" }
 
 func (p *treePage) Keys() interface{} {
 	return p.keys

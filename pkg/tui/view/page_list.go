@@ -162,7 +162,8 @@ func NewListPage(state *sharedState) Page {
 	}
 }
 
-func (p *listPage) Name() string { return "list" }
+func (p *listPage) Name() string  { return "list" }
+func (p *listPage) TabID() string { return "list" }
 
 func (p *listPage) Keys() interface{} {
 	return p.keys
