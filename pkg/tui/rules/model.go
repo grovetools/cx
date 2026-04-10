@@ -84,6 +84,12 @@ func newRulesPickerModel() *rulesPickerModel {
 	}
 }
 
+// IsSaveMode reports whether the save-name text input is focused so
+// the host can gate pager tab jumps (PageWithTextInput).
+func (m *rulesPickerModel) IsSaveMode() bool {
+	return m.saveMode
+}
+
 func (m *rulesPickerModel) updatePreviewSize() {
 	// Calculate space needed for fixed elements
 	headerHeight := 3               // Header + empty line

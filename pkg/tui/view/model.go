@@ -42,16 +42,17 @@ func NewWithStartPage(startPage, workDir string, cfg *config.Config) (Model, err
 		return nil, fmt.Errorf("repo view deprecated")
 	}
 	if startPage == "" {
-		startPage = "tree"
+		startPage = "rules"
 	}
 
 	state := &sharedState{workDir: workDir, loading: true}
 
 	pages := []Page{
-		NewTreePage(state),
 		NewRulesPage(state),
 		NewStatsPage(state),
+		NewSetRulesPage(state),
 		NewListPage(state),
+		NewTreePage(state),
 	}
 
 	activePage := 0
