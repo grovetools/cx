@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/grovetools/compositor"
 	"github.com/grovetools/core/config"
 	tuiView "github.com/grovetools/cx/pkg/tui/view"
 	"github.com/spf13/cobra"
@@ -28,10 +29,18 @@ func NewViewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p := tea.NewProgram(m, tea.WithAltScreen())
+			compModel := compositor.NewModel(m)
+			p := tea.NewProgram(compModel, tea.WithAltScreen())
 			finalModel, err := p.Run()
 			if err != nil {
 				return err
+			}
+
+			// Free compositor resources and unwrap to recover the tuiView.Model
+			// so post-exit type assertions succeed.
+			if cm, ok := finalModel.(*compositor.Model); ok {
+				cm.Free()
+				finalModel = cm.Unwrap()
 			}
 
 			// After the TUI exits, check if it was for Neovim editing integration.
