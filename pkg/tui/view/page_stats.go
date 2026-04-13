@@ -360,14 +360,26 @@ func (p *statsPage) Blur() {
 	p.lastKey = ""
 }
 
+// Footer returns help text for the pager's pinned footer slot.
+func (p *statsPage) Footer() string {
+	helpView := p.keys.ShortHelp()
+	helpStr := ""
+	for i, h := range helpView {
+		helpStr += h.Help().Key + " " + h.Help().Desc
+		if i < len(helpView)-1 {
+			helpStr += " • "
+		}
+	}
+	return core_theme.DefaultTheme.Muted.Render(helpStr)
+}
+
 func (p *statsPage) SetSize(width, height int) {
 	p.width = width
 	p.height = height
 	// The pager passes us the available space. We need to account for:
 	// - The focused list's border (2 chars width)
-	// - This page's internal help footer (1 line height)
 	listWidth := width - 2
-	listHeight := (height - 1) / 2
+	listHeight := height / 2
 	p.langList.SetSize(listWidth, listHeight)
 	p.fileList.SetSize(listWidth, listHeight)
 }
@@ -468,8 +480,12 @@ func (p *statsPage) View() string {
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(theme.Colors.Green)
 
-	// Set width and height dynamically before rendering
-	listHeight := (p.height - 10) / 2
+	// Set width and height dynamically before rendering.
+	// Subtract 4 for borders (2 rows per list: top+bottom) then split evenly.
+	listHeight := (p.height - 4) / 2
+	if listHeight < 1 {
+		listHeight = 1
+	}
 	p.langList.SetSize(p.width-2, listHeight) // -2 for border
 	p.fileList.SetSize(p.width-2, listHeight) // -2 for border
 
@@ -484,16 +500,7 @@ func (p *statsPage) View() string {
 		fileView = focusedStyle.Render(fileView)
 	}
 
-	helpView := p.keys.ShortHelp()
-	helpStr := ""
-	for i, h := range helpView {
-		helpStr += h.Help().Key + " " + h.Help().Desc
-		if i < len(helpView)-1 {
-			helpStr += " • "
-		}
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, langView, fileView, theme.Muted.Render(helpStr))
+	return lipgloss.JoinVertical(lipgloss.Left, langView, fileView)
 }
 
 // excludeItemCmd creates a command to exclude the selected item from context
