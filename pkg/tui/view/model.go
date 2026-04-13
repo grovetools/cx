@@ -372,21 +372,18 @@ func (m *pagerModel) View() string {
 		return m.help.View()
 	}
 
-	// Normal mode: pager owns the outer Padding(1,2) via its Config;
-	// the host just appends its footer below the padded pager block.
-	// The footer gets its own left/right padding so it keeps the
-	// same visual indent as the padded body.
+	// Editor mode bypasses the pager's own View() because the
+	// nvim viewport replaces the body entirely, but we still
+	// want the pager's tab bar as context.
 	if m.isEditing && m.editorModel != nil {
-		// Editor mode bypasses the pager's own View() because the
-		// nvim viewport replaces the body entirely, but we still
-		// want the pager's tab bar as context. Render it manually
-		// inside a matching Padding(0, 2) wrap.
 		bodyContent := m.pager.RenderTabBar() + "\n\n" + m.editorModel.View()
 		return lipgloss.NewStyle().Padding(0, 2).Render(bodyContent)
 	}
 
-	body := m.pager.View()
-	footer := m.help.View()
-	footer = lipgloss.NewStyle().PaddingLeft(2).PaddingRight(2).Render(footer)
-	return lipgloss.JoinVertical(lipgloss.Left, body, footer)
+	// Build footer and delegate to pager which pins it at the
+	// bottom of the pane. The pager's OuterPadding provides the
+	// horizontal indent so no extra padding is needed here.
+	m.pager.SetFooter(m.help.View())
+
+	return m.pager.View()
 }
