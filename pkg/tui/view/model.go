@@ -54,6 +54,7 @@ func NewWithStartPage(startPage, workDir string, cfg *config.Config) (Model, err
 		NewSetRulesPage(state),
 		NewListPage(state),
 		NewTreePage(state),
+		NewSuggestionsPage(state),
 	}
 
 	activePage := 0
