@@ -12,6 +12,7 @@ import (
 	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/components/nvim"
 	"github.com/grovetools/core/tui/components/pager"
+	"github.com/grovetools/core/state"
 	"github.com/grovetools/core/tui/embed"
 	"github.com/grovetools/cx/pkg/context"
 	rulestui "github.com/grovetools/cx/pkg/tui/rules"
@@ -140,6 +141,14 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case embed.SetWorkspaceMsg:
 		if msg.Node != nil {
 			m.state.workDir = msg.Node.Path
+		}
+		m.state.loading = true
+		return m, refreshSharedStateCmd(m.state.workDir)
+	case embed.UpdateContextScopeMsg:
+		if msg.RulesFile != "" {
+			_ = state.Set(context.StateSourceKey, msg.RulesFile)
+		} else {
+			_ = state.Delete(context.StateSourceKey)
 		}
 		m.state.loading = true
 		return m, refreshSharedStateCmd(m.state.workDir)
