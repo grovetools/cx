@@ -80,7 +80,13 @@ func (m *Manager) GetStats(contextType string, files []string, topN int) (*Conte
 
 	// Collect file information
 	for _, file := range files {
-		fileInfo, err := statsProvider.GetFileStats(file)
+		// Resolve relative paths against workDir so stats work
+		// regardless of process CWD (e.g. groveterm from ~).
+		statsPath := file
+		if !filepath.IsAbs(file) {
+			statsPath = filepath.Join(m.workDir, file)
+		}
+		fileInfo, err := statsProvider.GetFileStats(statsPath)
 		if err != nil {
 			continue
 		}
