@@ -65,7 +65,8 @@ type PlanRule struct {
 
 // Manager handles context operations
 type Manager struct {
-	workDir         string
+	workDir           string
+	rulesFileOverride string                     // Instance-level override for rules file path (absolute)
 	locator         *workspace.NotebookLocator // Notebook locator for centralized context paths
 	gitIgnoredCache   map[string]map[string]bool // Cache for gitignored files by repository root
 	gitIgnoredMutex   sync.RWMutex               // Mutex to protect gitIgnoredCache
@@ -104,6 +105,17 @@ func ClearManagerCache() {
 // given workDir. Instances are memoized by absolute workDir — see
 // managerCache.
 func NewManager(workDir string) *Manager {
+	return NewManagerWithOverride(workDir, "")
+}
+
+// NewManagerWithOverride creates (or returns a cached) context manager
+// for the given workDir with an optional rules file override. When
+// rulesFileOverride is non-empty, all rules resolution methods
+// (LoadRulesContent, ResolveRulesPath, etc.) short-circuit and use
+// the override path instead of discovering rules via plan/notebook/
+// legacy fallback. Instances are memoized by workDir + override to
+// prevent different overrides from sharing a cached Manager.
+func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 	if workDir == "" {
 		workDir, _ = os.Getwd()
 	}
@@ -112,7 +124,21 @@ func NewManager(workDir string) *Manager {
 	if err == nil {
 		workDir = absWorkDir
 	}
-	if cached, ok := managerCache.Load(workDir); ok {
+
+	// Make override absolute for consistent cache keys and path operations
+	if rulesFileOverride != "" {
+		if absRules, err := filepath.Abs(rulesFileOverride); err == nil {
+			rulesFileOverride = absRules
+		}
+	}
+
+	// Cache by workDir + override to prevent instances from stepping on each other
+	cacheKey := workDir
+	if rulesFileOverride != "" {
+		cacheKey = workDir + "|" + rulesFileOverride
+	}
+
+	if cached, ok := managerCache.Load(cacheKey); ok {
 		return cached.(*Manager)
 	}
 	cfg, err := config.LoadFrom(workDir)
@@ -122,6 +148,7 @@ func NewManager(workDir string) *Manager {
 
 	mgr := &Manager{
 		workDir:           workDir,
+		rulesFileOverride: rulesFileOverride,
 		locator:           workspace.NewNotebookLocator(cfg),
 		gitIgnoredCache:   make(map[string]map[string]bool),
 		changedFilesCache: make(map[string]map[string]bool),
@@ -133,7 +160,7 @@ func NewManager(workDir string) *Manager {
 	// LoadOrStore resolves the rare race where two goroutines miss the
 	// cache simultaneously — the first to store wins, and every caller
 	// returns the same Manager instance.
-	actual, _ := managerCache.LoadOrStore(workDir, mgr)
+	actual, _ := managerCache.LoadOrStore(cacheKey, mgr)
 	return actual.(*Manager)
 }
 
@@ -168,6 +195,9 @@ func (m *Manager) GetPlanRulesPath(planName string) string {
 // yet. We return its path unconditionally so callers create new rules in the
 // plan dir instead of falling through to workspace-level notebook rules.
 func (m *Manager) ResolveRulesPath() string {
+	if m.rulesFileOverride != "" {
+		return m.rulesFileOverride
+	}
 	// Plan-scoped rules — preferred and exclusive when a plan is active.
 	if planName := m.GetActivePlanName(); planName != "" {
 		if planRulesPath := m.GetPlanRulesPath(planName); planRulesPath != "" {
@@ -206,6 +236,10 @@ func (m *Manager) ResolveRulesPath() string {
 // If a plan is active, returns the plan-scoped path (creating dirs as needed),
 // regardless of whether the file exists yet.
 func (m *Manager) ResolveRulesWritePath() string {
+	if m.rulesFileOverride != "" {
+		os.MkdirAll(filepath.Dir(m.rulesFileOverride), 0755)
+		return m.rulesFileOverride
+	}
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := m.GetPlanRulesPath(planName); p != "" {
 			os.MkdirAll(filepath.Dir(p), 0755)

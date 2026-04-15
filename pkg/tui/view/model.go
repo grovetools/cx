@@ -12,7 +12,6 @@ import (
 	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/components/nvim"
 	"github.com/grovetools/core/tui/components/pager"
-	"github.com/grovetools/core/state"
 	"github.com/grovetools/core/tui/embed"
 	"github.com/grovetools/cx/pkg/context"
 	rulestui "github.com/grovetools/cx/pkg/tui/rules"
@@ -28,17 +27,17 @@ type Model = *pagerModel
 
 // New constructs an embeddable cx view model rooted at workDir. cfg
 // supplies user keybindings and nvim-embed settings; pass nil to load
-// defaults. startPage selects the initial page ("tree", "rules",
-// "stats", "list"); empty defaults to "tree".
-func New(workDir string, cfg *config.Config) Model {
-	m, _ := NewWithStartPage("tree", workDir, cfg)
+// defaults. rulesFile, when non-empty, overrides the normal rules file
+// discovery and scopes the view to a specific rules file path.
+func New(workDir, rulesFile string, cfg *config.Config) Model {
+	m, _ := NewWithStartPage("tree", workDir, rulesFile, cfg)
 	return m
 }
 
 // NewWithStartPage is like New but allows the caller to select the
 // initial page. It returns an error if startPage is the deprecated
 // "repo" page.
-func NewWithStartPage(startPage, workDir string, cfg *config.Config) (Model, error) {
+func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config) (Model, error) {
 	if startPage == "repo" {
 		return nil, fmt.Errorf("repo view deprecated")
 	}
@@ -46,7 +45,7 @@ func NewWithStartPage(startPage, workDir string, cfg *config.Config) (Model, err
 		startPage = "rules"
 	}
 
-	state := &sharedState{workDir: workDir, loading: true}
+	state := &sharedState{workDir: workDir, rulesFileOverride: rulesFile, loading: true}
 
 	pages := []Page{
 		NewRulesPage(state),
@@ -118,7 +117,7 @@ type pagerModel struct {
 }
 
 func (m *pagerModel) Init() tea.Cmd {
-	return tea.Batch(m.pager.Init(), refreshSharedStateCmd(m.state.workDir))
+	return tea.Batch(m.pager.Init(), refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride))
 }
 
 // activePageName returns the Name() of whichever cx page is currently
@@ -144,15 +143,11 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state.workDir = msg.Node.Path
 		}
 		m.state.loading = true
-		return m, refreshSharedStateCmd(m.state.workDir)
+		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
 	case embed.UpdateContextScopeMsg:
-		if msg.RulesFile != "" {
-			_ = state.Set(context.StateSourceKey, msg.RulesFile)
-		} else {
-			_ = state.Delete(context.StateSourceKey)
-		}
+		m.state.rulesFileOverride = msg.RulesFile
 		m.state.loading = true
-		return m, refreshSharedStateCmd(m.state.workDir)
+		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
 	case embed.FocusMsg:
 		var cmd tea.Cmd
 		m.pager, cmd = m.pager.Update(msg)
@@ -173,7 +168,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case embed.CloseRequestMsg, embed.CloseConfirmMsg, embed.DoneMsg:
 			m.showRules = false
 			m.rulesTUI = nil
-			return m, refreshSharedStateCmd(m.state.workDir)
+			return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
 		case embed.EditRequestMsg:
 			editor := os.Getenv("EDITOR")
 			if editor == "" {
@@ -199,7 +194,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editorModel.Close()
 				m.isEditing = false
 				m.editorModel = nil
-				return m, refreshSharedStateCmd(m.state.workDir)
+				return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
 			}
 			if msg.Type == tea.KeyTab || msg.Type == tea.KeyShiftTab {
 				m.editorModel.Save()
@@ -216,7 +211,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.pager, cycleCmd = m.pager.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 				}
-				return m, tea.Batch(refreshSharedStateCmd(m.state.workDir), cycleCmd)
+				return m, tea.Batch(refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride), cycleCmd)
 			}
 		case tea.WindowSizeMsg:
 			var cmd tea.Cmd
@@ -356,7 +351,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refreshStateMsg:
 		m.state.loading = true
-		return m, refreshSharedStateCmd(m.state.workDir)
+		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
 	}
 
 	var pagerCmd tea.Cmd

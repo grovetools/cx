@@ -25,7 +25,7 @@ func NewViewCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			workDir, _ := cmd.Flags().GetString("dir")
 			cfg, _ := config.LoadFrom(".")
-			m, err := tuiView.NewWithStartPage(startPage, workDir, cfg)
+			m, err := tuiView.NewWithStartPage(startPage, workDir, "", cfg)
 			if err != nil {
 				return err
 			}

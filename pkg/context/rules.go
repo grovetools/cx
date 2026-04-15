@@ -315,6 +315,18 @@ func MatchesGitRule(rule GitRule, projectRepoURL, projectVersion, projectHeadCom
 // LoadRulesContent finds and reads the active rules file, falling back to grove.yml defaults.
 // It returns the content of the rules, the path of the file read (if any), and an error.
 func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
+	// 0. Instance-level override — bypasses all discovery logic.
+	if m.rulesFileOverride != "" {
+		if _, err := os.Stat(m.rulesFileOverride); err == nil {
+			content, err := os.ReadFile(m.rulesFileOverride)
+			if err != nil {
+				return nil, "", fmt.Errorf("reading override rules file %s: %w", m.rulesFileOverride, err)
+			}
+			return content, m.rulesFileOverride, nil
+		}
+		return nil, "", nil // Override file doesn't exist yet — match existing fallback behavior
+	}
+
 	// 1. Check state for an active rule set from .cx/
 	activeSource, _ := state.GetString(StateSourceKey)
 	if activeSource != "" {
@@ -1268,6 +1280,9 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 
 // findActiveRulesFile returns the path to the active rules file if it exists
 func (m *Manager) findActiveRulesFile() string {
+	if m.rulesFileOverride != "" {
+		return m.rulesFileOverride
+	}
 	// Check plan-scoped rules first
 	if planName := m.GetActivePlanName(); planName != "" {
 		if planRulesPath := m.GetPlanRulesPath(planName); planRulesPath != "" {

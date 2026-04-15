@@ -22,9 +22,9 @@ type rulesLoadedMsg struct {
 
 func (m *rulesPickerModel) loadRulesCmd() tea.Msg {
 	var items []ruleItem
-	activeSource, _ := state.GetString(context.StateSourceKey)
 
 	mgr := context.NewManager(m.workDir)
+	activeSource := mgr.ResolveRulesPath()
 	seen := make(map[string]bool)
 
 	// Check for active rules file: notebook location first, then legacy .grove/rules

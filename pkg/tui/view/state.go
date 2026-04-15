@@ -15,7 +15,8 @@ import (
 
 // sharedState holds all the data that is shared across different pages of the TUI.
 type sharedState struct {
-	workDir         string
+	workDir           string
+	rulesFileOverride string // Instance-level override for rules file (absolute path)
 	loading         bool
 	err             error
 	hotFiles        []string
@@ -41,10 +42,10 @@ type stateRefreshedMsg struct {
 type refreshStateMsg struct{}
 
 // refreshSharedStateCmd fetches all context data and returns it in a stateRefreshedMsg.
-func refreshSharedStateCmd(workDir string) tea.Cmd {
+func refreshSharedStateCmd(workDir, rulesFileOverride string) tea.Cmd {
 	return func() tea.Msg {
-		mgr := context.NewManager(workDir)
-		newState := sharedState{workDir: workDir, loading: false}
+		mgr := context.NewManagerWithOverride(workDir, rulesFileOverride)
+		newState := sharedState{workDir: workDir, rulesFileOverride: rulesFileOverride, loading: false}
 
 		// Load rules content
 		rulesBytes, rulesPath, err := mgr.LoadRulesContent()
