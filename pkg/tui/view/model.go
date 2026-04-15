@@ -83,6 +83,9 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config) 
 		OuterPadding: [4]int{1, 2, 1, 2},
 		FooterHeight: 1,
 	})
+	var watcher *RulesWatcher
+	watcher, _ = NewRulesWatcher() // best-effort; nil watcher is handled gracefully
+
 	return &pagerModel{
 		pager:            p,
 		state:            state,
@@ -92,6 +95,7 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config) 
 		NvimEditPath:     "",
 		nvimEmbedEnabled: nvimEmbedEnabled,
 		cfg:              cfg,
+		watcher:          watcher,
 	}, nil
 }
 
@@ -120,6 +124,9 @@ type pagerModel struct {
 	cfg       *config.Config
 	rulesTUI  rulestui.Model
 	showRules bool
+
+	// File watcher for the active rules file — triggers refresh on external edits.
+	watcher *RulesWatcher
 }
 
 // dispatchRefresh increments the sequence counter and returns a
@@ -131,7 +138,11 @@ func (m *pagerModel) dispatchRefresh() tea.Cmd {
 }
 
 func (m *pagerModel) Init() tea.Cmd {
-	return tea.Batch(m.pager.Init(), m.dispatchRefresh())
+	cmds := []tea.Cmd{m.pager.Init(), m.dispatchRefresh()}
+	if m.watcher != nil {
+		cmds = append(cmds, m.watcher.NextEvent())
+	}
+	return tea.Batch(cmds...)
 }
 
 // activePageName returns the Name() of whichever cx page is currently
@@ -359,11 +370,23 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+	case rulesFileChangedMsg:
+		var cmds []tea.Cmd
+		cmds = append(cmds, m.dispatchRefresh())
+		if m.watcher != nil {
+			cmds = append(cmds, m.watcher.NextEvent())
+		}
+		return m, tea.Batch(cmds...)
+
 	case stateRefreshedMsg:
 		if msg.seq < m.currentSeq {
 			return m, nil // Discard stale refresh from earlier request
 		}
 		*m.state = msg.state
+		// Update the watcher target if the rules path changed.
+		if m.watcher != nil && msg.state.rulesPath != "" {
+			m.watcher.SetTarget(msg.state.rulesPath)
+		}
 		// Forward to the pager so active pages can react to the new state.
 		var pagerCmd tea.Cmd
 		m.pager, pagerCmd = m.pager.Update(msg)
@@ -424,4 +447,13 @@ func (m *pagerModel) View() string {
 	m.pager.SetFooter(m.help.View())
 
 	return m.pager.View()
+}
+
+// Close releases resources held by the model. Callers should invoke this
+// when the Bubble Tea program exits to avoid leaking the file-watcher
+// goroutine.
+func (m *pagerModel) Close() {
+	if m.watcher != nil {
+		m.watcher.Close()
+	}
 }

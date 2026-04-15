@@ -36,6 +36,9 @@ func NewViewCmd() *cobra.Command {
 				return err
 			}
 
+			// Close the model to release file-watcher resources.
+			m.Close()
+
 			// Free compositor resources and unwrap to recover the tuiView.Model
 			// so post-exit type assertions succeed.
 			if cm, ok := finalModel.(*compositor.Model); ok {
