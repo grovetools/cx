@@ -13,6 +13,11 @@ import (
 	"github.com/grovetools/cx/pkg/context"
 )
 
+// RulesWrittenMsg is emitted when the rules picker successfully writes
+// a rules file (load, set, save, or delete). Host pages can listen for
+// this to trigger a shared state refresh.
+type RulesWrittenMsg struct{}
+
 // --- TUI Commands ---
 
 type rulesLoadedMsg struct {

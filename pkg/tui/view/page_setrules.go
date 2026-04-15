@@ -44,20 +44,26 @@ func (p *setRulesPage) Update(msg tea.Msg) (pager.Page, tea.Cmd) {
 	// Swallow CloseRequestMsg — the picker's quit key shouldn't
 	// propagate out of the pager tab. The user switches tabs with
 	// numeric keys or [/].
+	// Intercept RulesWrittenMsg to trigger a parent state refresh
+	// so the rules page updates after load/set/save/delete.
 	if cmd != nil {
-		cmd = interceptClose(cmd)
+		cmd = interceptMessages(cmd)
 	}
 	return p, cmd
 }
 
-// interceptClose filters out embed.CloseRequestMsg from a tea.Cmd
-// so the picker's quit action doesn't bubble to the host.
-func interceptClose(cmd tea.Cmd) tea.Cmd {
+// interceptMessages filters commands from the rules picker:
+// - Swallows embed.CloseRequestMsg so quit doesn't bubble to host
+// - Converts rules.RulesWrittenMsg to refreshStateMsg so the parent
+//   model refreshes shared state after load/set/save/delete
+func interceptMessages(cmd tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
 		msg := cmd()
 		switch msg.(type) {
 		case embed.CloseRequestMsg:
 			return nil
+		case rules.RulesWrittenMsg:
+			return refreshStateMsg{}
 		}
 		return msg
 	}

@@ -81,8 +81,8 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMessage = fmt.Sprintf("Loaded '%s' to %s as working copy", m.items[m.loadingFromIdx].name, m.manager.ResolveRulesWritePath())
 		}
 
-		// Reload the rules to reflect the new state
-		return m, tea.Batch(clearLoadCmd(), m.loadRulesCmd)
+		// Reload the rules to reflect the new state and notify host.
+		return m, tea.Batch(clearLoadCmd(), m.loadRulesCmd, func() tea.Msg { return RulesWrittenMsg{} })
 
 	case clearLoadMsg:
 		m.loadingComplete = false
@@ -110,8 +110,8 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Reload the rules to reflect the new state
-		return m, tea.Batch(clearSetCmd(), m.loadRulesCmd)
+		// Reload the rules to reflect the new state and notify host.
+		return m, tea.Batch(clearSetCmd(), m.loadRulesCmd, func() tea.Msg { return RulesWrittenMsg{} })
 
 	case clearSetMsg:
 		m.settingComplete = false
@@ -127,8 +127,8 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Successfully saved
 		m.statusMessage = fmt.Sprintf("Saved to %s", m.saveInput.Value()+".rules")
 
-		// Reload the rules to show the new file
-		return m, tea.Batch(clearSaveCmd(), m.loadRulesCmd)
+		// Reload the rules to show the new file and notify host.
+		return m, tea.Batch(clearSaveCmd(), m.loadRulesCmd, func() tea.Msg { return RulesWrittenMsg{} })
 
 	case clearSaveMsg:
 		m.statusMessage = ""
@@ -151,8 +151,8 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMessage = fmt.Sprintf("Deleted '%s'", m.items[m.deletingIdx].name)
 		}
 
-		// Reload the rules to reflect deletion
-		return m, tea.Batch(clearDeleteCmd(), m.loadRulesCmd)
+		// Reload the rules to reflect deletion and notify host.
+		return m, tea.Batch(clearDeleteCmd(), m.loadRulesCmd, func() tea.Msg { return RulesWrittenMsg{} })
 
 	case clearDeleteMsg:
 		m.deletingComplete = false
