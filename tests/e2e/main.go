@@ -47,6 +47,7 @@ func main() {
 		TUIViewStatsScenario(),
 		TUIViewRulesScenario(),
 		TUIViewListScenario(),
+		TUIViewRulesWatcherScenario(),
 
 		// Advanced Scenarios
 		StatsAndValidateScenario(),
