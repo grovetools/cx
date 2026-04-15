@@ -304,6 +304,9 @@ func (p *listPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case stateRefreshedMsg:
+		p.updateAndSortItems()
+		return p, nil
 	case tea.KeyMsg:
 		// When filtering, pass keys to list for handling
 		if p.list.FilterState() == list.Filtering {

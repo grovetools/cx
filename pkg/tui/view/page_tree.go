@@ -329,6 +329,8 @@ func (p *treePage) getAliasForRule(node *tree.FileNode) (string, bool) {
 
 func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	switch msg := msg.(type) {
+	case stateRefreshedMsg:
+		return p, p.loadTreeCmd()
 	case treeLoadedMsg:
 		p.statusMessage = ""
 		if msg.err != nil {

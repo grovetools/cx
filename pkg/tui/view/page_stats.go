@@ -389,6 +389,9 @@ func (p *statsPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case stateRefreshedMsg:
+		p.Focus() // Synchronously updates lists from new state
+		return p, nil
 	case tea.KeyMsg:
 		// When a list is filtering, pass keys to it for handling
 		if p.langList.FilterState() == list.Filtering || p.fileList.FilterState() == list.Filtering {
