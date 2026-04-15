@@ -190,6 +190,11 @@ func (p *rulesPage) SetSize(width, height int) {
 }
 
 func (p *rulesPage) Update(msg tea.Msg) (Page, tea.Cmd) {
+	switch msg.(type) {
+	case stateRefreshedMsg:
+		p.Focus() // Re-render rules content from new state
+		return p, nil
+	}
 	var cmd tea.Cmd
 	p.viewport, cmd = p.viewport.Update(msg)
 	return p, cmd

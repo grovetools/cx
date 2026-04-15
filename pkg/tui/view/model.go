@@ -314,14 +314,14 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 
-				editorCmd, err := m.state.manager.EditRulesCmd()
-				if err != nil {
-					m.state.err = fmt.Errorf("failed to prepare editor command: %w", err)
-					return m, nil
+				// Emit EditRequestMsg so the host can manage the
+				// editor lifecycle and send EditFinishedMsg back.
+				// In standalone mode the self-handling fallback
+				// below (case embed.EditRequestMsg) runs instead.
+				path := rulesPath
+				return m, func() tea.Msg {
+					return embed.EditRequestMsg{Path: path}
 				}
-				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
-					return refreshStateMsg{}
-				})
 			}
 		case key.Matches(msg, m.keys.SelectRules):
 			if m.activePageName() == "rules" {
@@ -350,9 +350,22 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pager, pagerCmd = m.pager.Update(msg)
 		return m, pagerCmd
 
-	case refreshStateMsg, embed.EditFinishedMsg:
+	case refreshStateMsg, embed.EditFinishedMsg, embed.SplitEditorClosedMsg:
 		m.state.loading = true
 		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
+
+	case embed.EditRequestMsg:
+		// Standalone fallback: when not hosted, EditRequestMsg is not
+		// intercepted by WrapPanelCmd, so we self-handle by launching
+		// the editor and returning EditFinishedMsg on completion.
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "vi"
+		}
+		editCmd := exec.Command(editor, msg.Path)
+		return m, tea.ExecProcess(editCmd, func(err error) tea.Msg {
+			return embed.EditFinishedMsg{Err: err}
+		})
 	}
 
 	var pagerCmd tea.Cmd
