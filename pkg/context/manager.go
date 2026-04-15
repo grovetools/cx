@@ -147,13 +147,11 @@ func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 		cfg, _ = config.LoadDefault()
 	}
 
-	// When a rules file override is set, resolve patterns relative to the
-	// directory containing the override file (e.g. a notebook plan dir).
-	// Otherwise fall back to the project root.
+	// Patterns in rules files are always relative to the workspace root,
+	// regardless of where the rules file itself lives. A plan-scoped
+	// rules file (e.g. .cx.work/plan/rules/job.rules) still references
+	// project files, not files relative to the rules/ directory.
 	rulesBaseDir := workDir
-	if rulesFileOverride != "" {
-		rulesBaseDir = filepath.Dir(rulesFileOverride)
-	}
 
 	mgr := &Manager{
 		workDir:           workDir,
