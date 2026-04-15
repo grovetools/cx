@@ -58,6 +58,7 @@ func main() {
 		ExclusionPatternsScenario(),
 		DirectoryExclusionPerformanceScenario(),
 		WorktreeExclusionScenario(),
+		ExternalRulesFileScenario(),
 		AbsolutePathDirectoryPatternScenario(),
 		ExplicitWorktreeInclusionScenario(),
 		AbsolutePathFilePatternScenario(),
