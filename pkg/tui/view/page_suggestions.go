@@ -95,8 +95,7 @@ func (p *suggestionsPage) refreshSuggestionsCmd() tea.Cmd {
 		}
 
 		// Get included files map to filter out already-included results.
-		mgr := context.NewManagerWithOverride(workDir, p.sharedState.rulesFileOverride)
-		classified, err := mgr.ClassifyAllProjectFiles(false)
+		classified, err := p.sharedState.manager.ClassifyAllProjectFiles(false)
 		if err != nil {
 			return suggestionsRefreshedMsg{err: err}
 		}
@@ -178,10 +177,8 @@ func (p *suggestionsPage) addSuggestionCmd() tea.Cmd {
 		return nil
 	}
 	selected := p.suggestions[p.cursor]
-	workDir := p.sharedState.workDir
 	return func() tea.Msg {
-		mgr := context.NewManagerWithOverride(workDir, p.sharedState.rulesFileOverride)
-		if err := mgr.AppendRule(selected.Path, "hot"); err != nil {
+		if err := p.sharedState.manager.AppendRule(selected.Path, "hot"); err != nil {
 			return suggestionsRefreshedMsg{err: fmt.Errorf("failed to add %s: %w", selected.Path, err)}
 		}
 		return refreshStateMsg{}

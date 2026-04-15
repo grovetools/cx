@@ -38,17 +38,17 @@ type patternInfo struct {
 // patternMatcher holds pre-processed patterns and provides a method to classify files.
 type patternMatcher struct {
 	patternInfos               []patternInfo
-	workDir                    string
+	baseDir                    string
 	dirExclusions              map[string]bool
 	includeBinary              bool
 	hasExplicitWorktreePattern bool
 }
 
 // newPatternMatcher creates a new patternMatcher and pre-processes the patterns.
-func newPatternMatcher(patternInfos []patternInfo, workDir string) *patternMatcher {
+func newPatternMatcher(patternInfos []patternInfo, baseDir string) *patternMatcher {
 	matcher := &patternMatcher{
 		patternInfos:               patternInfos,
-		workDir:                    workDir,
+		baseDir:                    baseDir,
 		dirExclusions:              make(map[string]bool),
 		includeBinary:              false,
 		hasExplicitWorktreePattern: false,
@@ -93,7 +93,7 @@ func newPatternMatcher(patternInfos []patternInfo, workDir string) *patternMatch
 func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 	var lastValidMatch *patternInfo
 
-	relToWorkDir, err := filepath.Rel(pm.workDir, path)
+	relToWorkDir, err := filepath.Rel(pm.baseDir, path)
 	isExternal := err != nil || strings.HasPrefix(relToWorkDir, "..")
 
 	for i := range pm.patternInfos {
@@ -117,7 +117,7 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 			matchPath = filepath.ToSlash(path)
 		} else if IsRelativeExternalPath(cleanPattern) {
 			cleanPattern = filepath.ToSlash(filepath.Clean(cleanPattern))
-			relFromWorkDir, err := filepath.Rel(pm.workDir, path)
+			relFromWorkDir, err := filepath.Rel(pm.baseDir, path)
 			if err == nil {
 				matchPath = filepath.ToSlash(relFromWorkDir)
 			}
@@ -1183,7 +1183,7 @@ func (m *Manager) preProcessPatterns(patterns []string) []string {
 			// Resolve the path to check if it exists and is a directory
 			checkPath := cleanPattern
 			if !filepath.IsAbs(cleanPattern) {
-				checkPath = filepath.Join(m.workDir, cleanPattern)
+				checkPath = filepath.Join(m.rulesBaseDir, cleanPattern)
 			}
 			checkPath = filepath.Clean(checkPath)
 
@@ -1259,7 +1259,7 @@ func (m *Manager) matchDirective(file, directive, query string) bool {
 	if directive == "grep" || directive == "grep-i" {
 		filePath := file
 		if !filepath.IsAbs(file) {
-			filePath = filepath.Join(m.workDir, file)
+			filePath = filepath.Join(m.rulesBaseDir, file)
 		}
 		content, err := os.ReadFile(filePath)
 		if err != nil {
@@ -1288,7 +1288,7 @@ func (m *Manager) matchDirective(file, directive, query string) bool {
 		cutoff := time.Now().Add(-duration)
 		filePath := file
 		if !filepath.IsAbs(file) {
-			filePath = filepath.Join(m.workDir, file)
+			filePath = filepath.Join(m.rulesBaseDir, file)
 		}
 		stat, err := os.Stat(filePath)
 		return err == nil && stat.ModTime().After(cutoff)
@@ -1446,7 +1446,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 			// Resolve relative paths
 			if !filepath.IsAbs(pathToValidate) {
-				pathToValidate = filepath.Join(m.workDir, pathToValidate)
+				pathToValidate = filepath.Join(m.rulesBaseDir, pathToValidate)
 			}
 
 			if allowed, reason := m.IsPathAllowed(pathToValidate); !allowed {
@@ -1465,8 +1465,8 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	}
 	patternInfos = validatedPatternInfos
 
-	// Get gitignored files for the current working directory for handling relative patterns.
-	gitIgnoredForCWD, err := m.getGitIgnoredFiles(m.workDir)
+	// Get gitignored files for the base directory for handling relative patterns.
+	gitIgnoredForCWD, err := m.getGitIgnoredFiles(m.rulesBaseDir)
 	if err != nil {
 		fmt.Printf("Warning: could not get gitignored files for current directory: %v\n", err)
 		gitIgnoredForCWD = make(map[string]bool)
@@ -1490,7 +1490,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		if !info.isExclude {
 			filePath := info.pattern
 			if !filepath.IsAbs(filePath) {
-				filePath = filepath.Join(m.workDir, filePath)
+				filePath = filepath.Join(m.rulesBaseDir, filePath)
 			}
 			filePath = filepath.Clean(filePath)
 
@@ -1498,7 +1498,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 				if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
 					uniqueFiles[filePath] = true
 				} else {
-					relPath, err := filepath.Rel(m.workDir, filePath)
+					relPath, err := filepath.Rel(m.rulesBaseDir, filePath)
 					if err == nil {
 						uniqueFiles[relPath] = true
 					} else {
@@ -1531,7 +1531,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 		if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
 			basePath := info.pattern
 			if !filepath.IsAbs(info.pattern) {
-				basePath = filepath.Join(m.workDir, info.pattern)
+				basePath = filepath.Join(m.rulesBaseDir, info.pattern)
 			}
 			basePath = filepath.Clean(basePath)
 
@@ -1562,8 +1562,8 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 
 	// Process relative patterns
 	if len(relativePatternInfos) > 0 {
-		relativeMatcher := newPatternMatcher(relativePatternInfos, m.workDir)
-		err = m.walkAndMatchPatterns(m.workDir, relativeMatcher, gitIgnoredForCWD, uniqueFiles, true)
+		relativeMatcher := newPatternMatcher(relativePatternInfos, m.rulesBaseDir)
+		err = m.walkAndMatchPatterns(m.rulesBaseDir, relativeMatcher, gitIgnoredForCWD, uniqueFiles, true)
 		if err != nil {
 			return nil, fmt.Errorf("error walking working directory: %w", err)
 		}
@@ -1581,7 +1581,7 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			gitIgnoredForAbsPath = make(map[string]bool)
 		}
 
-		absoluteMatcher := newPatternMatcher(pathPatternInfos, m.workDir)
+		absoluteMatcher := newPatternMatcher(pathPatternInfos, m.rulesBaseDir)
 		err = m.walkAndMatchPatterns(absPath, absoluteMatcher, gitIgnoredForAbsPath, uniqueFiles, false)
 		if err != nil {
 			fmt.Printf("Warning: error walking absolute path %s: %v\n", absPath, err)
@@ -1667,7 +1667,7 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher,
 			}
 
 			// Slow path: This directory *might* be excluded. Run the full "last match wins" logic to be sure.
-			relPathForDir, err := filepath.Rel(m.workDir, path)
+			relPathForDir, err := filepath.Rel(m.rulesBaseDir, path)
 			if err != nil {
 				relPathForDir = path // Fallback
 			}
@@ -1732,8 +1732,8 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher,
 					isExplicitlyIncludedByRule = true
 				}
 				if !isExplicitlyIncludedByRule {
-					// Only exclude if .grove-worktrees is a descendant of the working directory
-					relPath, err := filepath.Rel(m.workDir, path)
+					// Only exclude if .grove-worktrees is a descendant of the base directory
+					relPath, err := filepath.Rel(m.rulesBaseDir, path)
 					if err == nil && strings.Contains(relPath, ".grove-worktrees") {
 						// The .grove-worktrees is within our working directory, exclude it
 						return nil
@@ -1745,12 +1745,12 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher,
 			// Determine the final path to store
 			var finalPath string
 			if useRelativePaths {
-				// For relative patterns, store path relative to workDir
-				finalPath, _ = filepath.Rel(m.workDir, path)
+				// For relative patterns, store path relative to rulesBaseDir
+				finalPath, _ = filepath.Rel(m.rulesBaseDir, path)
 			} else {
-				// For absolute patterns, check if the path is within workDir
-				if relPath, err := filepath.Rel(m.workDir, path); err == nil && !strings.HasPrefix(relPath, "..") {
-					// Path is within workDir, use relative path for consistency
+				// For absolute patterns, check if the path is within rulesBaseDir
+				if relPath, err := filepath.Rel(m.rulesBaseDir, path); err == nil && !strings.HasPrefix(relPath, "..") {
+					// Path is within rulesBaseDir, use relative path for consistency
 					finalPath = relPath
 				} else {
 					// Path is outside workDir, use absolute path

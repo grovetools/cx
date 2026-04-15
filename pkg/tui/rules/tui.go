@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/core/tui/embed"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // Run launches the interactive rule set selector TUI as a standalone program
@@ -15,7 +16,7 @@ import (
 // (such as cx view or grove-terminal) should call New directly and route
 // messages themselves rather than going through Run.
 func Run(workDir string) error {
-	m := New(workDir, "", nil)
+	m := New(context.NewManager(workDir), nil)
 	if _, err := embed.RunStandalone(m, tea.WithAltScreen()); err != nil {
 		return fmt.Errorf("error running TUI: %w", err)
 	}

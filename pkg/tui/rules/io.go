@@ -23,14 +23,13 @@ type rulesLoadedMsg struct {
 func (m *rulesPickerModel) loadRulesCmd() tea.Msg {
 	var items []ruleItem
 
-	mgr := context.NewManagerWithOverride(m.workDir, m.rulesFileOverride)
-	activeSource := mgr.ResolveRulesPath()
+	activeSource := m.manager.ResolveRulesPath()
 	seen := make(map[string]bool)
 
 	// Check for active rules file: notebook location first, then legacy .grove/rules
 	rulesFileChecked := false
-	if node, err := workspace.GetProjectByPath(mgr.GetWorkDir()); err == nil {
-		if nbRulesFile, err := mgr.Locator().GetContextRulesFile(node); err == nil {
+	if node, err := workspace.GetProjectByPath(m.manager.GetWorkDir()); err == nil {
+		if nbRulesFile, err := m.manager.Locator().GetContextRulesFile(node); err == nil {
 			if _, statErr := os.Stat(nbRulesFile); statErr == nil {
 				content, err := os.ReadFile(nbRulesFile)
 				if err != nil {
@@ -95,13 +94,13 @@ func (m *rulesPickerModel) loadRulesCmd() tea.Msg {
 	}
 
 	// Load from notebook presets directories first
-	if node, err := workspace.GetProjectByPath(mgr.GetWorkDir()); err == nil {
-		if presetsDir, err := mgr.Locator().GetContextPresetsDir(node); err == nil {
+	if node, err := workspace.GetProjectByPath(m.manager.GetWorkDir()); err == nil {
+		if presetsDir, err := m.manager.Locator().GetContextPresetsDir(node); err == nil {
 			if err := loadRulesFromDir(presetsDir); err != nil {
 				return rulesLoadedMsg{err: err}
 			}
 		}
-		if workDir, err := mgr.Locator().GetContextPresetsWorkDir(node); err == nil {
+		if workDir, err := m.manager.Locator().GetContextPresetsWorkDir(node); err == nil {
 			if err := loadRulesFromDir(workDir); err != nil {
 				return rulesLoadedMsg{err: err}
 			}
@@ -119,12 +118,12 @@ func (m *rulesPickerModel) loadRulesCmd() tea.Msg {
 	}
 
 	// Load plan rules (only from the active plan)
-	planRules, err := mgr.ListPlanRules()
+	planRules, err := m.manager.ListPlanRules()
 	if err != nil {
 		// Non-fatal error, just log to stderr for debugging
 		fmt.Fprintf(os.Stderr, "Warning: could not load plan-specific rules: %v\n", err)
 	} else {
-		activePlan := mgr.GetActivePlanName()
+		activePlan := m.manager.GetActivePlanName()
 		for _, rule := range planRules {
 			// Only include rules from the active plan
 			if activePlan != "" && rule.PlanName != activePlan {
@@ -149,7 +148,6 @@ func (m *rulesPickerModel) loadRulesCmd() tea.Msg {
 }
 
 func (m *rulesPickerModel) performLoadCmd(item ruleItem) tea.Cmd {
-	workDir := m.workDir
 	return func() tea.Msg {
 		// Check for zombie worktree - refuse to create rules in deleted worktrees
 		if context.IsZombieWorktreeCwd() {
@@ -165,8 +163,7 @@ func (m *rulesPickerModel) performLoadCmd(item ruleItem) tea.Cmd {
 		}
 
 		// Resolve the active rules write path (plan-scoped > notebook > local)
-		mgr := context.NewManagerWithOverride(workDir, m.rulesFileOverride)
-		rulesPath := mgr.ResolveRulesWritePath()
+		rulesPath := m.manager.ResolveRulesWritePath()
 
 		// Write to resolved rules path
 		if err := os.WriteFile(rulesPath, content, 0644); err != nil {
@@ -225,10 +222,8 @@ func editRuleCmd(item ruleItem) tea.Cmd {
 }
 
 func (m *rulesPickerModel) performSaveCmd(name string, toWork bool) tea.Cmd {
-	workDir := m.workDir
 	return func() tea.Msg {
-		mgr := context.NewManagerWithOverride(workDir, m.rulesFileOverride)
-		content, _, err := mgr.LoadRulesContent()
+		content, _, err := m.manager.LoadRulesContent()
 		if err != nil {
 			return saveCompleteMsg{err: fmt.Errorf("failed to load active rules: %w", err)}
 		}
@@ -242,13 +237,13 @@ func (m *rulesPickerModel) performSaveCmd(name string, toWork bool) tea.Cmd {
 		}
 
 		// Prioritize notebook location
-		if node, nodeErr := workspace.GetProjectByPath(mgr.GetWorkDir()); nodeErr == nil {
+		if node, nodeErr := workspace.GetProjectByPath(m.manager.GetWorkDir()); nodeErr == nil {
 			if toWork {
-				if nbDir, locErr := mgr.Locator().GetContextPresetsWorkDir(node); locErr == nil {
+				if nbDir, locErr := m.manager.Locator().GetContextPresetsWorkDir(node); locErr == nil {
 					destDir = nbDir
 				}
 			} else {
-				if nbDir, locErr := mgr.Locator().GetContextPresetsDir(node); locErr == nil {
+				if nbDir, locErr := m.manager.Locator().GetContextPresetsDir(node); locErr == nil {
 					destDir = nbDir
 				}
 			}

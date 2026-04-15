@@ -66,6 +66,7 @@ type PlanRule struct {
 // Manager handles context operations
 type Manager struct {
 	workDir           string
+	rulesBaseDir      string                     // Base directory for resolving relative patterns in rules files
 	rulesFileOverride string                     // Instance-level override for rules file path (absolute)
 	locator         *workspace.NotebookLocator // Notebook locator for centralized context paths
 	gitIgnoredCache   map[string]map[string]bool // Cache for gitignored files by repository root
@@ -146,8 +147,17 @@ func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 		cfg, _ = config.LoadDefault()
 	}
 
+	// When a rules file override is set, resolve patterns relative to the
+	// directory containing the override file (e.g. a notebook plan dir).
+	// Otherwise fall back to the project root.
+	rulesBaseDir := workDir
+	if rulesFileOverride != "" {
+		rulesBaseDir = filepath.Dir(rulesFileOverride)
+	}
+
 	mgr := &Manager{
 		workDir:           workDir,
+		rulesBaseDir:      rulesBaseDir,
 		rulesFileOverride: rulesFileOverride,
 		locator:           workspace.NewNotebookLocator(cfg),
 		gitIgnoredCache:   make(map[string]map[string]bool),
@@ -167,6 +177,11 @@ func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 // GetWorkDir returns the current working directory
 func (m *Manager) GetWorkDir() string {
 	return m.workDir
+}
+
+// GetRulesBaseDir returns the base directory used for resolving relative patterns.
+func (m *Manager) GetRulesBaseDir() string {
+	return m.rulesBaseDir
 }
 
 // Locator returns the notebook locator for external use

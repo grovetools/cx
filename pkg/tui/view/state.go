@@ -17,6 +17,7 @@ import (
 type sharedState struct {
 	workDir           string
 	rulesFileOverride string // Instance-level override for rules file (absolute path)
+	manager         *context.Manager // Shared manager instance for all pages
 	loading         bool
 	err             error
 	hotFiles        []string
@@ -45,7 +46,7 @@ type refreshStateMsg struct{}
 func refreshSharedStateCmd(workDir, rulesFileOverride string) tea.Cmd {
 	return func() tea.Msg {
 		mgr := context.NewManagerWithOverride(workDir, rulesFileOverride)
-		newState := sharedState{workDir: workDir, rulesFileOverride: rulesFileOverride, loading: false}
+		newState := sharedState{workDir: workDir, rulesFileOverride: rulesFileOverride, manager: mgr, loading: false}
 
 		// Load rules content
 		rulesBytes, rulesPath, err := mgr.LoadRulesContent()

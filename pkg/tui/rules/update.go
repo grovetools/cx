@@ -78,8 +78,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Set status message
 		if m.loadingFromIdx >= 0 && m.loadingFromIdx < len(m.items) {
-			mgr := context.NewManagerWithOverride(m.workDir, m.rulesFileOverride)
-			m.statusMessage = fmt.Sprintf("Loaded '%s' to %s as working copy", m.items[m.loadingFromIdx].name, mgr.ResolveRulesWritePath())
+			m.statusMessage = fmt.Sprintf("Loaded '%s' to %s as working copy", m.items[m.loadingFromIdx].name, m.manager.ResolveRulesWritePath())
 		}
 
 		// Reload the rules to reflect the new state
@@ -173,10 +172,10 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadRulesCmd
 
 	case embed.SetWorkspaceMsg:
-		// Host switched workspace context; repoint our working
-		// directory and reload the rules list for the new workspace.
+		// Host switched workspace context; create a new Manager for
+		// the new workspace and reload the rules list.
 		if msg.Node != nil {
-			m.workDir = msg.Node.Path
+			m.manager = context.NewManager(msg.Node.Path)
 		}
 		return m, m.loadRulesCmd
 

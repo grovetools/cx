@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/components/help"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // Model is the embeddable rules picker TUI. It is exported as a type alias so
@@ -14,14 +15,12 @@ import (
 // type rules.Model and route Bubble Tea messages to it.
 type Model = *rulesPickerModel
 
-// New constructs an embeddable rules picker model. workDir is the directory
-// used for context resolution (empty falls back to the current working
-// directory inside context.NewManager). cfg supplies user-configurable
+// New constructs an embeddable rules picker model. mgr is the shared context
+// Manager used for rules resolution. cfg supplies user-configurable
 // keybindings; pass nil to use defaults.
-func New(workDir, rulesFileOverride string, cfg *config.Config) Model {
+func New(mgr *context.Manager, cfg *config.Config) Model {
 	m := newRulesPickerModel()
-	m.workDir = workDir
-	m.rulesFileOverride = rulesFileOverride
+	m.manager = mgr
 	m.keys = newPickerKeyMap(cfg)
 	m.help.SetKeys(m.keys)
 	return m
@@ -44,8 +43,7 @@ func (r *ruleItem) getContentLineCount() int {
 }
 
 type rulesPickerModel struct {
-	workDir           string
-	rulesFileOverride string
+	manager          *context.Manager
 	items            []ruleItem
 	selectedIndex    int
 	keys             pickerKeyMap

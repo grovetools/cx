@@ -522,7 +522,7 @@ func (p *statsPage) excludeItemCmd() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		mgr := context.NewManagerWithOverride(p.sharedState.workDir, p.sharedState.rulesFileOverride)
+		mgr := p.sharedState.manager
 		for _, pattern := range patterns {
 			// AppendRule adds the '!' prefix internally for "exclude" type
 			if err := mgr.AppendRule(pattern, "exclude"); err != nil {

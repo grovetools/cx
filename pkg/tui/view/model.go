@@ -13,7 +13,6 @@ import (
 	"github.com/grovetools/core/tui/components/nvim"
 	"github.com/grovetools/core/tui/components/pager"
 	"github.com/grovetools/core/tui/embed"
-	"github.com/grovetools/cx/pkg/context"
 	rulestui "github.com/grovetools/cx/pkg/tui/rules"
 )
 
@@ -266,9 +265,8 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activePageName() == "rules" {
 				rulesPath := m.state.rulesPath
 				if rulesPath == "" {
-					mgr := context.NewManagerWithOverride(m.state.workDir, m.state.rulesFileOverride)
 					var err error
-					rulesPath, err = mgr.EnsureAndGetRulesPath()
+					rulesPath, err = m.state.manager.EnsureAndGetRulesPath()
 					if err != nil {
 						m.state.err = fmt.Errorf("failed to get rules path: %w", err)
 						return m, nil
@@ -310,8 +308,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 
-				mgr := context.NewManagerWithOverride(m.state.workDir, m.state.rulesFileOverride)
-				editorCmd, err := mgr.EditRulesCmd()
+				editorCmd, err := m.state.manager.EditRulesCmd()
 				if err != nil {
 					m.state.err = fmt.Errorf("failed to prepare editor command: %w", err)
 					return m, nil
@@ -326,7 +323,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// shelling out to `cx rules`. The picker speaks the
 				// embed contract so we can route messages and editor
 				// requests through this host.
-				m.rulesTUI = rulestui.New(m.state.workDir, m.state.rulesFileOverride, m.cfg)
+				m.rulesTUI = rulestui.New(m.state.manager, m.cfg)
 				m.showRules = true
 				return m, tea.Batch(
 					m.rulesTUI.Init(),

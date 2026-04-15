@@ -139,7 +139,7 @@ func (p *treePage) SetSize(width, height int) {
 
 func (p *treePage) loadTreeCmd() tea.Cmd {
 	return func() tea.Msg {
-		manager := context.NewManagerWithOverride(p.sharedState.workDir, p.sharedState.rulesFileOverride)
+		manager := p.sharedState.manager
 		projectTree, err := tree.AnalyzeProjectTree(manager, p.showGitIgnored)
 		return treeLoadedMsg{tree: projectTree, err: err}
 	}
@@ -147,7 +147,7 @@ func (p *treePage) loadTreeCmd() tea.Cmd {
 
 func (p *treePage) toggleRuleCmd(path, targetType string, isDirectory bool) tea.Cmd {
 	return func() tea.Msg {
-		manager := context.NewManagerWithOverride(p.sharedState.workDir, p.sharedState.rulesFileOverride)
+		manager := p.sharedState.manager
 
 		// Check current status
 		currentStatus := manager.GetRuleStatus(path)
@@ -1111,7 +1111,7 @@ func (p *treePage) getStyle(node *tree.FileNode) lipgloss.Style {
 // getFilePathRule generates a context rule using a relative or absolute file path.
 // This is the fallback when an alias cannot be generated.
 func (p *treePage) getFilePathRule(node *tree.FileNode) (string, error) {
-	manager := context.NewManagerWithOverride(p.sharedState.workDir, p.sharedState.rulesFileOverride)
+	manager := p.sharedState.manager
 	workDir := manager.GetWorkDir()
 
 	// Get relative path from current working directory

@@ -430,7 +430,7 @@ func (p *listPage) View() string {
 func (p *listPage) excludeFileCmd() tea.Cmd {
 	if item, ok := p.list.SelectedItem().(listItem); ok {
 		return func() tea.Msg {
-			mgr := context.NewManagerWithOverride(p.sharedState.workDir, p.sharedState.rulesFileOverride)
+			mgr := p.sharedState.manager
 
 			var rule string
 			if item.ecosystem != "" {
@@ -473,7 +473,7 @@ func (p *listPage) excludeFileCmd() tea.Cmd {
 func (p *listPage) excludeDirCmd() tea.Cmd {
 	if item, ok := p.list.SelectedItem().(listItem); ok {
 		return func() tea.Msg {
-			mgr := context.NewManagerWithOverride(p.sharedState.workDir, p.sharedState.rulesFileOverride)
+			mgr := p.sharedState.manager
 
 			var rule string
 			if item.ecosystem != "" {
