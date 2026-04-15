@@ -1616,7 +1616,12 @@ func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher,
 	// Walk the directory tree from the specified root path.
 	return filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return err
+			// Permission denied or similar — skip the directory/file gracefully
+			// rather than aborting the entire walk (e.g. ~/.Trash on macOS).
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
 		// First, check if the file or directory is ignored by git. This is the most efficient check.
