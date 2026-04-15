@@ -13,6 +13,7 @@ import (
 	"github.com/grovetools/core/tui/components/nvim"
 	"github.com/grovetools/core/tui/components/pager"
 	"github.com/grovetools/core/tui/embed"
+	"github.com/grovetools/cx/pkg/context"
 	rulestui "github.com/grovetools/cx/pkg/tui/rules"
 )
 
@@ -44,7 +45,12 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config) 
 		startPage = "rules"
 	}
 
-	state := &sharedState{workDir: workDir, rulesFileOverride: rulesFile, loading: true}
+	// Create the manager synchronously so page Init commands (which run
+	// concurrently via tea.Cmd goroutines) never see a nil manager.
+	// NewManagerWithOverride is memoized, so refreshSharedStateCmd will
+	// safely reuse the same instance from the cache.
+	mgr := context.NewManagerWithOverride(workDir, rulesFile)
+	state := &sharedState{workDir: workDir, rulesFileOverride: rulesFile, manager: mgr, loading: true}
 
 	pages := []Page{
 		NewRulesPage(state),
