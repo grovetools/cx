@@ -151,7 +151,9 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
 	case embed.UpdateContextScopeMsg:
 		m.state.rulesFileOverride = msg.RulesFile
-		m.state.loading = true
+		// Don't set loading=true here — it causes a visible "Loading
+		// context..." flash during sticky navigation. The stale content
+		// stays visible until the refresh completes.
 		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
 	case embed.FocusMsg:
 		var cmd tea.Cmd
@@ -193,6 +195,11 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.isEditing && m.editorModel != nil {
 		switch msg := msg.(type) {
+		case nvim.NvimExitMsg:
+			// Nvim exited via :wq or :q — clean up and refresh.
+			m.isEditing = false
+			m.editorModel = nil
+			return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
 		case tea.KeyMsg:
 			if msg.Type == tea.KeyCtrlC {
 				m.editorModel.Save()
