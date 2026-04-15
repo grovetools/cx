@@ -37,13 +37,14 @@ type sharedState struct {
 // stateRefreshedMsg is sent when the sharedState has been updated.
 type stateRefreshedMsg struct {
 	state sharedState
+	seq   uint64 // sequence number for discarding stale refreshes
 }
 
 // refreshStateMsg is a command to trigger a state refresh.
 type refreshStateMsg struct{}
 
 // refreshSharedStateCmd fetches all context data and returns it in a stateRefreshedMsg.
-func refreshSharedStateCmd(workDir, rulesFileOverride string) tea.Cmd {
+func refreshSharedStateCmd(workDir, rulesFileOverride string, seq uint64) tea.Cmd {
 	return func() tea.Msg {
 		mgr := context.NewManagerWithOverride(workDir, rulesFileOverride)
 		newState := sharedState{workDir: workDir, rulesFileOverride: rulesFileOverride, manager: mgr, loading: false}
@@ -52,7 +53,7 @@ func refreshSharedStateCmd(workDir, rulesFileOverride string) tea.Cmd {
 		rulesBytes, rulesPath, err := mgr.LoadRulesContent()
 		if err != nil {
 			newState.err = err
-			return stateRefreshedMsg{state: newState}
+			return stateRefreshedMsg{state: newState, seq: seq}
 		}
 		newState.rulesContent = string(rulesBytes)
 		newState.rulesPath = rulesPath
@@ -64,14 +65,14 @@ func refreshSharedStateCmd(workDir, rulesFileOverride string) tea.Cmd {
 		hotFiles, err := mgr.ResolveFilesFromRules()
 		if err != nil {
 			newState.err = err
-			return stateRefreshedMsg{state: newState}
+			return stateRefreshedMsg{state: newState, seq: seq}
 		}
 		newState.hotFiles = hotFiles
 
 		coldFiles, err := mgr.ResolveColdContextFiles()
 		if err != nil {
 			newState.err = err
-			return stateRefreshedMsg{state: newState}
+			return stateRefreshedMsg{state: newState, seq: seq}
 		}
 		newState.coldFiles = coldFiles
 
@@ -80,7 +81,7 @@ func refreshSharedStateCmd(workDir, rulesFileOverride string) tea.Cmd {
 			hotStats, err := mgr.GetStats("hot", hotFiles, 10)
 			if err != nil {
 				newState.err = err
-				return stateRefreshedMsg{state: newState}
+				return stateRefreshedMsg{state: newState, seq: seq}
 			}
 			newState.hotStats = hotStats
 		}
@@ -88,7 +89,7 @@ func refreshSharedStateCmd(workDir, rulesFileOverride string) tea.Cmd {
 			coldStats, err := mgr.GetStats("cold", coldFiles, 10)
 			if err != nil {
 				newState.err = err
-				return stateRefreshedMsg{state: newState}
+				return stateRefreshedMsg{state: newState, seq: seq}
 			}
 			newState.coldStats = coldStats
 		}
@@ -105,7 +106,7 @@ func refreshSharedStateCmd(workDir, rulesFileOverride string) tea.Cmd {
 			newState.projects = provider.All()
 		}
 
-		return stateRefreshedMsg{state: newState}
+		return stateRefreshedMsg{state: newState, seq: seq}
 	}
 }
 

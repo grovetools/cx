@@ -228,6 +228,10 @@ func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, e
 // expandAllRules recursively resolves rules, including those from @default directives.
 func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, importLineNum int) (hotRules, coldRules []RuleInfo, viewPaths []string, treePaths []string, err error) {
 	defer profiling.Start("context.expandAllRules").Stop()
+	// Resolve relative paths against workDir, not process CWD.
+	if !filepath.IsAbs(rulesPath) {
+		rulesPath = filepath.Join(m.workDir, rulesPath)
+	}
 	absRulesPath, err := filepath.Abs(rulesPath)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to get absolute path for rules: %w", err)
@@ -1045,7 +1049,10 @@ func deduplicateStrings(items []string) []string {
 
 // ResolveFilesFromCustomRulesFile resolves both hot and cold files from a custom rules file path.
 func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFiles []string, coldFiles []string, err error) {
-	// Get absolute path for the rules file
+	// Resolve relative paths against workDir, not process CWD.
+	if !filepath.IsAbs(rulesFilePath) {
+		rulesFilePath = filepath.Join(m.workDir, rulesFilePath)
+	}
 	absRulesFilePath, err := filepath.Abs(rulesFilePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get absolute path for rules file: %w", err)

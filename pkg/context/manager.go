@@ -761,7 +761,10 @@ func (m *Manager) AppendFilesList(filename string, files []string) error {
 // containing the given directory. It returns a map of absolute paths for efficient lookup.
 func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 	defer profiling.Start("context.getGitIgnoredFiles").Stop()
-	// Ensure the provided path is absolute
+	// Resolve relative paths against workDir, not process CWD.
+	if !filepath.IsAbs(forDir) {
+		forDir = filepath.Join(m.workDir, forDir)
+	}
 	absForDir, err := filepath.Abs(forDir)
 	if err != nil {
 		return make(map[string]bool), err
@@ -1172,6 +1175,10 @@ func (m *Manager) ListFiles() ([]string, error) {
 	var absPaths []string
 
 	for _, file := range files {
+		// Resolve relative paths against workDir, not process CWD.
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(m.workDir, file)
+		}
 		absPath, err := filepath.Abs(file)
 		if err != nil {
 			absPaths = append(absPaths, file+" (error getting absolute path)")
@@ -1612,6 +1619,10 @@ func (m *Manager) IsPathAllowed(path string) (bool, string) {
 		return false, fmt.Sprintf("cannot validate path, workspace discovery failed: %v", m.allowedRootsErr)
 	}
 
+	// Resolve relative paths against workDir, not process CWD.
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(m.workDir, path)
+	}
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return false, fmt.Sprintf("could not resolve absolute path for '%s': %v", path, err)

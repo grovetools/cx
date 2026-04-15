@@ -96,12 +96,13 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config) 
 }
 
 type pagerModel struct {
-	pager  pager.Model
-	state  *sharedState
-	width  int
-	height int
-	keys   pagerKeyMap
-	help   help.Model
+	pager      pager.Model
+	state      *sharedState
+	currentSeq uint64 // monotonic counter for discarding stale refreshes
+	width      int
+	height     int
+	keys       pagerKeyMap
+	help       help.Model
 
 	// Exported Neovim IPC state so standalone CLI wrappers can detect
 	// a "quit to let nvim edit this file" exit and print the
@@ -121,8 +122,16 @@ type pagerModel struct {
 	showRules bool
 }
 
+// dispatchRefresh increments the sequence counter and returns a
+// refreshSharedStateCmd tagged with the new seq. Stale results
+// (from earlier seq values) are discarded by the stateRefreshedMsg handler.
+func (m *pagerModel) dispatchRefresh() tea.Cmd {
+	m.currentSeq++
+	return refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride, m.currentSeq)
+}
+
 func (m *pagerModel) Init() tea.Cmd {
-	return tea.Batch(m.pager.Init(), refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride))
+	return tea.Batch(m.pager.Init(), m.dispatchRefresh())
 }
 
 // activePageName returns the Name() of whichever cx page is currently
@@ -148,13 +157,13 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state.workDir = msg.Node.Path
 		}
 		m.state.loading = true
-		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
+		return m, m.dispatchRefresh()
 	case embed.UpdateContextScopeMsg:
 		m.state.rulesFileOverride = msg.RulesFile
 		// Don't set loading=true here — it causes a visible "Loading
 		// context..." flash during sticky navigation. The stale content
 		// stays visible until the refresh completes.
-		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
+		return m, m.dispatchRefresh()
 	case embed.FocusMsg:
 		var cmd tea.Cmd
 		m.pager, cmd = m.pager.Update(msg)
@@ -175,7 +184,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case embed.CloseRequestMsg, embed.CloseConfirmMsg, embed.DoneMsg:
 			m.showRules = false
 			m.rulesTUI = nil
-			return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
+			return m, m.dispatchRefresh()
 		case embed.EditRequestMsg:
 			editor := os.Getenv("EDITOR")
 			if editor == "" {
@@ -199,14 +208,14 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Nvim exited via :wq or :q — clean up and refresh.
 			m.isEditing = false
 			m.editorModel = nil
-			return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
+			return m, m.dispatchRefresh()
 		case tea.KeyMsg:
 			if msg.Type == tea.KeyCtrlC {
 				m.editorModel.Save()
 				m.editorModel.Close()
 				m.isEditing = false
 				m.editorModel = nil
-				return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
+				return m, m.dispatchRefresh()
 			}
 			if msg.Type == tea.KeyTab || msg.Type == tea.KeyShiftTab {
 				m.editorModel.Save()
@@ -223,7 +232,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.pager, cycleCmd = m.pager.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 				}
-				return m, tea.Batch(refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride), cycleCmd)
+				return m, tea.Batch(m.dispatchRefresh(), cycleCmd)
 			}
 		case tea.WindowSizeMsg:
 			var cmd tea.Cmd
@@ -351,6 +360,9 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case stateRefreshedMsg:
+		if msg.seq < m.currentSeq {
+			return m, nil // Discard stale refresh from earlier request
+		}
 		*m.state = msg.state
 		// Forward to the pager so active pages can react to the new state.
 		var pagerCmd tea.Cmd
@@ -359,7 +371,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refreshStateMsg, embed.EditFinishedMsg, embed.SplitEditorClosedMsg:
 		m.state.loading = true
-		return m, refreshSharedStateCmd(m.state.workDir, m.state.rulesFileOverride)
+		return m, m.dispatchRefresh()
 
 	case embed.EditRequestMsg:
 		// Standalone fallback: when not hosted, EditRequestMsg is not

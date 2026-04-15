@@ -357,8 +357,9 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		}
 		p.statusMessage = msg.successMsg
 		if msg.refreshNeeded {
-			// Reload shared state and tree
-			return p, tea.Batch(refreshSharedStateCmd(p.sharedState.workDir, p.sharedState.rulesFileOverride), p.loadTreeCmd())
+			// Signal the parent model to do a sequenced refresh.
+			// The tree reloads via its stateRefreshedMsg handler.
+			return p, func() tea.Msg { return refreshStateMsg{} }
 		}
 		return p, nil
 
@@ -608,7 +609,7 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 		// Refresh both tree and rules
 		case key.Matches(msg, p.keys.Refresh):
 			p.statusMessage = "Refreshing..."
-			return p, tea.Batch(refreshSharedStateCmd(p.sharedState.workDir, p.sharedState.rulesFileOverride), p.loadTreeCmd())
+			return p, func() tea.Msg { return refreshStateMsg{} }
 
 		// Toggle expand
 		case key.Matches(msg, p.keys.ToggleExpand):
