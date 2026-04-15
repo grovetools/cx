@@ -18,9 +18,10 @@ type Model = *rulesPickerModel
 // used for context resolution (empty falls back to the current working
 // directory inside context.NewManager). cfg supplies user-configurable
 // keybindings; pass nil to use defaults.
-func New(workDir string, cfg *config.Config) Model {
+func New(workDir, rulesFileOverride string, cfg *config.Config) Model {
 	m := newRulesPickerModel()
 	m.workDir = workDir
+	m.rulesFileOverride = rulesFileOverride
 	m.keys = newPickerKeyMap(cfg)
 	m.help.SetKeys(m.keys)
 	return m
@@ -43,7 +44,8 @@ func (r *ruleItem) getContentLineCount() int {
 }
 
 type rulesPickerModel struct {
-	workDir          string
+	workDir           string
+	rulesFileOverride string
 	items            []ruleItem
 	selectedIndex    int
 	keys             pickerKeyMap

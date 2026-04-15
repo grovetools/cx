@@ -15,7 +15,7 @@ import (
 // (such as cx view or grove-terminal) should call New directly and route
 // messages themselves rather than going through Run.
 func Run(workDir string) error {
-	m := New(workDir, nil)
+	m := New(workDir, "", nil)
 	if _, err := embed.RunStandalone(m, tea.WithAltScreen()); err != nil {
 		return fmt.Errorf("error running TUI: %w", err)
 	}

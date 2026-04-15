@@ -66,7 +66,7 @@ func interceptClose(cmd tea.Cmd) tea.Cmd {
 func (p *setRulesPage) Focus() tea.Cmd {
 	if p.inner == nil {
 		// Lazy-init the picker on first focus.
-		p.inner = rules.New(p.sharedState.workDir, nil)
+		p.inner = rules.New(p.sharedState.workDir, p.sharedState.rulesFileOverride, nil)
 		var cmds []tea.Cmd
 		if p.width > 0 && p.height > 0 {
 			updated, c := p.inner.Update(tea.WindowSizeMsg{Width: p.width, Height: p.height})

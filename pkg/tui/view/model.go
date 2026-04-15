@@ -266,7 +266,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activePageName() == "rules" {
 				rulesPath := m.state.rulesPath
 				if rulesPath == "" {
-					mgr := context.NewManager(m.state.workDir)
+					mgr := context.NewManagerWithOverride(m.state.workDir, m.state.rulesFileOverride)
 					var err error
 					rulesPath, err = mgr.EnsureAndGetRulesPath()
 					if err != nil {
@@ -310,7 +310,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 
-				mgr := context.NewManager(m.state.workDir)
+				mgr := context.NewManagerWithOverride(m.state.workDir, m.state.rulesFileOverride)
 				editorCmd, err := mgr.EditRulesCmd()
 				if err != nil {
 					m.state.err = fmt.Errorf("failed to prepare editor command: %w", err)
@@ -326,7 +326,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// shelling out to `cx rules`. The picker speaks the
 				// embed contract so we can route messages and editor
 				// requests through this host.
-				m.rulesTUI = rulestui.New(m.state.workDir, m.cfg)
+				m.rulesTUI = rulestui.New(m.state.workDir, m.state.rulesFileOverride, m.cfg)
 				m.showRules = true
 				return m, tea.Batch(
 					m.rulesTUI.Init(),

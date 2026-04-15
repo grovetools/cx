@@ -23,7 +23,7 @@ type rulesLoadedMsg struct {
 func (m *rulesPickerModel) loadRulesCmd() tea.Msg {
 	var items []ruleItem
 
-	mgr := context.NewManager(m.workDir)
+	mgr := context.NewManagerWithOverride(m.workDir, m.rulesFileOverride)
 	activeSource := mgr.ResolveRulesPath()
 	seen := make(map[string]bool)
 
@@ -165,7 +165,7 @@ func (m *rulesPickerModel) performLoadCmd(item ruleItem) tea.Cmd {
 		}
 
 		// Resolve the active rules write path (plan-scoped > notebook > local)
-		mgr := context.NewManager(workDir)
+		mgr := context.NewManagerWithOverride(workDir, m.rulesFileOverride)
 		rulesPath := mgr.ResolveRulesWritePath()
 
 		// Write to resolved rules path
@@ -227,7 +227,7 @@ func editRuleCmd(item ruleItem) tea.Cmd {
 func (m *rulesPickerModel) performSaveCmd(name string, toWork bool) tea.Cmd {
 	workDir := m.workDir
 	return func() tea.Msg {
-		mgr := context.NewManager(workDir)
+		mgr := context.NewManagerWithOverride(workDir, m.rulesFileOverride)
 		content, _, err := mgr.LoadRulesContent()
 		if err != nil {
 			return saveCompleteMsg{err: fmt.Errorf("failed to load active rules: %w", err)}

@@ -78,7 +78,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Set status message
 		if m.loadingFromIdx >= 0 && m.loadingFromIdx < len(m.items) {
-			mgr := context.NewManager(m.workDir)
+			mgr := context.NewManagerWithOverride(m.workDir, m.rulesFileOverride)
 			m.statusMessage = fmt.Sprintf("Loaded '%s' to %s as working copy", m.items[m.loadingFromIdx].name, mgr.ResolveRulesWritePath())
 		}
 
