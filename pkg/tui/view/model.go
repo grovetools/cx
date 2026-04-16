@@ -341,13 +341,14 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 
-				// Emit EditRequestMsg so the host can manage the
-				// editor lifecycle and send EditFinishedMsg back.
-				// In standalone mode the self-handling fallback
-				// below (case embed.EditRequestMsg) runs instead.
+				// Emit InlineEditRequestMsg so the host replaces
+				// this panel's BSP node with an ephemeral editor
+				// in-place. In standalone mode the self-handling
+				// fallback below (case embed.InlineEditRequestMsg)
+				// runs instead.
 				path := rulesPath
 				return m, func() tea.Msg {
-					return embed.EditRequestMsg{Path: path}
+					return embed.InlineEditRequestMsg{Path: path}
 				}
 			}
 		case key.Matches(msg, m.keys.SelectRules):
@@ -400,6 +401,18 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Standalone fallback: when not hosted, EditRequestMsg is not
 		// intercepted by WrapPanelCmd, so we self-handle by launching
 		// the editor and returning EditFinishedMsg on completion.
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "vi"
+		}
+		editCmd := exec.Command(editor, msg.Path)
+		return m, tea.ExecProcess(editCmd, func(err error) tea.Msg {
+			return embed.EditFinishedMsg{Err: err}
+		})
+
+	case embed.InlineEditRequestMsg:
+		// Standalone fallback: same as EditRequestMsg — no host to
+		// perform an in-place BSP swap, so launch the editor directly.
 		editor := os.Getenv("EDITOR")
 		if editor == "" {
 			editor = "vi"
