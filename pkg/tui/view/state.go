@@ -94,8 +94,10 @@ func refreshSharedStateCmd(workDir, rulesFileOverride string, seq uint64) tea.Cm
 			newState.coldStats = coldStats
 		}
 
-		// Load projects using daemon's cached workspace graph
-		client := daemon.NewWithAutoStart(workDir)
+		// Load projects using daemon's cached workspace graph.
+		// Inherit GROVE_SCOPE from host so embedded cx TUI shares the same
+		// daemon as treemux rather than spawning one per workDir.
+		client := daemon.NewWithAutoStart()
 		workspaces, err := client.GetWorkspaces(gocontext.Background())
 		if err != nil {
 			newState.err = err
