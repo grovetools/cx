@@ -175,7 +175,7 @@ func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 		aliasResolver:     nil, // Lazily initialized
 		log:               grovelogging.NewLogger("grove-context"),
 		ulog:              grovelogging.NewUnifiedLogger("cx.context"),
-		daemonClient:      daemon.NewWithAutoStart(workDir),
+		daemonClient:      daemon.NewWithAutoStart(),
 	}
 	// LoadOrStore resolves the rare race where two goroutines miss the
 	// cache simultaneously — the first to store wins, and every caller
