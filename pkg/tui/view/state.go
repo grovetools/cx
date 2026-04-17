@@ -95,7 +95,7 @@ func refreshSharedStateCmd(workDir, rulesFileOverride string, seq uint64) tea.Cm
 		}
 
 		// Load projects using daemon's cached workspace graph
-		client := daemon.NewWithAutoStart()
+		client := daemon.NewWithAutoStart(workDir)
 		workspaces, err := client.GetWorkspaces(gocontext.Background())
 		if err != nil {
 			newState.err = err

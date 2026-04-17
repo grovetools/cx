@@ -326,9 +326,9 @@ func (m *Manager) generateDiffFile(ref string) (string, error) {
 // GetGitInfo returns information about the current git state
 func GetGitInfo() (branch string, hasChanges bool, err error) {
 	// Try daemon's cached git status first
-	client := daemon.NewWithAutoStart()
+	wd, _ := os.Getwd()
+	client := daemon.NewWithAutoStart(wd)
 	if client.IsRunning() {
-		wd, _ := os.Getwd()
 		gitRootCmd := exec.Command("git", "-C", wd, "rev-parse", "--show-toplevel")
 		if gitRootOutput, gitErr := gitRootCmd.Output(); gitErr == nil {
 			gitRoot := strings.TrimSpace(string(gitRootOutput))

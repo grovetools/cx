@@ -71,7 +71,7 @@ func (p *suggestionsPage) refreshSuggestionsCmd() tea.Cmd {
 	workDir := p.sharedState.workDir
 	rulesContent := p.sharedState.rulesContent
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart()
+		client := daemon.NewWithAutoStart(workDir)
 
 		// Use the rules content as the search query so results are
 		// semantically related to the current context definition.
