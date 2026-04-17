@@ -36,16 +36,21 @@ func (p *rulesPage) Keys() interface{} {
 func (p *rulesPage) Init() tea.Cmd { return nil }
 
 func (p *rulesPage) Focus() tea.Cmd {
-	// Display the actual active rules file path relative to current working directory
+	// Display the actual active rules file path relative to the host-tracked
+	// workDir (set via embed.SetWorkspaceMsg). os.Getwd() would stall at the
+	// host process's launch directory inside treemux.
 	rulesPath := p.sharedState.rulesPath
 	if rulesPath == "" {
 		rulesPath = ".grove/rules" // Fallback if path is not set
 	} else {
-		// Convert to relative path
-		cwd, err := os.Getwd()
-		if err == nil {
-			relPath, err := filepath.Rel(cwd, rulesPath)
-			if err == nil {
+		base := p.sharedState.workDir
+		if base == "" {
+			if cwd, err := os.Getwd(); err == nil {
+				base = cwd
+			}
+		}
+		if base != "" {
+			if relPath, err := filepath.Rel(base, rulesPath); err == nil {
 				rulesPath = relPath
 			}
 		}

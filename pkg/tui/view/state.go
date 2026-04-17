@@ -179,15 +179,21 @@ func (s *sharedState) getDisplayPathInfo(filePath string) displayPathInfo {
 		}
 	}
 
-	// As a fallback, try to make the path relative to the current working directory.
-	cwd, err := os.Getwd()
-	if err == nil {
-		// Normalize cwd to match canonicalPath normalization
-		normalizedCwd, cwdErr := pathutil.NormalizeForLookup(cwd)
-		if cwdErr == nil {
-			cwd = normalizedCwd
+	// As a fallback, try to make the path relative to the host-tracked
+	// workDir (set via embed.SetWorkspaceMsg). Falling back to os.Getwd()
+	// would render paths relative to the host's launch directory when
+	// embedded in treemux, which is wrong after a workspace switch.
+	base := s.workDir
+	if base == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			base = cwd
 		}
-		if relPath, err := filepath.Rel(cwd, canonicalPath); err == nil && !strings.HasPrefix(relPath, "..") {
+	}
+	if base != "" {
+		if normalizedBase, nerr := pathutil.NormalizeForLookup(base); nerr == nil {
+			base = normalizedBase
+		}
+		if relPath, err := filepath.Rel(base, canonicalPath); err == nil && !strings.HasPrefix(relPath, "..") {
 			return displayPathInfo{path: relPath}
 		}
 	}
