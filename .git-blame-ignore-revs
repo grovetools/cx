@@ -5,3 +5,6 @@
 # Add entries for pure-formatting / rename commits that would otherwise
 # obscure authorship. Keep one SHA per line with a comment above explaining
 # why it's here.
+
+# gofumpt migration — reformatted 63 files
+960b2c75f83d3919cf496076eb9c2cf53d842f7e
