@@ -8,3 +8,8 @@ path = "./bin/cx"
 
 [context]
 default_rules = "dev-no-tests"
+
+[[hooks.on_stop]]
+name = "Format Go files with gofumpt"
+command = "gofumpt -w ."
+run_if = "changes"
