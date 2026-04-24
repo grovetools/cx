@@ -1,0 +1,7 @@
+# Revisions listed here are skipped by `git blame` when invoked with
+# `--ignore-revs-file` (or configured via `git config blame.ignoreRevsFile`).
+# GitHub's blame UI honors this file automatically.
+#
+# Add entries for pure-formatting / rename commits that would otherwise
+# obscure authorship. Keep one SHA per line with a comment above explaining
+# why it's here.
