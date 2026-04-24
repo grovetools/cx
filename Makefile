@@ -5,6 +5,11 @@ E2E_BINARY_NAME=tend
 BIN_DIR=bin
 VERSION_PKG=github.com/grovetools/core/version
 
+# --- Tool versions ---
+# Kept in sync with .tool-versions (for asdf/mise). Override via env if needed.
+GOFUMPT_VERSION ?= v0.9.2
+GOLANGCI_VERSION ?= v1.64.8
+
 # --- Versioning ---
 # For dev builds, we construct a version string from git info.
 # For release builds, VERSION is passed in by the CI/CD pipeline (e.g., VERSION=v1.2.3)
@@ -23,9 +28,22 @@ LDFLAGS = -ldflags="\
 -X '$(VERSION_PKG).Branch=$(GIT_BRANCH)' \
 -X '$(VERSION_PKG).BuildDate=$(BUILD_DATE)'"
 
-.PHONY: all build test clean fmt vet lint run check generate-docs dev build-all help
+.PHONY: all build test clean fmt fmt-check vet lint run check generate-docs dev build-all help setup
 
 all: build
+
+setup:
+	@echo "Configuring git blame to ignore formatting commits..."
+	@git config blame.ignoreRevsFile .git-blame-ignore-revs
+	@echo "Installing dev tools..."
+	@command -v gofumpt > /dev/null || go install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
+	@command -v golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_VERSION)
+	@echo "Installing git pre-commit hook..."
+	@hooks_dir="$$(git rev-parse --git-path hooks)"; \
+	mkdir -p "$$hooks_dir"; \
+	cp scripts/pre-commit "$$hooks_dir/pre-commit"; \
+	chmod +x "$$hooks_dir/pre-commit"
+	@echo "Done. Run 'make check' to verify."
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -46,7 +64,24 @@ clean:
 
 fmt:
 	@echo "Formatting code..."
-	@go fmt ./...
+	@if command -v gofumpt > /dev/null; then \
+		gofumpt -w .; \
+	else \
+		echo "gofumpt not installed. Install with: go install mvdan.cc/gofumpt@latest"; \
+		exit 1; \
+	fi
+
+fmt-check:
+	@if ! command -v gofumpt > /dev/null; then \
+		echo "gofumpt not installed. Run 'make setup'."; \
+		exit 1; \
+	fi
+	@unformatted="$$(gofumpt -l . 2>/dev/null)"; \
+	if [ -n "$$unformatted" ]; then \
+		echo "Unformatted files (run 'make fmt'):"; \
+		echo "$$unformatted" | sed 's/^/  /'; \
+		exit 1; \
+	fi
 
 vet:
 	@echo "Running go vet..."
@@ -65,7 +100,7 @@ run: build
 	@$(BIN_DIR)/$(BINARY_NAME) $(ARGS)
 
 # Run all checks
-check: fmt vet lint test
+check: fmt-check vet lint test
 
 # Generate documentation
 generate-docs: build
@@ -106,6 +141,7 @@ test-e2e: build
 # Show available targets
 help:
 	@echo "Available targets:"
+	@echo "  make setup       - One-time contributor setup (git config, install gofumpt)"
 	@echo "  make build       - Build the binary"
 	@echo "  make test        - Run tests"
 	@echo "  make clean       - Clean build artifacts"
