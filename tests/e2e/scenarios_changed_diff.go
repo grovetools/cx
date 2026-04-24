@@ -129,9 +129,9 @@ func ChangedInlineFilterScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup git repo with files in different directories", func(ctx *harness.Context) error {
 				_, err := git.CreateTestRepo(ctx.RootDir, map[string]string{
-					"pkg/api/api.go":        "package api\n\nfunc Handle() {}\n",
-					"pkg/models/user.go":    "package models\n\ntype User struct{}\n",
-					"cmd/main.go":           "package main\n\nfunc main() {}\n",
+					"pkg/api/api.go":     "package api\n\nfunc Handle() {}\n",
+					"pkg/models/user.go": "package models\n\ntype User struct{}\n",
+					"cmd/main.go":        "package main\n\nfunc main() {}\n",
 				})
 				return err
 			}),

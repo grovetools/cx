@@ -68,20 +68,20 @@ type Manager struct {
 	workDir           string
 	rulesBaseDir      string                     // Base directory for resolving relative patterns in rules files
 	rulesFileOverride string                     // Instance-level override for rules file path (absolute)
-	locator         *workspace.NotebookLocator // Notebook locator for centralized context paths
+	locator           *workspace.NotebookLocator // Notebook locator for centralized context paths
 	gitIgnoredCache   map[string]map[string]bool // Cache for gitignored files by repository root
 	gitIgnoredMutex   sync.RWMutex               // Mutex to protect gitIgnoredCache
 	changedFilesCache map[string]map[string]bool // Cache for changed files by git ref
 	changedFilesMutex sync.Mutex                 // Mutex to protect changedFilesCache
-	aliasResolver   *alias.AliasResolver       // Lazily initialized alias resolver
-	allowedRoots    []string
-	allowedRootsErr error
-	rootsOnce       sync.Once
-	skippedRules    []SkippedRule // Rules that were skipped during parsing with reasons
-	skippedMutex    sync.Mutex    // Protects skippedRules
-	log             *logrus.Entry
-	ulog            *grovelogging.UnifiedLogger
-	daemonClient    daemon.Client // Daemon client for cached workspace/git data
+	aliasResolver     *alias.AliasResolver       // Lazily initialized alias resolver
+	allowedRoots      []string
+	allowedRootsErr   error
+	rootsOnce         sync.Once
+	skippedRules      []SkippedRule // Rules that were skipped during parsing with reasons
+	skippedMutex      sync.Mutex    // Protects skippedRules
+	log               *logrus.Entry
+	ulog              *grovelogging.UnifiedLogger
+	daemonClient      daemon.Client // Daemon client for cached workspace/git data
 }
 
 // managerCache memoizes Manager instances by absolute workDir. NewManager
@@ -262,17 +262,17 @@ func (m *Manager) ResolveRulesPath() string {
 // regardless of whether the file exists yet.
 func (m *Manager) ResolveRulesWritePath() string {
 	if m.rulesFileOverride != "" {
-		os.MkdirAll(filepath.Dir(m.rulesFileOverride), 0755)
+		os.MkdirAll(filepath.Dir(m.rulesFileOverride), 0o755)
 		return m.rulesFileOverride
 	}
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := m.GetPlanRulesPath(planName); p != "" {
-			os.MkdirAll(filepath.Dir(p), 0755)
+			os.MkdirAll(filepath.Dir(p), 0o755)
 			return p
 		}
 	}
 	p := m.ResolveRulesPath()
-	os.MkdirAll(filepath.Dir(p), 0755)
+	os.MkdirAll(filepath.Dir(p), 0o755)
 	return p
 }
 
@@ -338,14 +338,14 @@ func (m *Manager) ResolveContextPath() string {
 func (m *Manager) ResolveContextWritePath() string {
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.ContextPath(m.workDir, planName); p != "" {
-			os.MkdirAll(filepath.Dir(p), 0755)
+			os.MkdirAll(filepath.Dir(p), 0o755)
 			return p
 		}
 	}
 
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if genDir, err := m.locator.GetContextGeneratedDir(node); err == nil {
-			os.MkdirAll(genDir, 0755)
+			os.MkdirAll(genDir, 0o755)
 			return filepath.Join(genDir, "context")
 		}
 	}
@@ -377,14 +377,14 @@ func (m *Manager) ResolveCachedContextPath() string {
 func (m *Manager) ResolveCachedContextWritePath() string {
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.CachedContextPath(m.workDir, planName); p != "" {
-			os.MkdirAll(filepath.Dir(p), 0755)
+			os.MkdirAll(filepath.Dir(p), 0o755)
 			return p
 		}
 	}
 
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
-			os.MkdirAll(cacheDir, 0755)
+			os.MkdirAll(cacheDir, 0o755)
 			return filepath.Join(cacheDir, "cached-context")
 		}
 	}
@@ -416,14 +416,14 @@ func (m *Manager) ResolveCachedContextFilesListPath() string {
 func (m *Manager) ResolveCachedContextFilesListWritePath() string {
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.CachedContextFilesListPath(m.workDir, planName); p != "" {
-			os.MkdirAll(filepath.Dir(p), 0755)
+			os.MkdirAll(filepath.Dir(p), 0o755)
 			return p
 		}
 	}
 
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
-			os.MkdirAll(cacheDir, 0755)
+			os.MkdirAll(cacheDir, 0o755)
 			return filepath.Join(cacheDir, "cached-context-files")
 		}
 	}
@@ -744,7 +744,7 @@ func (m *Manager) WriteFilesList(filename string, files []string) error {
 
 // AppendFilesList appends a list of files to a file
 func (m *Manager) AppendFilesList(filename string, files []string) error {
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -947,7 +947,7 @@ func (m *Manager) saveGitIgnoredToDiskCache(gitRootPath string, ignoredFiles map
 
 	// Create cache directory if it doesn't exist
 	cacheDir := m.getCacheDir(gitRootPath)
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return // Silently fail if we can't create directory
 	}
 
@@ -965,7 +965,7 @@ func (m *Manager) saveGitIgnoredToDiskCache(gitRootPath string, ignoredFiles map
 
 	// Write atomically by writing to temp file and renaming
 	tmpFile := cacheFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, data, 0o644); err != nil {
 		return
 	}
 	os.Rename(tmpFile, cacheFile)
@@ -1030,7 +1030,7 @@ func (m *Manager) UpdateFromRules() error {
 
 	// Ensure .grove directory exists relative to workDir
 	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 
@@ -1553,7 +1553,7 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 
 		// Ensure parent directory exists
 		groveDir := filepath.Dir(rulesPath)
-		if err := os.MkdirAll(groveDir, 0755); err != nil {
+		if err := os.MkdirAll(groveDir, 0o755); err != nil {
 			return "", fmt.Errorf("error creating %s directory: %w", groveDir, err)
 		}
 
@@ -1568,7 +1568,7 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 			}
 		}
 
-		if err := os.WriteFile(rulesPath, rulesContent, 0644); err != nil {
+		if err := os.WriteFile(rulesPath, rulesContent, 0o644); err != nil {
 			return "", fmt.Errorf("error creating %s: %w", rulesPath, err)
 		}
 	}
@@ -1916,7 +1916,6 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 
 			return nil
 		})
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to walk directory %s: %w", rootPath, err)
 		}

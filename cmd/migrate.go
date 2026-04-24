@@ -90,10 +90,10 @@ After migration, empty .cx/, .cx.work/, and .grove/ directories are removed.`,
 							Pretty(fmt.Sprintf("  %s → %s", localRules, rulesTarget)).
 							Log(ctx)
 					} else {
-						if err := os.MkdirAll(filepath.Dir(rulesTarget), 0755); err == nil {
+						if err := os.MkdirAll(filepath.Dir(rulesTarget), 0o755); err == nil {
 							content, _ := os.ReadFile(localRules)
 							if content != nil {
-								if err := os.WriteFile(rulesTarget, content, 0644); err == nil {
+								if err := os.WriteFile(rulesTarget, content, 0o644); err == nil {
 									os.Remove(localRules)
 									moved++
 									ulog.Success("Moved").
@@ -197,7 +197,7 @@ func migrateRulesDir(ctx stdctx.Context, srcDir, destDir string, dryRun bool) in
 			continue
 		}
 
-		if err := os.MkdirAll(destDir, 0755); err != nil {
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
 			ulog.Warn("Failed to create destination dir").Err(err).Log(ctx)
 			continue
 		}
@@ -208,7 +208,7 @@ func migrateRulesDir(ctx stdctx.Context, srcDir, destDir string, dryRun bool) in
 			continue
 		}
 
-		if err := os.WriteFile(destPath, content, 0644); err != nil {
+		if err := os.WriteFile(destPath, content, 0o644); err != nil {
 			ulog.Warn("Failed to write file").Err(err).Log(ctx)
 			continue
 		}
@@ -262,7 +262,7 @@ func migrateGroveToml(ctx stdctx.Context, workDir string, dryRun bool) bool {
 	}
 
 	updated := re.ReplaceAllString(text, newLine)
-	if err := os.WriteFile(configPath, []byte(updated), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
 		ulog.Warn("Failed to update grove.toml").Err(err).Log(ctx)
 		return false
 	}

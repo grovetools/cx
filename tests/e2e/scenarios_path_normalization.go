@@ -121,7 +121,6 @@ func main() {
 					"main.go",
 					"Error:",
 				}, 8*time.Second)
-
 				if err != nil {
 					content, _ := session.Capture()
 					fmt.Printf("\n=== TUI Content (no expected text found) ===\n%s\n=== END ===\n", content)
@@ -335,7 +334,6 @@ func main() {
 					"main.go",
 					"Error:",
 				}, 8*time.Second)
-
 				if err != nil {
 					content, _ := session.Capture()
 					fmt.Printf("\n=== TUI Content (no expected text found) ===\n%s\n=== END ===\n", content)

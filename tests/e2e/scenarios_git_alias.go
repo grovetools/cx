@@ -336,10 +336,10 @@ func GitAliasStatsPerLineScenario() *harness.Scenario {
 
 				// Parse the JSON output
 				var stats []struct {
-					LineNumber  int `json:"lineNumber"`
+					LineNumber  int    `json:"lineNumber"`
 					Rule        string `json:"rule"`
-					FileCount   int `json:"fileCount"`
-					TotalTokens int `json:"totalTokens"`
+					FileCount   int    `json:"fileCount"`
+					TotalTokens int    `json:"totalTokens"`
 					GitInfo     *struct {
 						URL     string `json:"url"`
 						Version string `json:"version"`
@@ -350,10 +350,10 @@ func GitAliasStatsPerLineScenario() *harness.Scenario {
 				}
 
 				var gitAliasStat *struct {
-					LineNumber  int `json:"lineNumber"`
+					LineNumber  int    `json:"lineNumber"`
 					Rule        string `json:"rule"`
-					FileCount   int `json:"fileCount"`
-					TotalTokens int `json:"totalTokens"`
+					FileCount   int    `json:"fileCount"`
+					TotalTokens int    `json:"totalTokens"`
 					GitInfo     *struct {
 						URL     string `json:"url"`
 						Version string `json:"version"`

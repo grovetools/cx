@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grovetools/tend/pkg/harness"
 	"github.com/grovetools/tend/pkg/command"
 	"github.com/grovetools/tend/pkg/fs"
+	"github.com/grovetools/tend/pkg/harness"
 )
 
 // DefaultDirectiveBasicScenario tests the basic @default directive functionality.
@@ -28,7 +28,7 @@ func DefaultDirectiveBasicScenario() *harness.Scenario {
 				if err := fs.WriteString(filepath.Join(projectA, "a.txt"), "a text"); err != nil {
 					return err
 				}
-				
+
 				// Create dependency project (project-b) as external directory
 				projectB, err := os.MkdirTemp("", "grove-e2e-default-b-")
 				if err != nil {
@@ -46,7 +46,7 @@ func DefaultDirectiveBasicScenario() *harness.Scenario {
 				if err := fs.WriteString(filepath.Join(projectB, "b.txt"), "b text"); err != nil {
 					return err
 				}
-				
+
 				// Create grove.yml for project-b
 				groveYmlContent := `version: 1.0
 context:
@@ -54,7 +54,7 @@ context:
 				if err := fs.WriteString(filepath.Join(projectB, "grove.yml"), groveYmlContent); err != nil {
 					return err
 				}
-				
+
 				// Create default rules for project-b
 				defaultRulesContent := `*.go
 ---
@@ -83,7 +83,7 @@ context:
 					return fmt.Errorf("failed to read project B path: %w", err)
 				}
 				projectB := string(projectBBytes)
-				
+
 				// Project A's rules file references project B using absolute path
 				rulesContent := fmt.Sprintf(`*.go
 @default: %s
@@ -105,7 +105,6 @@ context:
 				return result.Error
 			}),
 			harness.NewStep("Verify hot context includes imported rules", func(ctx *harness.Context) error {
-				
 				contextPath := findContextFileOrFallback(ctx.RootDir)
 				content, err := fs.ReadString(contextPath)
 				if err != nil {
@@ -116,8 +115,7 @@ context:
 				if !strings.Contains(content, "<file path=\"a.go\">") {
 					return fmt.Errorf("context file is missing a.go")
 				}
-				
-				
+
 				// Verify files from project-b's hot context are included
 				// On macOS, /var is a symlink to /private/var, so we need to check both
 				if !strings.Contains(content, "/b.go\">") {
@@ -126,7 +124,7 @@ context:
 				if !strings.Contains(content, "package b") {
 					return fmt.Errorf("context file is missing content from b.go")
 				}
-				
+
 				// Verify files from project-b's cold context are also included in hot
 				// (because @default in hot section pulls everything as hot)
 				if !strings.Contains(content, "/b.txt\">") {
@@ -135,12 +133,12 @@ context:
 				if !strings.Contains(content, "b text") {
 					return fmt.Errorf("context file is missing content from b.txt")
 				}
-				
+
 				// Local a.txt should NOT be in hot context (it's in cold section)
 				if strings.Contains(content, "<file path=\"a.txt\">") {
 					return fmt.Errorf("context file should not include a.txt in hot context")
 				}
-				
+
 				return nil
 			}),
 			harness.NewStep("Verify cold context is correct", func(ctx *harness.Context) error {
@@ -151,17 +149,17 @@ context:
 					// It's OK if cached-context doesn't exist yet
 					return nil
 				}
-				
+
 				// Cold context should have a.txt
 				if !strings.Contains(cachedContent, "a.txt") && !strings.Contains(cachedContent, "a text") {
 					return fmt.Errorf("cold context should include a.txt")
 				}
-				
+
 				// Should NOT have b.txt or b.go (they were pulled into hot context)
 				if strings.Contains(cachedContent, "b.txt") || strings.Contains(cachedContent, "b.go") {
 					return fmt.Errorf("cold context should not include project-b files (they should be in hot)")
 				}
-				
+
 				return nil
 			}),
 			harness.NewStep("Cleanup external project", func(ctx *harness.Context) error {
@@ -192,7 +190,7 @@ func DefaultDirectiveColdContextScenario() *harness.Scenario {
 				if err := fs.WriteString(filepath.Join(projectA, "a.txt"), "a text"); err != nil {
 					return err
 				}
-				
+
 				// Create dependency project (project-c) as sibling
 				projectC := filepath.Join(filepath.Dir(projectA), "project-c")
 				if err := fs.WriteString(filepath.Join(projectC, "c.go"), "package c"); err != nil {
@@ -201,7 +199,7 @@ func DefaultDirectiveColdContextScenario() *harness.Scenario {
 				if err := fs.WriteString(filepath.Join(projectC, "c.txt"), "c text"); err != nil {
 					return err
 				}
-				
+
 				// Create grove.yml for project-c
 				groveYmlContent := `version: 1.0
 context:
@@ -209,7 +207,7 @@ context:
 				if err := fs.WriteString(filepath.Join(projectC, "grove.yml"), groveYmlContent); err != nil {
 					return err
 				}
-				
+
 				// Create default rules for project-c
 				defaultRulesContent := `*.go
 ---
@@ -217,7 +215,7 @@ context:
 				if err := fs.WriteString(filepath.Join(projectC, "rules.ctx"), defaultRulesContent); err != nil {
 					return err
 				}
-				
+
 				return nil
 			}),
 			harness.NewStep("Create rules file with @default in cold section", func(ctx *harness.Context) error {
@@ -252,12 +250,12 @@ context:
 				if !strings.Contains(content, "<file path=\"a.go\">") {
 					return fmt.Errorf("context file is missing a.go")
 				}
-				
+
 				// Project C files should NOT be in hot context
 				if strings.Contains(content, "c.go") || strings.Contains(content, "c.txt") {
 					return fmt.Errorf("hot context should not include files from project-c")
 				}
-				
+
 				return nil
 			}),
 			harness.NewStep("Verify cold context includes imported rules", func(ctx *harness.Context) error {
@@ -269,25 +267,25 @@ context:
 
 				cmd := command.New(cxBinary, "list-cache").Dir(ctx.RootDir)
 				result := cmd.Run()
-				
+
 				if result.Error != nil {
 					return result.Error
 				}
-				
+
 				// Cold context should have local a.txt
 				if !strings.Contains(result.Stdout, "a.txt") {
 					return fmt.Errorf("cold context should include a.txt, got: %s", result.Stdout)
 				}
-				
+
 				// Cold context should have all files from project-c
 				if !strings.Contains(result.Stdout, "c.go") {
 					return fmt.Errorf("cold context should include ../project-c/c.go from @default, got: %s", result.Stdout)
 				}
-				
+
 				if !strings.Contains(result.Stdout, "c.txt") {
 					return fmt.Errorf("cold context should include ../project-c/c.txt from @default, got: %s", result.Stdout)
 				}
-				
+
 				return nil
 			}),
 		},
@@ -307,7 +305,7 @@ func DefaultDirectiveCircularScenario() *harness.Scenario {
 				if err := fs.WriteString(filepath.Join(projectA, "a.go"), "package a"); err != nil {
 					return err
 				}
-				
+
 				// Create project-a's grove.yml for being referenced
 				groveYmlA := `version: 1.0
 context:
@@ -315,13 +313,13 @@ context:
 				if err := fs.WriteString(filepath.Join(projectA, "grove.yml"), groveYmlA); err != nil {
 					return err
 				}
-				
+
 				// Create dependency project (project-b) as sibling
 				projectB := filepath.Join(filepath.Dir(projectA), "project-b")
 				if err := fs.WriteString(filepath.Join(projectB, "b.go"), "package b"); err != nil {
 					return err
 				}
-				
+
 				// Create grove.yml for project-b
 				groveYmlB := `version: 1.0
 context:
@@ -329,14 +327,14 @@ context:
 				if err := fs.WriteString(filepath.Join(projectB, "grove.yml"), groveYmlB); err != nil {
 					return err
 				}
-				
+
 				// Create project-b's rules that reference back to project-a (circular)
 				rulesB := `*.go
 @default: ../project-a`
 				if err := fs.WriteString(filepath.Join(projectB, "rules.ctx"), rulesB); err != nil {
 					return err
 				}
-				
+
 				return nil
 			}),
 			harness.NewStep("Create rules file with circular reference", func(ctx *harness.Context) error {
@@ -356,7 +354,7 @@ context:
 				result := cmd.Run()
 
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
-				
+
 				// Should not fail - circular dependencies should be handled
 				return result.Error
 			}),
@@ -371,18 +369,18 @@ context:
 				if !strings.Contains(content, "<file path=\"a.go\">") {
 					return fmt.Errorf("context file is missing a.go")
 				}
-				
+
 				// Should have b.go from the first resolution
 				if !strings.Contains(content, "<file path=\"../project-b/b.go\">") {
 					return fmt.Errorf("context file is missing ../project-b/b.go")
 				}
-				
+
 				// Should not have duplicates or infinite recursion issues
 				aCount := strings.Count(content, "package a")
 				if aCount != 1 {
 					return fmt.Errorf("expected exactly 1 instance of 'package a', got %d", aCount)
 				}
-				
+
 				return nil
 			}),
 		},

@@ -9,9 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	useXMLFormat bool = true
-)
+var useXMLFormat bool = true
 
 func NewGenerateCmd() *cobra.Command {
 	var jobFile, rulesFile string

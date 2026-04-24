@@ -21,7 +21,7 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 
 	// Ensure .grove directory exists for output files
 	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 
@@ -122,7 +122,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 
 	// Ensure .grove directory exists
 	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 
@@ -246,7 +246,7 @@ func (m *Manager) generateContextFromFilesAndTrees(files []string, treePaths []s
 func (m *Manager) GenerateCachedContext() error {
 	// Ensure .grove directory exists
 	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 

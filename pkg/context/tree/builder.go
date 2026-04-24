@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/pkg/profiling"
 	"github.com/grovetools/core/util/pathutil"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // normalizePathKey returns a normalized version of the path for use as a map key

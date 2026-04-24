@@ -139,12 +139,12 @@ var pagerKeys = func() pagerKeyMap {
 // statsKeyMap defines the key bindings for the interactive stats page.
 type statsKeyMap struct {
 	keymap.Base
-	SwitchFocus key.Binding
-	Exclude     key.Binding
-	Refresh     key.Binding
-	GotoTop     key.Binding
-	GotoBottom  key.Binding
-	HalfPageUp  key.Binding
+	SwitchFocus  key.Binding
+	Exclude      key.Binding
+	Refresh      key.Binding
+	GotoTop      key.Binding
+	GotoBottom   key.Binding
+	HalfPageUp   key.Binding
 	HalfPageDown key.Binding
 }
 
@@ -219,12 +219,12 @@ var statsKeys = func() statsKeyMap {
 
 type treeViewKeyMap struct {
 	keymap.Base
-	ToggleExpand   key.Binding
-	ToggleHot      key.Binding
-	ToggleCold     key.Binding
-	ToggleExclude  key.Binding
-	ToggleIgnored  key.Binding
-	Refresh        key.Binding
+	ToggleExpand  key.Binding
+	ToggleHot     key.Binding
+	ToggleCold    key.Binding
+	ToggleExclude key.Binding
+	ToggleIgnored key.Binding
+	Refresh       key.Binding
 }
 
 func (k treeViewKeyMap) ShortHelp() []key.Binding {

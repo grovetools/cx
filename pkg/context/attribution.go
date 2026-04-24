@@ -20,17 +20,17 @@ type SearchDirective struct {
 type RuleInfo struct {
 	Pattern          string
 	IsExclude        bool
-	LineNum          int                // The line number in its original source file
-	EffectiveLineNum int                // The line number in the root file that caused this rule to be included
-	Directives       []SearchDirective  `json:"directives,omitempty"` // search directives (@find:/@grep:)
+	LineNum          int               // The line number in its original source file
+	EffectiveLineNum int               // The line number in the root file that caused this rule to be included
+	Directives       []SearchDirective `json:"directives,omitempty"` // search directives (@find:/@grep:)
 }
 
 // ImportInfo holds information about a ruleset import with its line number.
 type ImportInfo struct {
-	OriginalLine     string             `json:"originalLine,omitempty"` // The full original line text
-	ImportIdentifier string             // e.g., "project:ruleset"
-	LineNum          int                // The line number where this import appears
-	Directives       []SearchDirective  `json:"directives,omitempty"` // search directives (@find:/@grep:)
+	OriginalLine     string            `json:"originalLine,omitempty"` // The full original line text
+	ImportIdentifier string            // e.g., "project:ruleset"
+	LineNum          int               // The line number where this import appears
+	Directives       []SearchDirective `json:"directives,omitempty"` // search directives (@find:/@grep:)
 }
 
 // AttributionResult maps a line number to the list of files it includes.

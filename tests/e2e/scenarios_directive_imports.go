@@ -38,10 +38,10 @@ func DirectiveWorkspaceGrepImportScenario() *harness.Scenario {
 				projectADir := filepath.Join(grovesDir, "project-a")
 				projectBDir := filepath.Join(grovesDir, "project-b")
 
-				if err := os.MkdirAll(projectADir, 0755); err != nil {
+				if err := os.MkdirAll(projectADir, 0o755); err != nil {
 					return err
 				}
-				if err := os.MkdirAll(projectBDir, 0755); err != nil {
+				if err := os.MkdirAll(projectBDir, 0o755); err != nil {
 					return err
 				}
 
@@ -68,7 +68,7 @@ func DirectiveWorkspaceGrepImportScenario() *harness.Scenario {
 
 				// Create project-b .cx/imported.rules
 				projectBCxDir := filepath.Join(projectBDir, ".cx")
-				if err := os.MkdirAll(projectBCxDir, 0755); err != nil {
+				if err := os.MkdirAll(projectBCxDir, 0o755); err != nil {
 					return err
 				}
 				importedRules := "# Include all text files\n*.txt\n"
@@ -163,10 +163,10 @@ func DirectiveWorkspaceFindImportScenario() *harness.Scenario {
 				projectADir := filepath.Join(grovesDir, "project-a")
 				projectBDir := filepath.Join(grovesDir, "project-b")
 
-				if err := os.MkdirAll(projectADir, 0755); err != nil {
+				if err := os.MkdirAll(projectADir, 0o755); err != nil {
 					return err
 				}
-				if err := os.MkdirAll(projectBDir, 0755); err != nil {
+				if err := os.MkdirAll(projectBDir, 0o755); err != nil {
 					return err
 				}
 
@@ -188,7 +188,7 @@ func DirectiveWorkspaceFindImportScenario() *harness.Scenario {
 
 				// Create project-b .cx/imported.rules
 				projectBCxDir := filepath.Join(projectBDir, ".cx")
-				if err := os.MkdirAll(projectBCxDir, 0755); err != nil {
+				if err := os.MkdirAll(projectBCxDir, 0o755); err != nil {
 					return err
 				}
 				importedRules := "*.txt\n"
@@ -262,10 +262,10 @@ func DirectiveGitGrepImportScenario() *harness.Scenario {
 				projectADir := filepath.Join(ctx.RootDir, "project-a")
 				remoteRepoDir := filepath.Join(ctx.RootDir, "remote-repo")
 
-				if err := os.MkdirAll(projectADir, 0755); err != nil {
+				if err := os.MkdirAll(projectADir, 0o755); err != nil {
 					return err
 				}
-				if err := os.MkdirAll(remoteRepoDir, 0755); err != nil {
+				if err := os.MkdirAll(remoteRepoDir, 0o755); err != nil {
 					return err
 				}
 
@@ -279,7 +279,7 @@ func DirectiveGitGrepImportScenario() *harness.Scenario {
 
 				// Create remote-repo .cx/remote.rules
 				remoteRepoCxDir := filepath.Join(remoteRepoDir, ".cx")
-				if err := os.MkdirAll(remoteRepoCxDir, 0755); err != nil {
+				if err := os.MkdirAll(remoteRepoCxDir, 0o755); err != nil {
 					return err
 				}
 				remoteRules := "# Include all text files from the remote repo\n*.txt\n"

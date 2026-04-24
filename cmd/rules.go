@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grovetools/cx/pkg/context"
-	rules "github.com/grovetools/cx/pkg/tui/rules"
 	"github.com/grovetools/core/pkg/alias"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
+	"github.com/grovetools/cx/pkg/context"
+	rules "github.com/grovetools/cx/pkg/tui/rules"
 	"github.com/spf13/cobra"
 )
 
@@ -118,7 +118,7 @@ Examples:
 			rulesPath := mgr.ResolveRulesWritePath()
 
 			// Write to resolved rules path
-			if err := os.WriteFile(rulesPath, content, 0644); err != nil {
+			if err := os.WriteFile(rulesPath, content, 0o644); err != nil {
 				return fmt.Errorf("failed to write rules: %w", err)
 			}
 
@@ -350,7 +350,7 @@ func newRulesSetCmd() *cobra.Command {
 This makes the context read-only from that file. To create a modifiable copy, use 'cx rules load'.
 
 You can also provide a direct file path to a rules file (including plan-specific rules).`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
 			nameOrPath := args[0]
@@ -433,12 +433,12 @@ Use the --work flag to save to .cx.work/ for temporary, untracked sets.`,
 				}
 			}
 
-			if err := os.MkdirAll(destDir, 0755); err != nil {
+			if err := os.MkdirAll(destDir, 0o755); err != nil {
 				return fmt.Errorf("failed to create %s directory: %w", destDir, err)
 			}
 
 			destPath := filepath.Join(destDir, name+context.RulesExt)
-			if err := os.WriteFile(destPath, content, 0644); err != nil {
+			if err := os.WriteFile(destPath, content, 0o644); err != nil {
 				return fmt.Errorf("failed to save rule set: %w", err)
 			}
 
@@ -716,11 +716,11 @@ This isolates context edits to the current worktree/plan so they don't affect ot
 			}
 
 			// Ensure directory exists
-			if err := os.MkdirAll(filepath.Dir(planRulesPath), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(planRulesPath), 0o755); err != nil {
 				return fmt.Errorf("failed to create directory: %w", err)
 			}
 
-			if err := os.WriteFile(planRulesPath, content, 0644); err != nil {
+			if err := os.WriteFile(planRulesPath, content, 0o644); err != nil {
 				return fmt.Errorf("failed to write plan rules: %w", err)
 			}
 

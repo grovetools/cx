@@ -16,18 +16,18 @@ import (
 // sharedState holds all the data that is shared across different pages of the TUI.
 type sharedState struct {
 	workDir           string
-	rulesFileOverride string // Instance-level override for rules file (absolute path)
-	manager         *context.Manager // Shared manager instance for all pages
-	loading         bool
-	err             error
-	hotFiles        []string
-	coldFiles       []string
-	rulesContent    string
-	rulesPath       string // Path to the active rules file
-	hotStats        *context.ContextStats
-	coldStats       *context.ContextStats
-	projects        []*workspace.WorkspaceNode
-	projectProvider *workspace.Provider
+	rulesFileOverride string           // Instance-level override for rules file (absolute path)
+	manager           *context.Manager // Shared manager instance for all pages
+	loading           bool
+	err               error
+	hotFiles          []string
+	coldFiles         []string
+	rulesContent      string
+	rulesPath         string // Path to the active rules file
+	hotStats          *context.ContextStats
+	coldStats         *context.ContextStats
+	projects          []*workspace.WorkspaceNode
+	projectProvider   *workspace.Provider
 	// Parsed rules
 	hotRules  []string
 	coldRules []string

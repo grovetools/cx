@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/spf13/cobra"
 	"github.com/grovetools/cx/pkg/context"
+	"github.com/spf13/cobra"
 )
 
 func NewDiffCmd() *cobra.Command {
@@ -17,22 +17,22 @@ func NewDiffCmd() *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager(GetWorkDir())
-			
+
 			compareName := "empty"
 			if len(args) > 0 {
 				compareName = args[0]
 			}
-			
+
 			diff, err := mgr.DiffContext(compareName)
 			if err != nil {
 				return err
 			}
-			
+
 			printDiff(diff, compareName)
 			return nil
 		},
 	}
-	
+
 	return cmd
 }
 

@@ -1405,7 +1405,7 @@ func (m *Manager) SetActiveRules(sourcePath string) error {
 
 	// Write to active rules file (handles plan-scoped paths and creates parent dirs)
 	activeRulesPath := m.ResolveRulesWritePath()
-	if err := os.WriteFile(activeRulesPath, content, 0644); err != nil {
+	if err := os.WriteFile(activeRulesPath, content, 0o644); err != nil {
 		return fmt.Errorf("error writing active rules file: %w", err)
 	}
 
@@ -1434,12 +1434,12 @@ func (m *Manager) WriteRulesTo(destPath string) error {
 
 	// Ensure destination directory exists
 	destDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("error creating destination directory: %w", err)
 	}
 
 	// Write to destination file, overwriting if it exists
-	if err := os.WriteFile(destPath, content, 0644); err != nil {
+	if err := os.WriteFile(destPath, content, 0o644); err != nil {
 		return fmt.Errorf("error writing to destination file: %w", err)
 	}
 
@@ -1482,7 +1482,7 @@ func (m *Manager) removeGitRulesForRepo(repoURL string) error {
 	if len(newLines) > 0 && !strings.HasSuffix(newContent, "\n") {
 		newContent += "\n"
 	}
-	return os.WriteFile(rulesFilePath, []byte(newContent), 0644)
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644)
 }
 
 // AppendRule adds a rule to the active rules file in the specified context
@@ -1573,7 +1573,7 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 	if len(lines) > 0 && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	return os.WriteFile(rulesFilePath, []byte(content), 0644)
+	return os.WriteFile(rulesFilePath, []byte(content), 0o644)
 }
 
 // ToggleViewDirective adds or removes a `@view:` directive from the rules file.
@@ -1621,7 +1621,7 @@ func (m *Manager) ToggleViewDirective(path string) error {
 		newContent += "\n" // Ensure trailing newline
 	}
 
-	return os.WriteFile(rulesFilePath, []byte(newContent), 0644)
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644)
 }
 
 // GetRuleStatus checks the current status of a rule in the rules file
@@ -1705,7 +1705,7 @@ func (m *Manager) RemoveRule(rulePath string) error {
 		newContent += "\n"
 	}
 
-	return os.WriteFile(rulesFilePath, []byte(newContent), 0644)
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644)
 }
 
 // RemoveRuleForPath removes any rule that corresponds to the given repository path.
@@ -1776,7 +1776,7 @@ func (m *Manager) RemoveRuleForPath(path string) error {
 		newContent += "\n"
 	}
 
-	return os.WriteFile(rulesFilePath, []byte(newContent), 0644)
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644)
 }
 
 // validateRuleSafety checks if a rule is safe to add

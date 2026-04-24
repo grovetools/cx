@@ -18,7 +18,7 @@ rules_file: rules/02-spec.md.rules
 Some content here
 `
 	jobPath := filepath.Join(testDir, "02-spec.md")
-	if err := os.WriteFile(jobPath, []byte(jobContent), 0644); err != nil {
+	if err := os.WriteFile(jobPath, []byte(jobContent), 0o644); err != nil {
 		t.Fatalf("Failed to write job file: %v", err)
 	}
 
@@ -42,7 +42,7 @@ func TestGetRulesFileFromJob_AbsolutePath(t *testing.T) {
 	absRulesPath := "/absolute/path/to/rules.rules"
 	jobContent := "---\nrules_file: " + absRulesPath + "\n---\n"
 	jobPath := filepath.Join(testDir, "job.md")
-	if err := os.WriteFile(jobPath, []byte(jobContent), 0644); err != nil {
+	if err := os.WriteFile(jobPath, []byte(jobContent), 0o644); err != nil {
 		t.Fatalf("Failed to write job file: %v", err)
 	}
 
@@ -63,7 +63,7 @@ func TestGetRulesFileFromJob_MissingKey(t *testing.T) {
 
 	jobContent := "---\ntitle: My Job\n---\n# No rules_file key\n"
 	jobPath := filepath.Join(testDir, "job.md")
-	if err := os.WriteFile(jobPath, []byte(jobContent), 0644); err != nil {
+	if err := os.WriteFile(jobPath, []byte(jobContent), 0o644); err != nil {
 		t.Fatalf("Failed to write job file: %v", err)
 	}
 
@@ -83,13 +83,13 @@ func TestSetActiveRules_WritesToCorrectPath(t *testing.T) {
 
 	// Create .grove directory and a source rules file
 	groveDir := filepath.Join(testDir, ".grove")
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .grove dir: %v", err)
 	}
 
 	sourceContent := "**/*.go\n---\n**/*.md\n"
 	sourcePath := filepath.Join(testDir, "source.rules")
-	if err := os.WriteFile(sourcePath, []byte(sourceContent), 0644); err != nil {
+	if err := os.WriteFile(sourcePath, []byte(sourceContent), 0o644); err != nil {
 		t.Fatalf("Failed to write source rules: %v", err)
 	}
 
@@ -116,13 +116,13 @@ func TestAppendRule_CreatesFileAtCorrectPath(t *testing.T) {
 
 	// Create .grove directory (needed for NewManager)
 	groveDir := filepath.Join(testDir, ".grove")
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .grove dir: %v", err)
 	}
 
 	// Create a test file to append as a rule
 	testFile := filepath.Join(testDir, "test.go")
-	if err := os.WriteFile(testFile, []byte("package main"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("package main"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -148,7 +148,7 @@ func TestToggleViewDirective_CreatesFileAtCorrectPath(t *testing.T) {
 
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .grove dir: %v", err)
 	}
 

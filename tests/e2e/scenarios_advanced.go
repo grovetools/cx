@@ -650,7 +650,7 @@ func FromGitSafetyScenario() *harness.Scenario {
 
 				// Create initial rules file
 				rulesDir := filepath.Join(ctx.RootDir, ".grove")
-				os.MkdirAll(rulesDir, 0755)
+				os.MkdirAll(rulesDir, 0o755)
 				return fs.WriteString(filepath.Join(rulesDir, "rules"), "initial_rule.txt\n")
 			}),
 			harness.NewStep("No-stdin cancellation preserves existing rules", func(ctx *harness.Context) error {
@@ -775,7 +775,7 @@ func DirectoryExclusionPerformanceScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup project with a large, excludable directory", func(ctx *harness.Context) error {
 				buildDir := filepath.Join(ctx.RootDir, "build", "assets", "js")
-				if err := os.MkdirAll(buildDir, 0755); err != nil {
+				if err := os.MkdirAll(buildDir, 0o755); err != nil {
 					return err
 				}
 				for i := 0; i < 1000; i++ {

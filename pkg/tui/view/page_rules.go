@@ -7,8 +7,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/grovetools/cx/pkg/context"
 	core_theme "github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 type rulesPage struct {

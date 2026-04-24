@@ -14,13 +14,13 @@ func TestManager_ValidateContext(t *testing.T) {
 	mgr := NewManager(tempDir)
 
 	// Create .grove directory
-	os.MkdirAll(GroveDir, 0755)
+	os.MkdirAll(GroveDir, 0o755)
 
 	// Create test files
-	os.WriteFile("existing.go", []byte("package main"), 0644)
+	os.WriteFile("existing.go", []byte("package main"), 0o644)
 
 	// Create context with existing, missing, and duplicate files
-	os.WriteFile(FilesListFile, []byte("existing.go\nmissing.go\nexisting.go\n"), 0644)
+	os.WriteFile(FilesListFile, []byte("existing.go\nmissing.go\nexisting.go\n"), 0o644)
 
 	// For this test, we'll read the files list directly instead of resolving from rules
 	// since we want to test validation of specific files including non-existent ones

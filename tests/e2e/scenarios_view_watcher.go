@@ -88,7 +88,7 @@ func modifyRulesFileExternally(ctx *harness.Context) error {
 
 	// Append a new, distinctive glob pattern that we can search for after refresh.
 	updated := string(existing) + "docs/**/*.md\n"
-	if err := os.WriteFile(rulesPath, []byte(updated), 0644); err != nil {
+	if err := os.WriteFile(rulesPath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("failed to write updated rules file: %w", err)
 	}
 

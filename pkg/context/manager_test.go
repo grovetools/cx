@@ -27,17 +27,17 @@ func TestManager_ExclusionPatterns(t *testing.T) {
 
 	for relPath, content := range testFiles {
 		fullPath := filepath.Join(testDir, relPath)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
 
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
 
@@ -96,7 +96,7 @@ func TestManager_ExclusionPatterns(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write rules file
 			rulesPath := filepath.Join(groveDir, "rules")
-			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
+			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0o644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
 
@@ -139,7 +139,7 @@ func TestManager_CrossDirectoryExclusions(t *testing.T) {
 
 	// Create directories
 	for _, dir := range []string{projectDir, siblingDir} {
-		if err := os.MkdirAll(filepath.Join(dir, ".grove"), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Join(dir, ".grove"), 0o755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
 	}
@@ -157,10 +157,10 @@ func TestManager_CrossDirectoryExclusions(t *testing.T) {
 
 	for relPath, content := range siblingFiles {
 		fullPath := filepath.Join(siblingDir, relPath)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
@@ -210,7 +210,7 @@ func TestManager_CrossDirectoryExclusions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write rules file
 			rulesPath := filepath.Join(projectDir, ".grove", "rules")
-			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
+			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0o644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
 
@@ -318,17 +318,17 @@ func TestManager_GitignoreCompatibility(t *testing.T) {
 
 	for _, relPath := range files {
 		fullPath := filepath.Join(testDir, relPath)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
-		if err := os.WriteFile(fullPath, []byte("package main"), 0644); err != nil {
+		if err := os.WriteFile(fullPath, []byte("package main"), 0o644); err != nil {
 			t.Fatalf("Failed to write file: %v", err)
 		}
 	}
 
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
 
@@ -384,7 +384,7 @@ func TestManager_GitignoreCompatibility(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write rules file
 			rulesPath := filepath.Join(groveDir, "rules")
-			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
+			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0o644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
 
@@ -422,10 +422,10 @@ func slicesEqual(a, b []string) bool {
 
 // Helper function to write string to file for tests
 func fsWriteString(t *testing.T, path, content string) {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("Failed to create directory for %s: %v", path, err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("Failed to write to %s: %v", path, err)
 	}
 }
@@ -436,14 +436,14 @@ func TestManager_DefaultDirectiveResolution(t *testing.T) {
 
 	// Project A (main project)
 	projectA := filepath.Join(rootDir, "project-a")
-	os.MkdirAll(filepath.Join(projectA, ".grove"), 0755)
+	os.MkdirAll(filepath.Join(projectA, ".grove"), 0o755)
 	fsWriteString(t, filepath.Join(projectA, "a.go"), "package a")
 	fsWriteString(t, filepath.Join(projectA, "a.txt"), "a text")
 	fsWriteString(t, filepath.Join(projectA, "grove.yml"), `version: 1.0`) // Add grove.yml for C to find
 
 	// Project B (dependency)
 	projectB := filepath.Join(rootDir, "project-b")
-	os.MkdirAll(filepath.Join(projectB, ".grove"), 0755)
+	os.MkdirAll(filepath.Join(projectB, ".grove"), 0o755)
 	fsWriteString(t, filepath.Join(projectB, "b.go"), "package b")
 	fsWriteString(t, filepath.Join(projectB, "b.txt"), "b text")
 	fsWriteString(t, filepath.Join(projectB, "grove.yml"), `version: 1.0
@@ -455,7 +455,7 @@ context:
 
 	// Project C (circular dependency back to A)
 	projectC := filepath.Join(rootDir, "project-c")
-	os.MkdirAll(filepath.Join(projectC, ".grove"), 0755)
+	os.MkdirAll(filepath.Join(projectC, ".grove"), 0o755)
 	fsWriteString(t, filepath.Join(projectC, "c.go"), "package c")
 	fsWriteString(t, filepath.Join(projectC, "grove.yml"), `version: 1.0
 context:
@@ -519,7 +519,7 @@ func TestManager_ParseDirectives(t *testing.T) {
 	// Create test directory
 	testDir := t.TempDir()
 	groveDir := filepath.Join(testDir, ".grove")
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
 
@@ -662,7 +662,7 @@ pkg/**/*.go`,
 		t.Run(tt.name, func(t *testing.T) {
 			// Write rules file
 			rulesPath := filepath.Join(groveDir, "rules")
-			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0644); err != nil {
+			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0o644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
 
@@ -727,17 +727,17 @@ func TestManager_GenerateContextFromRulesFile(t *testing.T) {
 
 	for relPath, content := range testFiles {
 		fullPath := filepath.Join(testDir, relPath)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
 
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
 
@@ -747,7 +747,7 @@ func TestManager_GenerateContextFromRulesFile(t *testing.T) {
 lib/*.go
 ---
 test/*.go`
-	if err := os.WriteFile(externalRulesPath, []byte(externalRulesContent), 0644); err != nil {
+	if err := os.WriteFile(externalRulesPath, []byte(externalRulesContent), 0o644); err != nil {
 		t.Fatalf("Failed to write external rules file: %v", err)
 	}
 
@@ -807,7 +807,7 @@ func TestManager_SetActiveRules(t *testing.T) {
 
 	// Create .grove directory
 	groveDir := filepath.Join(testDir, ".grove")
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		t.Fatalf("Failed to create .grove directory: %v", err)
 	}
 
@@ -817,7 +817,7 @@ func TestManager_SetActiveRules(t *testing.T) {
 *.go
 !vendor/
 !*_test.go`
-	if err := os.WriteFile(sourceRulesPath, []byte(sourceRulesContent), 0644); err != nil {
+	if err := os.WriteFile(sourceRulesPath, []byte(sourceRulesContent), 0o644); err != nil {
 		t.Fatalf("Failed to write source rules file: %v", err)
 	}
 

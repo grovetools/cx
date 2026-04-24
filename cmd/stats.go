@@ -171,7 +171,7 @@ Examples:
 				}
 				allStats = append(allStats, coldStats)
 			}
-			
+
 			// Populate workspace info on all stats
 			workspaceName := ""
 			if node, wsErr := workspace.GetProjectByPath(mgr.GetWorkDir()); wsErr == nil && node.Kind != workspace.KindNonGroveRepo {
@@ -199,7 +199,7 @@ Examples:
 				}
 				return nil
 			}
-			
+
 			// Output results
 			if opts.JSONOutput {
 				// Output as JSON array with both stats objects
@@ -224,7 +224,7 @@ Examples:
 			return nil
 		},
 	}
-	
+
 	cmd.Flags().IntVar(&topN, "top", 5, "Number of largest files to show")
 	cmd.Flags().BoolVar(&perLine, "per-line", false, "Provide stats for each line in the rules file")
 	cmd.Flags().StringVar(&chatFile, "chat-file", "", "Legacy alias for --job")

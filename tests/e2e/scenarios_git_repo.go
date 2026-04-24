@@ -186,7 +186,7 @@ https://github.com/charmbracelet/lipgloss@v0.13.0
 				if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 					// Before failing, let's create the parent directory to ensure it's not a test setup issue.
 					// This is needed because tend might not have created all XDG dirs.
-					if err := os.MkdirAll(filepath.Dir(manifestPath), 0755); err != nil {
+					if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 						// Ignore error, the os.Stat will fail anyway if something is wrong.
 					}
 					if _, err := os.Stat(manifestPath); os.IsNotExist(err) {

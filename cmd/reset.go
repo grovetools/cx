@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/state"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/spf13/cobra"
 )
 
 func NewResetCmd() *cobra.Command {
 	var force bool
-	
+
 	cmd := &cobra.Command{
 		Use:   "reset",
 		Short: "Reset the rules file to project defaults",
@@ -56,14 +56,14 @@ func NewResetCmd() *cobra.Command {
 
 			// Ensure .grove directory exists
 			groveDir := filepath.Dir(rulesPath)
-			if err := os.MkdirAll(groveDir, 0755); err != nil {
+			if err := os.MkdirAll(groveDir, 0o755); err != nil {
 				return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 			}
 
 			// Determine what content to write
 			if rulesContent != nil {
 				// We have default rules from grove.yml
-				if err := os.WriteFile(rulesPath, rulesContent, 0644); err != nil {
+				if err := os.WriteFile(rulesPath, rulesContent, 0o644); err != nil {
 					return fmt.Errorf("error writing rules file: %w", err)
 				}
 				ulog.Success("Reset rules file to project defaults").
@@ -88,7 +88,7 @@ func NewResetCmd() *cobra.Command {
 # Filter with @grep (file content):
 #   pkg/**/*.go @grep: "TODO"
 `)
-				if err := os.WriteFile(rulesPath, boilerplate, 0644); err != nil {
+				if err := os.WriteFile(rulesPath, boilerplate, 0o644); err != nil {
 					return fmt.Errorf("error writing rules file: %w", err)
 				}
 				ulog.Success("Reset rules file to basic defaults").
@@ -123,8 +123,8 @@ func NewResetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	
+
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Reset without confirmation prompt")
-	
+
 	return cmd
 }

@@ -53,9 +53,9 @@ func (p *setRulesPage) Update(msg tea.Msg) (pager.Page, tea.Cmd) {
 }
 
 // interceptMessages filters commands from the rules picker:
-// - Swallows embed.CloseRequestMsg so quit doesn't bubble to host
-// - Converts rules.RulesWrittenMsg to refreshStateMsg so the parent
-//   model refreshes shared state after load/set/save/delete
+//   - Swallows embed.CloseRequestMsg so quit doesn't bubble to host
+//   - Converts rules.RulesWrittenMsg to refreshStateMsg so the parent
+//     model refreshes shared state after load/set/save/delete
 func interceptMessages(cmd tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
 		msg := cmd()
@@ -124,5 +124,7 @@ func (p *setRulesPage) IsTextEntryActive() bool {
 }
 
 // Compile-time checks.
-var _ pager.Page = (*setRulesPage)(nil)
-var _ pager.PageWithTextInput = (*setRulesPage)(nil)
+var (
+	_ pager.Page              = (*setRulesPage)(nil)
+	_ pager.PageWithTextInput = (*setRulesPage)(nil)
+)

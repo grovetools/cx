@@ -29,7 +29,7 @@ func FindDirectiveScenario() *harness.Scenario {
 				}
 
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -112,7 +112,7 @@ func FindDirectiveGlobScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "api"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -182,7 +182,7 @@ func FindDirectiveRegexScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "managers"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -249,7 +249,7 @@ func FindDirectiveDoubleStarGlobScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "app", "services", "grpc"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -312,13 +312,13 @@ func FindDirectiveInvalidRegexFallbackScenario() *harness.Scenario {
 		Tags:        []string{"cx", "search-directives"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup test project", func(ctx *harness.Context) error {
-				if err := os.MkdirAll(filepath.Join(ctx.RootDir, "pkg"), 0755); err != nil {
+				if err := os.MkdirAll(filepath.Join(ctx.RootDir, "pkg"), 0o755); err != nil {
 					return err
 				}
 
 				files := map[string]string{
 					filepath.Join(ctx.RootDir, "pkg", "draft_[unbalanced.go"): "package pkg",
-					filepath.Join(ctx.RootDir, "pkg", "draft_normal.go"):     "package pkg",
+					filepath.Join(ctx.RootDir, "pkg", "draft_normal.go"):      "package pkg",
 				}
 
 				for path, content := range files {
@@ -375,7 +375,7 @@ func FindDirectiveFullPathRegexScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "billing"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -441,17 +441,17 @@ func GrepDirectiveScenario() *harness.Scenario {
 				}
 
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
 
 				// Create files - some containing "UserManager" in the content
 				files := map[string]string{
-					filepath.Join(ctx.RootDir, "pkg", "managers", "user.go"):    "package managers\n\ntype UserManager struct {\n\tID int\n}",
-					filepath.Join(ctx.RootDir, "pkg", "managers", "file.go"):    "package managers\n\ntype FileHandler struct {\n\tPath string\n}",
-					filepath.Join(ctx.RootDir, "pkg", "api", "user_api.go"):     "package api\n\nimport \"myapp/pkg/managers\"\n\nfunc GetUser() *managers.UserManager {\n\treturn nil\n}",
-					filepath.Join(ctx.RootDir, "pkg", "api", "file_api.go"):     "package api\n\nfunc GetFile() string {\n\treturn \"\"\n}",
+					filepath.Join(ctx.RootDir, "pkg", "managers", "user.go"): "package managers\n\ntype UserManager struct {\n\tID int\n}",
+					filepath.Join(ctx.RootDir, "pkg", "managers", "file.go"): "package managers\n\ntype FileHandler struct {\n\tPath string\n}",
+					filepath.Join(ctx.RootDir, "pkg", "api", "user_api.go"):  "package api\n\nimport \"myapp/pkg/managers\"\n\nfunc GetUser() *managers.UserManager {\n\treturn nil\n}",
+					filepath.Join(ctx.RootDir, "pkg", "api", "file_api.go"):  "package api\n\nfunc GetFile() string {\n\treturn \"\"\n}",
 				}
 
 				for path, content := range files {
@@ -522,7 +522,7 @@ func RecentDirectiveScenario() *harness.Scenario {
 				}
 
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -598,7 +598,7 @@ func GlobalRecentDirectiveScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "docs"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -677,7 +677,7 @@ func RecentTimeUnitsScenario() *harness.Scenario {
 				// (literal file paths bypass directive filtering)
 				dirs := []string{"hours", "days", "olddays", "weeks"}
 				for _, d := range dirs {
-					if err := os.MkdirAll(filepath.Join(ctx.RootDir, d), 0755); err != nil {
+					if err := os.MkdirAll(filepath.Join(ctx.RootDir, d), 0o755); err != nil {
 						return err
 					}
 				}
@@ -772,14 +772,14 @@ func RecentCombinedDirectivesScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "config"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
 
 				files := map[string]string{
-					filepath.Join(ctx.RootDir, "src", "manager.go"):     "package src\n\ntype Manager struct{}",
-					filepath.Join(ctx.RootDir, "src", "old_manager.go"): "package src\n\ntype OldManager struct{}",
+					filepath.Join(ctx.RootDir, "src", "manager.go"):          "package src\n\ntype Manager struct{}",
+					filepath.Join(ctx.RootDir, "src", "old_manager.go"):      "package src\n\ntype OldManager struct{}",
 					filepath.Join(ctx.RootDir, "config", "secrets.yaml"):     "password: secret123",
 					filepath.Join(ctx.RootDir, "config", "old_secrets.yaml"): "password: oldsecret",
 				}
@@ -852,7 +852,7 @@ func RecentInvalidDurationScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup workspace with a file", func(ctx *harness.Context) error {
 				dir := filepath.Join(ctx.RootDir, "src")
-				if err := os.MkdirAll(dir, 0755); err != nil {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return err
 				}
 				return fs.WriteString(filepath.Join(dir, "main.go"), "package main\n")
@@ -983,7 +983,6 @@ func AliasWithDirectiveScenario() *harness.Scenario {
 	}
 }
 
-
 // FindInvertedDirectiveScenario tests the @find!: directive for excluding by filename
 func FindInvertedDirectiveScenario() *harness.Scenario {
 	return &harness.Scenario{
@@ -997,7 +996,7 @@ func FindInvertedDirectiveScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "api"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -1063,14 +1062,14 @@ func GrepInvertedDirectiveScenario() *harness.Scenario {
 			harness.NewStep("Setup test project with files containing different content", func(ctx *harness.Context) error {
 				dirs := []string{filepath.Join(ctx.RootDir, "pkg", "api")}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
 
 				files := map[string]string{
 					filepath.Join(ctx.RootDir, "pkg", "api", "generated.go"): "package api\n// Code generated by tool. DO NOT EDIT.\ntype Gen struct{}",
-					filepath.Join(ctx.RootDir, "pkg", "api", "manual.go"):   "package api\n\ntype Manual struct{}",
+					filepath.Join(ctx.RootDir, "pkg", "api", "manual.go"):    "package api\n\ntype Manual struct{}",
 				}
 				for path, content := range files {
 					if err := fs.WriteString(path, content); err != nil {
@@ -1123,8 +1122,8 @@ func GlobalFindInvertedDirectiveScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup test project", func(ctx *harness.Context) error {
 				files := map[string]string{
-					filepath.Join(ctx.RootDir, "src", "user_test.go"):  "package src",
-					filepath.Join(ctx.RootDir, "src", "user.go"):       "package src",
+					filepath.Join(ctx.RootDir, "src", "user_test.go"):   "package src",
+					filepath.Join(ctx.RootDir, "src", "user.go"):        "package src",
 					filepath.Join(ctx.RootDir, "lib", "helper_test.go"): "package lib",
 					filepath.Join(ctx.RootDir, "lib", "helper.go"):      "package lib",
 				}
@@ -1502,7 +1501,7 @@ func CombinedFindAndGrepDirectiveScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "core"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -1577,7 +1576,7 @@ func GlobalMultiDirectiveScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "core"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -1649,7 +1648,7 @@ func MultipleFindDirectivesScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "core", "v1"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -1722,7 +1721,7 @@ func DirectiveAndWithExclusionsScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "api"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -1791,13 +1790,13 @@ func DirectiveAndInColdContextScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "cold", "api"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
 
 				files := map[string]string{
-					filepath.Join(ctx.RootDir, "hot", "api", "user.go"):  "package api\n\ntype UserManager struct {}",
+					filepath.Join(ctx.RootDir, "hot", "api", "user.go"):    "package api\n\ntype UserManager struct {}",
 					filepath.Join(ctx.RootDir, "cold", "api", "user.go"):   "package api\n\ntype UserManager struct {}",
 					filepath.Join(ctx.RootDir, "cold", "api", "system.go"): "package api\n\ntype SystemManager struct {}",
 				}
@@ -1884,7 +1883,7 @@ func DirectiveAndWithBraceExpansionScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "utils"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -1960,7 +1959,7 @@ func UnquotedInlineSearchDirectivesScenario() *harness.Scenario {
 				}
 
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -2046,14 +2045,14 @@ func UnquotedGlobalSearchDirectivesScenario() *harness.Scenario {
 				}
 
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
 
 				files := map[string]string{
-					filepath.Join(ctx.RootDir, "src", "handler.go"):       "package src\n\nfunc HandleRequest() {}",
-					filepath.Join(ctx.RootDir, "src", "server.go"):        "package src\n\nfunc Start() {}",
+					filepath.Join(ctx.RootDir, "src", "handler.go"):        "package src\n\nfunc HandleRequest() {}",
+					filepath.Join(ctx.RootDir, "src", "server.go"):         "package src\n\nfunc Start() {}",
 					filepath.Join(ctx.RootDir, "tests", "handler_test.go"): "package tests\n\nfunc TestHandler() {}",
 					filepath.Join(ctx.RootDir, "tests", "server_test.go"):  "package tests\n\nfunc TestServer() {}",
 				}
@@ -2125,7 +2124,7 @@ func MalformedSearchDirectivesScenario() *harness.Scenario {
 		Tags:        []string{"cx", "search-directives"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup test project with various files", func(ctx *harness.Context) error {
-				if err := os.MkdirAll(filepath.Join(ctx.RootDir, "src"), 0755); err != nil {
+				if err := os.MkdirAll(filepath.Join(ctx.RootDir, "src"), 0o755); err != nil {
 					return err
 				}
 				files := map[string]string{
@@ -2186,7 +2185,7 @@ func GrepIDirectiveScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup test project with various cased content", func(ctx *harness.Context) error {
 				dir := filepath.Join(ctx.RootDir, "pkg", "managers")
-				if err := os.MkdirAll(dir, 0755); err != nil {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return err
 				}
 
@@ -2257,7 +2256,7 @@ func GlobalGrepIDirectiveScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "src", "pkg"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -2329,7 +2328,7 @@ func GrepVsGrepIScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "pkg", "auth", "loose"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
@@ -2407,16 +2406,16 @@ func CombinedSearchDirectivesScenario() *harness.Scenario {
 					filepath.Join(ctx.RootDir, "tests"),
 				}
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
 
 				files := map[string]string{
-					filepath.Join(ctx.RootDir, "src", "models", "user.go"):       "package models\n\ntype AccountInfo struct {}",
-					filepath.Join(ctx.RootDir, "src", "controllers", "auth.go"):  "package controllers\n\nvar SecretToken = true",
-					filepath.Join(ctx.RootDir, "src", "utils", "helper.go"):      "package utils\n\nconst HELPER_FUNC = 1",
-					filepath.Join(ctx.RootDir, "tests", "main_test.go"):          "package tests\n\nfunc TestMain() {}",
+					filepath.Join(ctx.RootDir, "src", "models", "user.go"):      "package models\n\ntype AccountInfo struct {}",
+					filepath.Join(ctx.RootDir, "src", "controllers", "auth.go"): "package controllers\n\nvar SecretToken = true",
+					filepath.Join(ctx.RootDir, "src", "utils", "helper.go"):     "package utils\n\nconst HELPER_FUNC = 1",
+					filepath.Join(ctx.RootDir, "tests", "main_test.go"):         "package tests\n\nfunc TestMain() {}",
 				}
 
 				for path, content := range files {
@@ -2450,10 +2449,10 @@ func CombinedSearchDirectivesScenario() *harness.Scenario {
 
 				// All four files should be included via their respective directives
 				expectedFiles := []string{
-					"src/models/user.go",       // via @find: "user"
-					"src/controllers/auth.go",  // via @grep: "SecretToken"
-					"src/utils/helper.go",      // via @grep-i: "helper_func"
-					"tests/main_test.go",       // via plain pattern
+					"src/models/user.go",      // via @find: "user"
+					"src/controllers/auth.go", // via @grep: "SecretToken"
+					"src/utils/helper.go",     // via @grep-i: "helper_func"
+					"tests/main_test.go",      // via plain pattern
 				}
 
 				for _, file := range expectedFiles {
@@ -2483,18 +2482,18 @@ func CombinedDirectivesScenario() *harness.Scenario {
 				}
 
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
 
 				files := map[string]string{
-					filepath.Join(ctx.RootDir, "src", "manager.go"):         "package src\n\ntype Manager struct {}",
-					filepath.Join(ctx.RootDir, "src", "handler.go"):         "package src\n\ntype Handler struct {}",
-					filepath.Join(ctx.RootDir, "tests", "utils_test.go"):    "package tests\n\nfunc TestHelper() {}",
-					filepath.Join(ctx.RootDir, "tests", "helper.go"):        "package tests\n\nfunc Helper() {}",
-					filepath.Join(ctx.RootDir, "config", "config.yaml"):     "app:\n  name: test",
-					filepath.Join(ctx.RootDir, "config", "secrets.yaml"):    "secrets:\n  key: value",
+					filepath.Join(ctx.RootDir, "src", "manager.go"):      "package src\n\ntype Manager struct {}",
+					filepath.Join(ctx.RootDir, "src", "handler.go"):      "package src\n\ntype Handler struct {}",
+					filepath.Join(ctx.RootDir, "tests", "utils_test.go"): "package tests\n\nfunc TestHelper() {}",
+					filepath.Join(ctx.RootDir, "tests", "helper.go"):     "package tests\n\nfunc Helper() {}",
+					filepath.Join(ctx.RootDir, "config", "config.yaml"):  "app:\n  name: test",
+					filepath.Join(ctx.RootDir, "config", "secrets.yaml"): "secrets:\n  key: value",
 				}
 
 				for path, content := range files {

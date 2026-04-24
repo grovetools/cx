@@ -1138,7 +1138,6 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 		return []string{}, nil
 	}
 
-
 	// Resolve all patterns recursively from the active rules file
 	_, coldRules, _, _, err := m.expandAllRules(activeRulesFile, make(map[string]bool), 0)
 	if err != nil {
@@ -1168,7 +1167,6 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 	sort.Strings(coldFiles)
 	return coldFiles, nil
 }
-
 
 // preProcessPatterns transforms plain directory patterns into recursive globs.
 func (m *Manager) preProcessPatterns(patterns []string) []string {
@@ -1610,7 +1608,6 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	// Return the resolved file list
 	return filesToInclude, nil
 }
-
 
 // walkAndMatchPatterns walks a directory and matches files against patterns
 func (m *Manager) walkAndMatchPatterns(rootPath string, matcher *patternMatcher, gitIgnoredFiles map[string]bool, uniqueFiles map[string]bool, useRelativePaths bool) error {

@@ -15,15 +15,15 @@ func TestManager_GetStats(t *testing.T) {
 	mgr := NewManager(tempDir)
 
 	// Create .grove directory
-	os.MkdirAll(GroveDir, 0755)
+	os.MkdirAll(GroveDir, 0o755)
 
 	// Create test files of different types
-	os.WriteFile("main.go", []byte("package main\n\nfunc main() {\n\t// Main function\n}"), 0644)
-	os.WriteFile("README.md", []byte("# Test Project\n\nThis is a test project."), 0644)
-	os.WriteFile("config.yaml", []byte("version: 1.0\nname: test"), 0644)
+	os.WriteFile("main.go", []byte("package main\n\nfunc main() {\n\t// Main function\n}"), 0o644)
+	os.WriteFile("README.md", []byte("# Test Project\n\nThis is a test project."), 0o644)
+	os.WriteFile("config.yaml", []byte("version: 1.0\nname: test"), 0o644)
 
 	// Create rules file
-	os.WriteFile(filepath.Join(GroveDir, "rules"), []byte("main.go\nREADME.md\nconfig.yaml\n"), 0644)
+	os.WriteFile(filepath.Join(GroveDir, "rules"), []byte("main.go\nREADME.md\nconfig.yaml\n"), 0o644)
 
 	// Resolve files from rules
 	files, err := mgr.ResolveFilesFromRules()

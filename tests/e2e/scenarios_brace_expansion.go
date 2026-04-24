@@ -22,7 +22,7 @@ func BraceExpansionBasicScenario() *harness.Scenario {
 			harness.NewStep("Setup test project with pkg and cmd directories", func(ctx *harness.Context) error {
 				// Create pkg directory with Go files
 				pkgDir := filepath.Join(ctx.RootDir, "pkg")
-				if err := os.MkdirAll(pkgDir, 0755); err != nil {
+				if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 					return err
 				}
 				if err := fs.WriteString(filepath.Join(pkgDir, "service.go"), "package pkg"); err != nil {
@@ -34,7 +34,7 @@ func BraceExpansionBasicScenario() *harness.Scenario {
 
 				// Create cmd directory with Go files
 				cmdDir := filepath.Join(ctx.RootDir, "cmd")
-				if err := os.MkdirAll(cmdDir, 0755); err != nil {
+				if err := os.MkdirAll(cmdDir, 0o755); err != nil {
 					return err
 				}
 				if err := fs.WriteString(filepath.Join(cmdDir, "main.go"), "package main"); err != nil {
@@ -46,7 +46,7 @@ func BraceExpansionBasicScenario() *harness.Scenario {
 
 				// Create other directory that should not be included
 				otherDir := filepath.Join(ctx.RootDir, "internal")
-				if err := os.MkdirAll(otherDir, 0755); err != nil {
+				if err := os.MkdirAll(otherDir, 0o755); err != nil {
 					return err
 				}
 				if err := fs.WriteString(filepath.Join(otherDir, "helper.go"), "package internal"); err != nil {
@@ -132,18 +132,18 @@ func BraceExpansionMultipleScenario() *harness.Scenario {
 				}
 
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}
 
 				// Add files to each directory
 				files := map[string]string{
-					filepath.Join(ctx.RootDir, "src", "lib", "core.go"):     "package lib",
-					filepath.Join(ctx.RootDir, "src", "app", "main.go"):     "package app",
-					filepath.Join(ctx.RootDir, "tests", "lib", "test.go"):   "package lib_test",
-					filepath.Join(ctx.RootDir, "tests", "app", "e2e.go"):    "package app_test",
-					filepath.Join(ctx.RootDir, "other.go"):                  "package main",
+					filepath.Join(ctx.RootDir, "src", "lib", "core.go"):   "package lib",
+					filepath.Join(ctx.RootDir, "src", "app", "main.go"):   "package app",
+					filepath.Join(ctx.RootDir, "tests", "lib", "test.go"): "package lib_test",
+					filepath.Join(ctx.RootDir, "tests", "app", "e2e.go"):  "package app_test",
+					filepath.Join(ctx.RootDir, "other.go"):                "package main",
 				}
 
 				for path, content := range files {
@@ -217,7 +217,7 @@ func BraceExpansionWithExclusionScenario() *harness.Scenario {
 				}
 
 				for _, dir := range dirs {
-					if err := os.MkdirAll(dir, 0755); err != nil {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
 						return err
 					}
 				}

@@ -3,8 +3,8 @@ package rules
 import (
 	"strings"
 
-	"github.com/grovetools/cx/pkg/context"
 	core_theme "github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // styleRulesContent applies syntax-aware styling to rules content using the parser

@@ -77,12 +77,12 @@ type ruleChangeResultMsg struct {
 }
 
 type rulesetSelectorState struct {
-	node      *tree.FileNode
-	action    string // "hot", "cold", "exclude"
-	rulesets  []string
-	cursor    int
-	wsPath    string // workspace path where rulesets were found
-	alias     string // the alias prefix (e.g., "grove-ecosystem:grove-core")
+	node     *tree.FileNode
+	action   string // "hot", "cold", "exclude"
+	rulesets []string
+	cursor   int
+	wsPath   string // workspace path where rulesets were found
+	alias    string // the alias prefix (e.g., "grove-ecosystem:grove-core")
 }
 
 // --- Constructor ---
@@ -892,7 +892,7 @@ func (p *treePage) autoExpandToContent(node *tree.FileNode) {
 			dirCount++
 			// Check if any child contains "(CWD)" or looks like a project
 			if strings.Contains(child.Name, "(CWD)") ||
-			   strings.Contains(child.Name, "grove-") {
+				strings.Contains(child.Name, "grove-") {
 				hasProjectDirs = true
 			}
 		}
@@ -1070,7 +1070,7 @@ func (p *treePage) getStatusSymbol(node *tree.FileNode) string {
 		greenStyle := core_theme.DefaultTheme.Success // Green
 		return greenStyle.Render(" " + core_theme.IconSuccess)
 	case context.StatusIncludedCold:
-		lightBlueStyle := core_theme.DefaultTheme.Accent // Light blue
+		lightBlueStyle := core_theme.DefaultTheme.Accent               // Light blue
 		return lightBlueStyle.Render(" " + core_theme.IconPineTreeBox) // Using PineTreeBox for "cold"
 	case context.StatusExcludedByRule:
 		return " " + core_theme.IconStatusBlocked

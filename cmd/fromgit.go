@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
-	"github.com/grovetools/cx/pkg/context"
+
 	"github.com/grovetools/core/logging"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/spf13/cobra"
 )
 
 var (
-	fromGitLog = logging.NewLogger("grove-context")
+	fromGitLog       = logging.NewLogger("grove-context")
 	fromGitPrettyLog = logging.NewPrettyLogger()
 )
 
@@ -39,7 +40,7 @@ For dynamic git-aware rules that re-evaluate each time, use directives in .grove
   cx from-git --branch main..HEAD -f`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager(GetWorkDir())
-			
+
 			// Get flags
 			since, _ := cmd.Flags().GetString("since")
 			branch, _ := cmd.Flags().GetString("branch")
@@ -69,12 +70,12 @@ For dynamic git-aware rules that re-evaluate each time, use directives in .grove
 				Append:  appendRules,
 				Force:   force,
 			}
-			
+
 			// Update from git
 			if err := mgr.UpdateFromGit(opts); err != nil {
 				return err
 			}
-			
+
 			// Show what was added
 			files, err := mgr.ListFiles()
 			if err == nil {
@@ -84,11 +85,11 @@ For dynamic git-aware rules that re-evaluate each time, use directives in .grove
 					fromGitPrettyLog.Path("  ", file)
 				}
 			}
-			
+
 			return nil
 		},
 	}
-	
+
 	cmd.Flags().String("since", "", "Include files changed since date/commit")
 	cmd.Flags().String("branch", "", "Include files changed in branch (e.g., main..HEAD)")
 	cmd.Flags().Bool("staged", false, "Include only staged files")

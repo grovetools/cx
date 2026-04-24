@@ -40,7 +40,7 @@ func FromCmdScenario() *harness.Scenario {
 				// Create a subdirectory with more files
 				// Create subdirectory
 				pkgDir := filepath.Join(ctx.RootDir, "pkg")
-				if err := os.MkdirAll(pkgDir, 0755); err != nil {
+				if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 					return err
 				}
 				if err := fs.WriteString(filepath.Join(ctx.RootDir, "pkg", "handler.go"), "package pkg\n// Handler"); err != nil {

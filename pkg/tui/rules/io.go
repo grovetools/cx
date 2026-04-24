@@ -171,7 +171,7 @@ func (m *rulesPickerModel) performLoadCmd(item ruleItem) tea.Cmd {
 		rulesPath := m.manager.ResolveRulesWritePath()
 
 		// Write to resolved rules path
-		if err := os.WriteFile(rulesPath, content, 0644); err != nil {
+		if err := os.WriteFile(rulesPath, content, 0o644); err != nil {
 			return loadCompleteMsg{err: err}
 		}
 
@@ -254,12 +254,12 @@ func (m *rulesPickerModel) performSaveCmd(name string, toWork bool) tea.Cmd {
 			}
 		}
 
-		if err := os.MkdirAll(destDir, 0755); err != nil {
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
 			return saveCompleteMsg{err: fmt.Errorf("failed to create %s directory: %w", destDir, err)}
 		}
 
 		destPath := filepath.Join(destDir, name+context.RulesExt)
-		if err := os.WriteFile(destPath, content, 0644); err != nil {
+		if err := os.WriteFile(destPath, content, 0o644); err != nil {
 			return saveCompleteMsg{err: fmt.Errorf("failed to save rule set: %w", err)}
 		}
 

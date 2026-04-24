@@ -43,26 +43,26 @@ func (r *ruleItem) getContentLineCount() int {
 }
 
 type rulesPickerModel struct {
-	manager          *context.Manager
-	items            []ruleItem
-	selectedIndex    int
-	keys             pickerKeyMap
-	help             help.Model
-	preview          viewport.Model
-	width, height    int
-	err              error
-	quitting         bool
-	loadingFromIdx   int
-	loadingToIdx     int
-	loadingActive    bool
-	loadingComplete  bool
-	settingIdx       int
-	settingActive    bool
-	settingComplete  bool
-	statusMessage    string
-	saveMode         bool
-	saveInput        textinput.Model
-	saveToWork       bool
+	manager             *context.Manager
+	items               []ruleItem
+	selectedIndex       int
+	keys                pickerKeyMap
+	help                help.Model
+	preview             viewport.Model
+	width, height       int
+	err                 error
+	quitting            bool
+	loadingFromIdx      int
+	loadingToIdx        int
+	loadingActive       bool
+	loadingComplete     bool
+	settingIdx          int
+	settingActive       bool
+	settingComplete     bool
+	statusMessage       string
+	saveMode            bool
+	saveInput           textinput.Model
+	saveToWork          bool
 	deletingIdx         int
 	deletingActive      bool
 	deletingComplete    bool

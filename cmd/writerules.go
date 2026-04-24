@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
-	"github.com/grovetools/cx/pkg/context"
+
 	"github.com/grovetools/core/logging"
+	"github.com/grovetools/cx/pkg/context"
+	"github.com/spf13/cobra"
 )
 
 var (
-	writeRulesLog = logging.NewLogger("grove-context")
+	writeRulesLog       = logging.NewLogger("grove-context")
 	writeRulesPrettyLog = logging.NewPrettyLogger()
 )
 

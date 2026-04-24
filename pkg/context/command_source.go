@@ -78,7 +78,7 @@ func (m *Manager) UpdateFromCmd(command string) error {
 
 	// Ensure .grove directory exists
 	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 

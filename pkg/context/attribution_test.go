@@ -31,24 +31,24 @@ func TestResolveFilesWithAttribution_RespectsGitignore(t *testing.T) {
 	gitignoreContent := `node_modules/
 dist/
 `
-	if err := os.WriteFile(filepath.Join(testDir, ".gitignore"), []byte(gitignoreContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, ".gitignore"), []byte(gitignoreContent), 0o644); err != nil {
 		t.Fatalf("Failed to write .gitignore: %v", err)
 	}
 
 	// Create test files
-	if err := os.WriteFile(filepath.Join(testDir, "main.go"), []byte("package main"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, "main.go"), []byte("package main"), 0o644); err != nil {
 		t.Fatalf("Failed to write main.go: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(testDir, "node_modules", "dep"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(testDir, "node_modules", "dep"), 0o755); err != nil {
 		t.Fatalf("Failed to create node_modules dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(testDir, "node_modules", "dep", "index.js"), []byte("console.log('ignored')"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, "node_modules", "dep", "index.js"), []byte("console.log('ignored')"), 0o644); err != nil {
 		t.Fatalf("Failed to write ignored file: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(testDir, "dist"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(testDir, "dist"), 0o755); err != nil {
 		t.Fatalf("Failed to create dist dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(testDir, "dist", "bundle.js"), []byte("var app;"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, "dist", "bundle.js"), []byte("var app;"), 0o644); err != nil {
 		t.Fatalf("Failed to write ignored file in dist: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestResolveFilesWithAttribution_Exclusions(t *testing.T) {
 
 	for relPath, content := range testFiles {
 		fullPath := filepath.Join(testDir, relPath)
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
@@ -187,7 +187,7 @@ func TestResolveFilesWithAttribution_NoExclusions(t *testing.T) {
 
 	for relPath, content := range testFiles {
 		fullPath := filepath.Join(testDir, relPath)
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
@@ -231,7 +231,7 @@ func TestResolveFilesWithAttribution_OnlyExclusions(t *testing.T) {
 
 	for relPath, content := range testFiles {
 		fullPath := filepath.Join(testDir, relPath)
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 			t.Fatalf("Failed to write file %s: %v", relPath, err)
 		}
 	}
@@ -285,34 +285,34 @@ func TestResolveFilesWithAttribution_StarPatternRespectsGitignore(t *testing.T) 
 dist
 coverage
 `
-	if err := os.WriteFile(filepath.Join(testDir, ".gitignore"), []byte(gitignoreContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, ".gitignore"), []byte(gitignoreContent), 0o644); err != nil {
 		t.Fatalf("Failed to write .gitignore: %v", err)
 	}
 
 	// Create test files
-	if err := os.WriteFile(filepath.Join(testDir, "main.go"), []byte("package main"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, "main.go"), []byte("package main"), 0o644); err != nil {
 		t.Fatalf("Failed to write main.go: %v", err)
 	}
 
 	// Create gitignored directories
-	if err := os.MkdirAll(filepath.Join(testDir, "node_modules"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(testDir, "node_modules"), 0o755); err != nil {
 		t.Fatalf("Failed to create node_modules dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(testDir, "node_modules", "package.json"), []byte("{}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, "node_modules", "package.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatalf("Failed to write file in node_modules: %v", err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(testDir, "dist"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(testDir, "dist"), 0o755); err != nil {
 		t.Fatalf("Failed to create dist dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(testDir, "dist", "bundle.js"), []byte("var app;"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, "dist", "bundle.js"), []byte("var app;"), 0o644); err != nil {
 		t.Fatalf("Failed to write file in dist: %v", err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(testDir, "coverage"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(testDir, "coverage"), 0o755); err != nil {
 		t.Fatalf("Failed to create coverage dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(testDir, "coverage", "lcov.info"), []byte("data"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(testDir, "coverage", "lcov.info"), []byte("data"), 0o644); err != nil {
 		t.Fatalf("Failed to write file in coverage: %v", err)
 	}
 
@@ -359,17 +359,17 @@ func TestResolveFilesWithAttribution_ExternalFileExclusion(t *testing.T) {
 	testDir := t.TempDir()
 	mainProjectDir := filepath.Join(testDir, "main-project")
 	externalProjectDir := filepath.Join(testDir, "external-project")
-	err := os.MkdirAll(mainProjectDir, 0755)
+	err := os.MkdirAll(mainProjectDir, 0o755)
 	assert.NoError(t, err)
-	err = os.MkdirAll(externalProjectDir, 0755)
+	err = os.MkdirAll(externalProjectDir, 0o755)
 	assert.NoError(t, err)
 
 	// Create files in the external project
 	externalGoFile := filepath.Join(externalProjectDir, "lib.go")
 	externalJsonFile := filepath.Join(externalProjectDir, "config.json")
-	err = os.WriteFile(externalGoFile, []byte("package external"), 0644)
+	err = os.WriteFile(externalGoFile, []byte("package external"), 0o644)
 	assert.NoError(t, err)
-	err = os.WriteFile(externalJsonFile, []byte(`{"key":"value"}`), 0644)
+	err = os.WriteFile(externalJsonFile, []byte(`{"key":"value"}`), 0o644)
 	assert.NoError(t, err)
 
 	// Create manager for the main project

@@ -16,19 +16,19 @@ func TestManager_DiffContext(t *testing.T) {
 	mgr := NewManager(tempDir)
 
 	// Create .cx and .grove directories
-	os.MkdirAll(".cx", 0755)
-	os.MkdirAll(".grove", 0755)
+	os.MkdirAll(".cx", 0o755)
+	os.MkdirAll(".grove", 0o755)
 
 	// Create test files
-	os.WriteFile("fileA.txt", []byte("A"), 0644)
-	os.WriteFile("fileB.txt", []byte("B"), 0644)
-	os.WriteFile("fileC.txt", []byte("C"), 0644)
+	os.WriteFile("fileA.txt", []byte("A"), 0o644)
+	os.WriteFile("fileB.txt", []byte("B"), 0o644)
+	os.WriteFile("fileC.txt", []byte("C"), 0o644)
 
 	// Create current rules file (.grove/rules)
-	os.WriteFile(".grove/rules", []byte("fileB.txt\nfileC.txt\n"), 0644)
+	os.WriteFile(".grove/rules", []byte("fileB.txt\nfileC.txt\n"), 0o644)
 
 	// Create a named rule set to compare against (.cx/compare.rules)
-	os.WriteFile(".cx/compare.rules", []byte("fileA.txt\nfileB.txt\n"), 0644)
+	os.WriteFile(".cx/compare.rules", []byte("fileA.txt\nfileB.txt\n"), 0o644)
 
 	// Test diff against the named rule set
 	diff, err := mgr.DiffContext("compare")

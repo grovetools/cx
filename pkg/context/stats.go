@@ -43,15 +43,15 @@ type ContextStats struct {
 	ContextType   string                    `json:"context_type"`
 	WorkspaceName string                    `json:"workspace_name,omitempty"`
 	RulesPath     string                    `json:"rules_path,omitempty"`
-	TotalFiles   int                       `json:"total_files"`
-	TotalTokens  int                       `json:"total_tokens"`
-	TotalSize    int64                     `json:"total_size"`
-	Languages    map[string]*LanguageStats `json:"languages"`
-	LargestFiles []FileStats               `json:"largest_files"`
-	AllFiles     []FileStats               `json:"all_files"`
-	Distribution []TokenDistribution       `json:"distribution"`
-	AvgTokens    int                       `json:"avg_tokens"`
-	MedianTokens int                       `json:"median_tokens"`
+	TotalFiles    int                       `json:"total_files"`
+	TotalTokens   int                       `json:"total_tokens"`
+	TotalSize     int64                     `json:"total_size"`
+	Languages     map[string]*LanguageStats `json:"languages"`
+	LargestFiles  []FileStats               `json:"largest_files"`
+	AllFiles      []FileStats               `json:"all_files"`
+	Distribution  []TokenDistribution       `json:"distribution"`
+	AvgTokens     int                       `json:"avg_tokens"`
+	MedianTokens  int                       `json:"median_tokens"`
 }
 
 // GetStats analyzes the context and returns comprehensive statistics

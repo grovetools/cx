@@ -14,7 +14,7 @@ func TestManager_FixContext(t *testing.T) {
 	mgr := NewManager(tempDir)
 
 	// Create .grove directory
-	os.MkdirAll(GroveDir, 0755)
+	os.MkdirAll(GroveDir, 0o755)
 
 	// FixContext is deprecated and just prints a message
 	err := mgr.FixContext()

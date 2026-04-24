@@ -18,7 +18,6 @@ type ValidationResult struct {
 
 // ValidateContext checks the integrity of all files in the context
 func (m *Manager) ValidateContext(files []string) (*ValidationResult, error) {
-
 	result := &ValidationResult{
 		TotalFiles: len(files),
 		Duplicates: make(map[string]int),

@@ -40,7 +40,7 @@ func getStatsCacheDir() (string, error) {
 	cacheDir := filepath.Join(paths.CacheDir(), "cx", StatsCacheDirName)
 
 	// Ensure the directory exists
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", err
 	}
 
@@ -292,7 +292,6 @@ func (sp *StatsProvider) generateCacheForWorktree(worktreePath string) (*RepoCac
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +305,7 @@ func (sp *StatsProvider) generateCacheForWorktree(worktreePath string) (*RepoCac
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(cacheFilePath, data, 0644); err != nil {
+	if err := os.WriteFile(cacheFilePath, data, 0o644); err != nil {
 		// Non-fatal, just log a warning
 		fmt.Fprintf(os.Stderr, "Warning: failed to save stats cache for %s: %v\n", worktreePath, err)
 	}

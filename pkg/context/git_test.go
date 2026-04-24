@@ -31,14 +31,14 @@ func TestGitIntegration(t *testing.T) {
 	mgr := NewManager(tempDir)
 
 	// Create and commit some files
-	os.WriteFile("file1.go", []byte("package main\n// File 1"), 0644)
-	os.WriteFile("file2.go", []byte("package main\n// File 2"), 0644)
+	os.WriteFile("file1.go", []byte("package main\n// File 1"), 0o644)
+	os.WriteFile("file2.go", []byte("package main\n// File 2"), 0o644)
 	exec.Command("git", "add", "file1.go", "file2.go").Run()
 	exec.Command("git", "commit", "-m", "Initial commit").Run()
 
 	// Create more files and stage them
-	os.WriteFile("file3.go", []byte("package main\n// File 3"), 0644)
-	os.WriteFile("file4.go", []byte("package main\n// File 4"), 0644)
+	os.WriteFile("file3.go", []byte("package main\n// File 3"), 0o644)
+	os.WriteFile("file4.go", []byte("package main\n// File 4"), 0o644)
 	exec.Command("git", "add", "file3.go").Run()
 
 	t.Run("staged files", func(t *testing.T) {
@@ -82,7 +82,7 @@ func TestGitIntegration(t *testing.T) {
 
 	// Create a branch
 	exec.Command("git", "checkout", "-b", "feature").Run()
-	os.WriteFile("feature.go", []byte("package main\n// Feature"), 0644)
+	os.WriteFile("feature.go", []byte("package main\n// Feature"), 0o644)
 	exec.Command("git", "add", "feature.go").Run()
 	exec.Command("git", "commit", "-m", "Add feature").Run()
 

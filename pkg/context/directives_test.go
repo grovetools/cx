@@ -15,22 +15,22 @@ func TestParseSearchDirectives(t *testing.T) {
 		wantHasDirectives bool
 	}{
 		{
-			name:  "single find directive",
-			input: `pkg/**/*.go @find: "api"`,
+			name:              "single find directive",
+			input:             `pkg/**/*.go @find: "api"`,
 			wantBase:          "pkg/**/*.go",
 			wantDirectives:    []SearchDirective{{Name: "find", Query: "api"}},
 			wantHasDirectives: true,
 		},
 		{
-			name:  "single grep directive",
-			input: `pkg/**/*.go @grep: "User"`,
+			name:              "single grep directive",
+			input:             `pkg/**/*.go @grep: "User"`,
 			wantBase:          "pkg/**/*.go",
 			wantDirectives:    []SearchDirective{{Name: "grep", Query: "User"}},
 			wantHasDirectives: true,
 		},
 		{
-			name:  "combined find and grep",
-			input: `pkg/**/*.go @find: "api" @grep: "User"`,
+			name:     "combined find and grep",
+			input:    `pkg/**/*.go @find: "api" @grep: "User"`,
 			wantBase: "pkg/**/*.go",
 			wantDirectives: []SearchDirective{
 				{Name: "find", Query: "api"},
@@ -39,8 +39,8 @@ func TestParseSearchDirectives(t *testing.T) {
 			wantHasDirectives: true,
 		},
 		{
-			name:  "multiple same type",
-			input: `pkg/**/*.go @find: "api" @find: "v1"`,
+			name:     "multiple same type",
+			input:    `pkg/**/*.go @find: "api" @find: "v1"`,
 			wantBase: "pkg/**/*.go",
 			wantDirectives: []SearchDirective{
 				{Name: "find", Query: "api"},

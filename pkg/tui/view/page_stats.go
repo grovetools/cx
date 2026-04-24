@@ -11,8 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/grovetools/cx/pkg/context"
 	core_theme "github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // focus constants
@@ -25,7 +25,7 @@ const (
 
 type languageItem struct {
 	context.LanguageStats
-	contextType      string // "hot", "cold", "both"
+	contextType     string // "hot", "cold", "both"
 	showContextType bool   // only show indicator if cold context exists
 }
 
@@ -47,8 +47,8 @@ func (i fileItem) FilterValue() string { return i.Path }
 
 type languageDelegate struct{}
 
-func (d languageDelegate) Height() int                               { return 1 }
-func (d languageDelegate) Spacing() int                              { return 0 }
+func (d languageDelegate) Height() int                             { return 1 }
+func (d languageDelegate) Spacing() int                            { return 0 }
 func (d languageDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d languageDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	i, ok := listItem.(languageItem)
@@ -96,8 +96,8 @@ func (d languageDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 
 type fileDelegate struct{}
 
-func (d fileDelegate) Height() int                               { return 1 }
-func (d fileDelegate) Spacing() int                              { return 0 }
+func (d fileDelegate) Height() int                             { return 1 }
+func (d fileDelegate) Spacing() int                            { return 0 }
 func (d fileDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d fileDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	i, ok := listItem.(fileItem)

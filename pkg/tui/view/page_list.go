@@ -12,8 +12,8 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/cx/pkg/context"
 )
 
 type listItem struct {
@@ -44,8 +44,8 @@ const (
 
 type itemDelegate struct{}
 
-func (d itemDelegate) Height() int                               { return 1 }
-func (d itemDelegate) Spacing() int                              { return 0 }
+func (d itemDelegate) Height() int                             { return 1 }
+func (d itemDelegate) Spacing() int                            { return 0 }
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 // highlight returns a styled string with occurrences of substr highlighted.
@@ -139,9 +139,9 @@ type listPage struct {
 	width       int
 	height      int
 	keys        pagerKeyMap
-	lastKey     string            // Track last key for gg handling
+	lastKey     string // Track last key for gg handling
 	sortMode    int
-	foldedDirs  map[string]bool   // Track which directories are folded
+	foldedDirs  map[string]bool // Track which directories are folded
 }
 
 func NewListPage(state *sharedState) Page {

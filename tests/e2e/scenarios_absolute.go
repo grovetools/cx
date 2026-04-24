@@ -216,7 +216,7 @@ func UnauthorizedExternalPathScenario() *harness.Scenario {
 
 				// Create some Go files that mimic Go module structure
 				gomodDir := filepath.Join(externalDir, "some-module")
-				if err := os.MkdirAll(gomodDir, 0755); err != nil {
+				if err := os.MkdirAll(gomodDir, 0o755); err != nil {
 					os.RemoveAll(externalDir)
 					return err
 				}

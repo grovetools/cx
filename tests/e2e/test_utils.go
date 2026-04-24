@@ -124,9 +124,9 @@ func CleanupExistingTestSessions() error {
 
 		// Check if this looks like a tend test session
 		// Tend test sessions typically have patterns like "tend-test-*" or contain "cx-view"
-		if strings.Contains(session, "tend-test") || 
-		   strings.Contains(session, "cx-view") ||
-		   strings.Contains(session, "grove-tend") {
+		if strings.Contains(session, "tend-test") ||
+			strings.Contains(session, "cx-view") ||
+			strings.Contains(session, "grove-tend") {
 			// Kill the session
 			killCmd := tmux.Command("kill-session", "-t", session)
 			if err := killCmd.Run(); err != nil {

@@ -86,7 +86,7 @@ func (m *Manager) UpdateFromGit(opts GitOptions) error {
 
 	// Ensure .grove directory exists
 	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0755); err != nil {
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 
@@ -302,7 +302,7 @@ func (m *Manager) generateDiffFile(ref string) (string, error) {
 	}
 
 	diffsDir := filepath.Join(m.workDir, GroveDir, "diffs")
-	if err := os.MkdirAll(diffsDir, 0755); err != nil {
+	if err := os.MkdirAll(diffsDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create diffs directory: %w", err)
 	}
 
@@ -312,7 +312,7 @@ func (m *Manager) generateDiffFile(ref string) (string, error) {
 	}
 
 	patchPath := filepath.Join(diffsDir, fmt.Sprintf("diff-%s.patch", safeRef))
-	if err := os.WriteFile(patchPath, output, 0644); err != nil {
+	if err := os.WriteFile(patchPath, output, 0o644); err != nil {
 		return "", fmt.Errorf("failed to write patch file: %w", err)
 	}
 
