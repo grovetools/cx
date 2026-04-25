@@ -2053,7 +2053,7 @@ func UnquotedGlobalSearchDirectivesScenario() *harness.Scenario {
 				files := map[string]string{
 					filepath.Join(ctx.RootDir, "src", "handler.go"):        "package src\n\nfunc HandleRequest() {}",
 					filepath.Join(ctx.RootDir, "src", "server.go"):         "package src\n\nfunc Start() {}",
-					filepath.Join(ctx.RootDir, "tests", "handler_test.go"): "package tests\n\nfunc TestHandler() {}",
+					filepath.Join(ctx.RootDir, "tests", "handler_test.go"): "package tests\n\nfunc TestHandler() { _ = HandleRequest }",
 					filepath.Join(ctx.RootDir, "tests", "server_test.go"):  "package tests\n\nfunc TestServer() {}",
 				}
 
