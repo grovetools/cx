@@ -543,26 +543,6 @@ func splitByComma(s string) []string {
 // Supports multiple directives on the same line acting as AND filters.
 // Example: "pkg/**/*.go @find: \"api\" @grep: \"User\"" -> "pkg/**/*.go", [{Name: "find", Query: "api"}, {Name: "grep", Query: "User"}], true
 func parseSearchDirectives(line string) (basePattern string, directives []SearchDirective, hasDirectives bool) {
-	// Find the position of the first directive
-	findIdx := strings.Index(line, " @find: ")
-	grepIdx := strings.Index(line, " @grep: ")
-	grepIIdx := strings.Index(line, " @grep-i: ")
-	changedIdx := strings.Index(line, " @changed: ")
-
-	firstDirIdx := -1
-	for _, idx := range []int{findIdx, grepIdx, grepIIdx, changedIdx} {
-		if idx != -1 && (firstDirIdx == -1 || idx < firstDirIdx) {
-			firstDirIdx = idx
-		}
-	}
-
-	if firstDirIdx == -1 {
-		return line, nil, false
-	}
-
-	basePattern = strings.TrimSpace(line[:firstDirIdx])
-	remainder := line[firstDirIdx:]
-
 	// Known directive markers
 	dirMarkers := []struct {
 		marker string
@@ -576,6 +556,22 @@ func parseSearchDirectives(line string) (basePattern string, directives []Search
 		{" @changed: ", "changed"},
 		{" @recent: ", "recent"},
 	}
+
+	// Find the position of the first directive across all markers
+	firstDirIdx := -1
+	for _, dm := range dirMarkers {
+		idx := strings.Index(line, dm.marker)
+		if idx != -1 && (firstDirIdx == -1 || idx < firstDirIdx) {
+			firstDirIdx = idx
+		}
+	}
+
+	if firstDirIdx == -1 {
+		return line, nil, false
+	}
+
+	basePattern = strings.TrimSpace(line[:firstDirIdx])
+	remainder := line[firstDirIdx:]
 
 	for {
 		// Find the earliest directive in remainder
