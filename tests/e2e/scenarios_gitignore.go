@@ -40,6 +40,8 @@ func GitignoreStatsPerLineScenario() *harness.Scenario {
 				gitignore := `node_modules/
 dist/
 *.log
+home/
+.grove/
 `
 				if err := fs.WriteString(filepath.Join(ctx.RootDir, ".gitignore"), gitignore); err != nil {
 					return err
