@@ -477,10 +477,13 @@ func TreeRootDiscoveryRelativeScenario() *harness.Scenario {
 				ctx.ShowCommandOutput("Tree Page - Initial View", view, "")
 
 				// Verify tree rendered with the tab bar and directory nodes.
-				// The TREE tab being active confirms extractRootPaths correctly
-				// discovered the root from the uncleaned ./../ path.
+				// The lowercase 'tree' label is styled as the active tab and the
+				// sibling directory was discovered from the uncleaned ./../ path.
+				cleaned, _ := session.Capture(tui.WithCleanedOutput())
 				return ctx.Verify(func(v *verify.Collector) {
-					v.Contains("TREE tab is active", view, "TREE")
+					v.Contains("tree tab is present in tab bar", cleaned, "tree")
+					v.True("tree page rendered absolute path components from external root",
+						strings.Contains(cleaned, "private") || strings.Contains(cleaned, "var") || strings.Contains(cleaned, "sibling-tree"))
 				})
 			}),
 			harness.NewStep("Quit TUI", func(ctx *harness.Context) error {

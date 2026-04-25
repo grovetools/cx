@@ -54,12 +54,15 @@ func TUIViewListScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Test page navigation", func(ctx *harness.Context) error {
 				session := ctx.Get("tui_session").(*tui.Session)
-				// Navigate to tree page
+				// Tab from list -> tree page (order: rules, stats, set-rules, list, tree, suggestions).
 				if err := session.Type("Tab"); err != nil {
 					return err
 				}
-				// Wait for tree view content (absolute path components visible in tree)
-				time.Sleep(1 * time.Second)
+				// Wait for tree page to render (absolute path components or tree help footer).
+				if _, err := session.WaitForAnyText([]string{"private", "var", "toggle sort"}, 15*time.Second); err != nil {
+					view, _ := session.Capture()
+					return fmt.Errorf("timeout waiting for tree page after Tab: %w\nView:\n%s", err, view)
+				}
 
 				view, _ := session.Capture()
 				ctx.ShowCommandOutput("After Tab to Tree Page", view, "")
@@ -67,7 +70,7 @@ func TUIViewListScenario() *harness.Scenario {
 				content, _ := session.Capture(tui.WithCleanedOutput())
 				return ctx.Verify(func(v *verify.Collector) {
 					v.True("navigated to tree page",
-						strings.Contains(content, "var") || strings.Contains(content, "private") || strings.Contains(content, "TREE"))
+						strings.Contains(content, "private") || strings.Contains(content, "var") || strings.Contains(content, "toggle sort"))
 				})
 			}),
 			harness.NewStep("Quit the TUI", quitCXViewTUI),

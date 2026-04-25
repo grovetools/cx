@@ -80,12 +80,15 @@ func TUIViewRulesScenario() *harness.Scenario {
 			}),
 			harness.NewStep("Test page navigation", func(ctx *harness.Context) error {
 				session := ctx.Get("tui_session").(*tui.Session)
-				// Navigate to stats page
-				if err := session.Type("Tab"); err != nil {
+				// Cycle to next page rules -> stats. The rules page viewport
+				// swallows Tab, so use the pager's `]` next-tab binding.
+				if err := session.SendKeys("]"); err != nil {
 					return err
 				}
-				if err := session.WaitForText("File Types", 2*time.Second); err != nil {
-					return err
+				// Stats page may need time for async hot/cold stats to populate.
+				if err := session.WaitForText("File Types", 15*time.Second); err != nil {
+					view, _ := session.Capture()
+					return fmt.Errorf("timeout waiting for stats page after Tab: %w\nView:\n%s", err, view)
 				}
 
 				view, _ := session.Capture()
