@@ -1385,6 +1385,21 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			basePattern, directives, _ = decodeDirectives(cleanPattern)
 		}
 
+		// Validate regex queries for grep/grep-i directives (and their inverted forms) at parse time
+		// so invalid regex fails fast instead of silently returning zero results.
+		for _, d := range directives {
+			switch d.Name {
+			case "grep", "grep!", "grep-i":
+				query := d.Query
+				if d.Name == "grep-i" {
+					query = "(?i)" + query
+				}
+				if _, err := regexp.Compile(query); err != nil {
+					return nil, fmt.Errorf("invalid regex %q in @%s directive: %w", d.Query, d.Name, err)
+				}
+			}
+		}
+
 		// Skip empty base patterns to prevent root-filesystem walks
 		basePattern = strings.TrimSpace(basePattern)
 		if basePattern == "" {
