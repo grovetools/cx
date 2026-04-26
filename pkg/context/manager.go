@@ -732,7 +732,20 @@ func (m *Manager) resolvePatternsFromRulesetImport(importRule string) ([]string,
 // ResolveFilesFromPatterns exposes the internal file resolution logic for external use.
 // It resolves files from a given set of patterns.
 func (m *Manager) ResolveFilesFromPatterns(patterns []string) ([]string, error) {
-	return m.resolveFilesFromPatterns(patterns)
+	var rules []RuleInfo
+	for _, p := range patterns {
+		isExclude := strings.HasPrefix(p, "!")
+		if isExclude {
+			p = strings.TrimPrefix(p, "!")
+		}
+		pattern, directives, _ := decodeDirectives(p)
+		rules = append(rules, RuleInfo{
+			Pattern:    pattern,
+			IsExclude:  isExclude,
+			Directives: directives,
+		})
+	}
+	return m.resolveFilesViaAST(rules)
 }
 
 // ReadFilesList reads the list of files from a file

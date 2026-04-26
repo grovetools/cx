@@ -152,7 +152,7 @@ func appendPatternIssues(issues []LintIssue, m *Manager, pattern, raw string, li
 		})
 	}
 
-	files, err := m.resolveFilesFromPatterns([]string{pattern})
+	files, err := m.resolveFilesViaAST([]RuleInfo{{Pattern: pattern, IsExclude: false}})
 	if err == nil && len(files) == 0 {
 		issues = append(issues, LintIssue{
 			LineNum:  line,

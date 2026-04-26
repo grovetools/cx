@@ -118,94 +118,40 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		lineNum++
 	}
 
-	// 5. Extract patterns from expanded rules for file resolution
-	inclusionPatterns := []string{}
-	for _, rule := range allRules {
-		if !rule.IsExclude {
-			pattern := rule.Pattern
-			// Encode directives if present
-			pattern = encodeDirectives(pattern, rule.Directives)
-			inclusionPatterns = append(inclusionPatterns, pattern)
+	// 5. Resolve via AST: build nodes from expanded rules and run ResolveAST.
+	nodes := ruleInfosToNodes(allRules)
+	ctx := newProdResolutionContext(m)
+
+	hasExclusion := false
+	for _, r := range allRules {
+		if r.IsExclude {
+			hasExclusion = true
+			break
 		}
 	}
 
-	potentialFiles, err := m.resolveFilesFromPatterns(inclusionPatterns)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
+	var result AttributionResult
+	var exclusions ExclusionResult
+	var filtered FilteredResult
 
-	// Also get the final file list with exclusions applied
-	allPatterns := []string{}
-	for _, rule := range allRules {
-		pattern := rule.Pattern
-		// Encode directives if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-
-		if rule.IsExclude {
-			allPatterns = append(allPatterns, "!"+pattern)
-		} else {
-			allPatterns = append(allPatterns, pattern)
-		}
-	}
-
-	allFiles, err := m.resolveFilesFromPatterns(allPatterns)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	// Phase 3A: single-pass node-based attribution. Build synthetic AST nodes
-	// from the expanded rules and run ResolveAST against the legacy-discovered
-	// file set. This deletes the second-pass m.matchPattern re-derivation.
-	syntheticNodes := ruleInfosToNodes(allRules)
-	allFilesUnion := make([]string, 0, len(allFiles)+len(potentialFiles))
-	seenUnion := make(map[string]bool)
-	for _, f := range allFiles {
-		if !seenUnion[f] {
-			seenUnion[f] = true
-			allFilesUnion = append(allFilesUnion, f)
-		}
-	}
-	for _, f := range potentialFiles {
-		if !seenUnion[f] {
-			seenUnion[f] = true
-			allFilesUnion = append(allFilesUnion, f)
-		}
-	}
-	astCtx := newProdResolutionContext(m).withFileSet(allFilesUnion)
-	astAttr, astExcl, astFilt := ResolveAST(syntheticNodes, astCtx)
-
-	// Restrict attribution to files that survived legacy exclusion processing.
-	includedSet := make(map[string]bool, len(allFiles))
-	for _, f := range allFiles {
-		includedSet[f] = true
-	}
-	result := make(AttributionResult)
-	for line, files := range astAttr {
-		for _, f := range files {
-			if includedSet[f] {
-				result[line] = append(result[line], f)
+	if !hasExclusion {
+		result, exclusions, filtered = ResolveAST(nodes, ctx)
+	} else {
+		// Two-phase: resolve inclusions first to discover files across all
+		// walk roots, then re-evaluate all rules so exclusions see the full set.
+		var inclNodes []RuleNode
+		for _, n := range nodes {
+			if !n.IsExclude() {
+				inclNodes = append(inclNodes, n)
 			}
 		}
-	}
-	_ = astExcl
-	_ = astFilt
-	// Restrict exclusions to files that were not finally included.
-	exclusions := make(ExclusionResult)
-	for line, files := range astExcl {
-		for _, f := range files {
-			if !includedSet[f] {
-				exclusions[line] = append(exclusions[line], f)
-			}
+		inclAttr, _, _ := ResolveAST(inclNodes, ctx)
+		var discovered []string
+		for _, paths := range inclAttr {
+			discovered = append(discovered, paths...)
 		}
-	}
-	// Restrict filtered (superseded inclusion) tracking to finally-included files.
-	filtered := make(FilteredResult)
-	for line, infos := range astFilt {
-		for _, fi := range infos {
-			if includedSet[fi.File] {
-				filtered[line] = append(filtered[line], fi)
-			}
-		}
+		primedCtx := newProdResolutionContext(m).withFileSet(discovered)
+		result, exclusions, filtered = ResolveAST(nodes, primedCtx)
 	}
 
 	return result, rawRules, exclusions, filtered, nil
