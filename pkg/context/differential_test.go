@@ -133,22 +133,23 @@ func diffCorpus() []diffFixture {
 			name:  "cmd_directive",
 			files: []string{"main.go", "helper.go"},
 			rules: "@cmd: ls\n",
-			skip:  "Phase 3A stubbed CommandNode.Resolve to nil; legacy @cmd path executes shell. Re-enable once Phase 5 unifies.",
 		},
 		{
 			name:  "alias_to_workspace_subpath",
 			files: []string{"main.go"},
 			rules: "@a:test:proj/main.go\n",
-			skip:  "Phase 3A stubbed ImportNode.Resolve to nil; legacy alias path requires real workspace registry. Re-enable once Phase 5 wires alias resolution into the AST resolver.",
 		},
 		{
+			// Phase 5A semantics: a plain literal path ending in `.rules`
+			// is a literal file inclusion, NOT an import. To recurse into
+			// another rules file, use `@a:<workspace>::<name>`. Both
+			// legacy and AST paths agree on literal-file treatment.
 			name:  "imports_of_imports",
 			files: []string{"main.go", "helper.go"},
 			extraFiles: map[string]string{
 				"nested.rules": "helper.go\n",
 			},
 			rules: "main.go\nnested.rules\n",
-			skip:  "rules-file-as-pattern (inbox 20260426): legacy treats nested.rules as a literal include and recurses; AST treats it as a literal path. Re-enable once Phase 5 picks a single semantics.",
 		},
 		{
 			name: "deep_filter_chain",
@@ -165,7 +166,6 @@ func diffCorpus() []diffFixture {
 			name:  "exclude_with_alias_negation",
 			files: []string{"main.go"},
 			rules: "@a:eco:proj\n!@a:eco:proj/sub\n",
-			skip:  "Same alias-resolver gap as alias_to_workspace_subpath; ImportNode.Resolve still stubbed.",
 		},
 	}
 }

@@ -79,6 +79,14 @@ func (c *mockResolutionContext) IsGitIgnored(path string) bool { return c.ignore
 
 func (c *mockResolutionContext) BaseDir() string { return c.baseDir }
 
+func (c *mockResolutionContext) ExecCommand(cmd string) ([]string, error) {
+	return nil, nil
+}
+
+func (c *mockResolutionContext) ResolveAliasLine(line string) (string, error) {
+	return "", nil
+}
+
 func TestResolveAST_FilterNodeWrappingGlob(t *testing.T) {
 	ctx := newMockCtx(map[string]string{
 		"pkg/a/foo.go": "package a\nfunc Foo() {}\n",

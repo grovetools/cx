@@ -31,9 +31,37 @@ func (n *LiteralNode) Resolve(ctx ResolutionContext) []FileAttribution {
 	return walkAndEmit(ctx, pattern, n.LineNum, n.Excluded)
 }
 
-func (n *ImportNode) Resolve(ctx ResolutionContext) []FileAttribution { return nil }
+func (n *ImportNode) Resolve(ctx ResolutionContext) []FileAttribution {
+	// Ruleset imports (@a:proj::ruleset) require nested rules-file expansion;
+	// Phase 5B owns that. Until then, defer to the legacy walker.
+	if n.Ruleset != "" {
+		return nil
+	}
+	rebuilt := "@a:" + n.Target
+	resolved, err := ctx.ResolveAliasLine(rebuilt)
+	if err != nil || resolved == "" {
+		return nil
+	}
+	pattern := resolved
+	if !hasGlobMeta(pattern) {
+		if info, err := ctx.Stat(pattern); err == nil && info.IsDir() {
+			pattern = strings.TrimSuffix(pattern, "/") + "/**"
+		}
+	}
+	return walkAndEmit(ctx, pattern, n.LineNum, n.Excluded)
+}
 
-func (n *CommandNode) Resolve(ctx ResolutionContext) []FileAttribution { return nil }
+func (n *CommandNode) Resolve(ctx ResolutionContext) []FileAttribution {
+	files, err := ctx.ExecCommand(n.Command)
+	if err != nil {
+		return nil
+	}
+	var attrs []FileAttribution
+	for _, f := range files {
+		attrs = append(attrs, walkAndEmit(ctx, f, n.LineNum, n.Excluded)...)
+	}
+	return attrs
+}
 
 func (n *FilterNode) Resolve(ctx ResolutionContext) []FileAttribution {
 	if n.Child == nil {

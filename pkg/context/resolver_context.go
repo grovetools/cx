@@ -24,6 +24,8 @@ type ResolutionContext interface {
 	MatchPattern(pattern, path string) bool
 	IsGitIgnored(path string) bool
 	BaseDir() string
+	ExecCommand(cmd string) ([]string, error)
+	ResolveAliasLine(line string) (string, error)
 }
 
 // prodResolutionContext is the production-mode ResolutionContext. It can
@@ -96,4 +98,16 @@ func (c *prodResolutionContext) IsGitIgnored(path string) bool {
 
 func (c *prodResolutionContext) BaseDir() string {
 	return c.m.rulesBaseDir
+}
+
+func (c *prodResolutionContext) ExecCommand(cmd string) ([]string, error) {
+	return c.m.executeCommandExpression(cmd)
+}
+
+func (c *prodResolutionContext) ResolveAliasLine(line string) (string, error) {
+	resolver := c.m.getAliasResolver()
+	if resolver == nil {
+		return "", os.ErrNotExist
+	}
+	return resolver.ResolveLine(line)
 }
