@@ -1,8 +1,12 @@
 package context
 
 import (
+	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -24,9 +28,14 @@ func (n *GlobNode) Resolve(ctx ResolutionContext) []FileAttribution {
 
 func (n *LiteralNode) Resolve(ctx ResolutionContext) []FileAttribution {
 	pattern := n.ExpectedPath
-	if info, err := ctx.Stat(absUnderBase(pattern, ctx.BaseDir())); err == nil && info.IsDir() {
-		pattern = strings.TrimSuffix(pattern, "/") + "/**"
-		return walkAndEmit(ctx, pattern, n.LineNum, n.Excluded)
+	floating := !filepath.IsAbs(pattern) && !strings.Contains(pattern, "/")
+	// Floating exclusions use gitignore-style component matching via
+	// MatchPattern; don't expand to dir/** which anchors to top-level only.
+	if !(floating && n.Excluded) {
+		if info, err := ctx.Stat(absUnderBase(pattern, ctx.BaseDir())); err == nil && info.IsDir() {
+			pattern = strings.TrimSuffix(pattern, "/") + "/**"
+			return walkAndEmit(ctx, pattern, n.LineNum, n.Excluded)
+		}
 	}
 	return walkAndEmit(ctx, pattern, n.LineNum, n.Excluded)
 }
@@ -94,8 +103,14 @@ func (n *FilterNode) Resolve(ctx ResolutionContext) []FileAttribution {
 // Uses the same float-vs-anchored matching the legacy classify path uses.
 func walkAndEmit(ctx ResolutionContext, pattern string, line int, excluded bool) []FileAttribution {
 	floating := !filepath.IsAbs(pattern) && !strings.Contains(pattern, "/") && !IsRelativeExternalPath(pattern)
+
+	root := ctx.BaseDir()
+	if filepath.IsAbs(pattern) || IsRelativeExternalPath(pattern) {
+		root = walkRootForPattern(pattern, ctx.BaseDir())
+	}
+
 	var attrs []FileAttribution
-	_ = ctx.WalkDir(ctx.BaseDir(), func(path string, d fs.DirEntry, err error) error {
+	_ = ctx.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() {
 			return nil
 		}
@@ -123,6 +138,29 @@ func walkAndEmit(ctx ResolutionContext, pattern string, line int, excluded bool)
 		return nil
 	})
 	return attrs
+}
+
+// walkRootForPattern computes the filesystem walk root for an absolute or
+// external relative pattern by stripping glob meta from the path tail.
+func walkRootForPattern(pattern, base string) string {
+	resolved := pattern
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(base, resolved)
+	}
+	resolved = filepath.Clean(resolved)
+	parts := strings.Split(filepath.ToSlash(resolved), "/")
+	var baseParts []string
+	for _, part := range parts {
+		if strings.ContainsAny(part, "*?[") {
+			break
+		}
+		baseParts = append(baseParts, part)
+	}
+	candidate := filepath.FromSlash(strings.Join(baseParts, "/"))
+	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		return filepath.Dir(candidate)
+	}
+	return candidate
 }
 
 // ResolveAST evaluates the AST in a single pass. The reducer applies
@@ -203,6 +241,117 @@ func ruleInfosToNodes(rules []RuleInfo) []RuleNode {
 		out = append(out, inner)
 	}
 	return out
+}
+
+// resolveFilesViaAST converts expanded RuleInfo records to AST nodes and
+// resolves files through the single-pass ResolveAST engine. Replaces the
+// legacy "extract patterns → resolveFilesFromPatterns" chain.
+//
+// Two-phase resolution: inclusions walk the real filesystem (potentially
+// multiple roots for external patterns), then all rules are re-evaluated
+// against the discovered file set so exclusions see the full cross-root set.
+func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
+	if len(rules) == 0 {
+		return []string{}, nil
+	}
+
+	// Validate: reject unauthorized external paths, check directive regexes.
+	var validated []RuleInfo
+	for _, r := range rules {
+		if !r.IsExclude && (filepath.IsAbs(r.Pattern) || IsRelativeExternalPath(r.Pattern)) {
+			base := r.Pattern
+			if strings.ContainsAny(base, "*?[") {
+				parts := strings.Split(filepath.ToSlash(base), "/")
+				var keep []string
+				for _, p := range parts {
+					if strings.ContainsAny(p, "*?[") {
+						break
+					}
+					keep = append(keep, p)
+				}
+				base = strings.Join(keep, "/")
+			}
+			if !filepath.IsAbs(base) {
+				base = filepath.Join(m.rulesBaseDir, base)
+			}
+			if ok, reason := m.IsPathAllowed(base); !ok {
+				pattern := r.Pattern
+				if r.IsExclude {
+					pattern = "!" + pattern
+				}
+				fmt.Fprintf(os.Stderr, "Warning: skipping rule '%s': %s\n", pattern, reason)
+				m.addSkippedRule(0, pattern, reason)
+				continue
+			}
+		}
+		for _, d := range r.Directives {
+			switch d.Name {
+			case "grep", "grep!", "grep-i":
+				q := d.Query
+				if d.Name == "grep-i" {
+					q = "(?i)" + q
+				}
+				if _, err := regexp.Compile(q); err != nil {
+					return nil, fmt.Errorf("invalid regex %q in @%s directive: %w", d.Query, d.Name, err)
+				}
+			}
+		}
+		validated = append(validated, r)
+	}
+	rules = validated
+
+	hasExclusion := false
+	for _, r := range rules {
+		if r.IsExclude {
+			hasExclusion = true
+			break
+		}
+	}
+
+	nodes := ruleInfosToNodes(rules)
+	ctx := newProdResolutionContext(m)
+
+	if !hasExclusion {
+		attr, _, _ := ResolveAST(nodes, ctx)
+		return m.flattenAttrResult(attr), nil
+	}
+
+	// Phase 1: resolve inclusion-only nodes to discover the full file set.
+	var inclRules []RuleInfo
+	for _, r := range rules {
+		if !r.IsExclude {
+			inclRules = append(inclRules, r)
+		}
+	}
+	inclAttr, _, _ := ResolveAST(ruleInfosToNodes(inclRules), ctx)
+	var discovered []string
+	for _, paths := range inclAttr {
+		discovered = append(discovered, paths...)
+	}
+
+	// Phase 2: re-evaluate all rules against the discovered set so
+	// exclusions see files from every walk root.
+	primedCtx := newProdResolutionContext(m).withFileSet(discovered)
+	attr, _, _ := ResolveAST(nodes, primedCtx)
+	return m.flattenAttrResult(attr), nil
+}
+
+func (m *Manager) flattenAttrResult(attr AttributionResult) []string {
+	seen := make(map[string]bool)
+	var files []string
+	for _, paths := range attr {
+		for _, p := range paths {
+			if rel, err := filepath.Rel(m.rulesBaseDir, p); err == nil && !strings.HasPrefix(rel, "..") {
+				p = rel
+			}
+			if !seen[p] {
+				seen[p] = true
+				files = append(files, p)
+			}
+		}
+	}
+	sort.Strings(files)
+	return files
 }
 
 func absUnderBase(p, base string) string {

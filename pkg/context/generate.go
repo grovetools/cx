@@ -52,42 +52,16 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 		return fmt.Errorf("failed to resolve patterns from rules file %s: %w", rulesFilePath, err)
 	}
 
-	// Extract patterns from RuleInfo
-	hotPatterns := make([]string, len(hotRules))
-	for i, rule := range hotRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			hotPatterns[i] = "!" + pattern
-		} else {
-			hotPatterns[i] = pattern
-		}
-	}
-
-	coldPatterns := make([]string, len(coldRules))
-	for i, rule := range coldRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			coldPatterns[i] = "!" + pattern
-		} else {
-			coldPatterns[i] = pattern
-		}
-	}
-
-	hotFiles, err := m.resolveFilesFromPatterns(hotPatterns)
+	hotFiles, err := m.resolveFilesViaAST(hotRules)
 	if err != nil {
 		return fmt.Errorf("error resolving hot context files: %w", err)
 	}
 
-	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	coldFiles, err := m.resolveFilesViaAST(coldRules)
 	if err != nil {
 		return fmt.Errorf("error resolving cold context files: %w", err)
 	}
 
-	// Cold-over-hot precedence
 	coldFilesMap := make(map[string]bool)
 	for _, file := range coldFiles {
 		coldFilesMap[file] = true

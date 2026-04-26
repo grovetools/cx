@@ -4,6 +4,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/grovetools/core/util/pathutil"
 )
 
 // FileAttribution is the unit emission of a node's Resolve method. Each
@@ -67,7 +69,44 @@ func (c *prodResolutionContext) WalkDir(root string, fn fs.WalkDirFunc) error {
 		}
 		return nil
 	}
-	return filepath.WalkDir(root, fn)
+
+	gitIgnored, _ := c.m.getGitIgnoredFiles(root)
+	if gitIgnored == nil {
+		gitIgnored = make(map[string]bool)
+	}
+
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", ".grove", ".grove-worktrees":
+				return filepath.SkipDir
+			}
+		}
+
+		normalized, normErr := pathutil.NormalizeForLookup(path)
+		if normErr != nil {
+			normalized = path
+		}
+		if gitIgnored[normalized] {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !d.IsDir() && isBinaryFile(path) {
+			return nil
+		}
+
+		return fn(path, d, err)
+	})
 }
 
 type fakeFileEntry string

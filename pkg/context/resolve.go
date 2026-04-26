@@ -179,59 +179,30 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 
 // resolveFilesFromRulesContent resolves files based on rules content provided as a byte slice.
 func (m *Manager) resolveFilesFromRulesContent(rulesContent []byte) ([]string, error) {
-	// Parse the rules content directly without recursion for this case
-	// This is used by commands that provide rules content directly (not from a file)
 	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing rules content: %w", err)
 	}
-	mainRules := parsed.hotRules
-	coldRules := parsed.coldRules
 
-	// Extract patterns from RuleInfo
-	mainPatterns := make([]string, len(mainRules))
-	for i, rule := range mainRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			mainPatterns[i] = "!" + pattern
-		} else {
-			mainPatterns[i] = pattern
-		}
-	}
-
-	coldPatterns := make([]string, len(coldRules))
-	for i, rule := range coldRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			coldPatterns[i] = "!" + pattern
-		} else {
-			coldPatterns[i] = pattern
-		}
-	}
-
-	// Resolve files from main patterns
-	mainFiles, err := m.resolveFilesFromPatterns(mainPatterns)
+	mainFiles, err := m.resolveFilesViaAST(parsed.hotRules)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving main context files: %w", err)
 	}
 
-	// Resolve files from cold patterns
-	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	coldFiles, err := m.resolveFilesViaAST(parsed.coldRules)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving cold context files: %w", err)
 	}
 
-	// Create a map of cold files for efficient exclusion
+	if len(coldFiles) == 0 {
+		return mainFiles, nil
+	}
+
 	coldFilesMap := make(map[string]bool)
 	for _, file := range coldFiles {
 		coldFilesMap[file] = true
 	}
 
-	// Filter main files to exclude any that are in cold files
 	var finalMainFiles []string
 	for _, file := range mainFiles {
 		if !coldFilesMap[file] {
@@ -980,52 +951,22 @@ func (m *Manager) ResolveFilesAndTreesFromRules() ([]string, []string, error) {
 		return nil, nil, fmt.Errorf("failed to resolve patterns: %w", err)
 	}
 
-	// Extract patterns from RuleInfo
-	hotPatterns := make([]string, len(hotRules))
-	for i, rule := range hotRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			hotPatterns[i] = "!" + pattern
-		} else {
-			hotPatterns[i] = pattern
-		}
-	}
-
-	coldPatterns := make([]string, len(coldRules))
-	for i, rule := range coldRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			coldPatterns[i] = "!" + pattern
-		} else {
-			coldPatterns[i] = pattern
-		}
-	}
-
-	// Resolve files from hot patterns
-	hotFiles, err := m.resolveFilesFromPatterns(hotPatterns)
+	hotFiles, err := m.resolveFilesViaAST(hotRules)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error resolving hot context files: %w", err)
 	}
 
-	// Only resolve and filter cold patterns if there are any
-	if len(coldPatterns) > 0 {
-		// Resolve files from cold patterns
-		coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	if len(coldRules) > 0 {
+		coldFiles, err := m.resolveFilesViaAST(coldRules)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error resolving cold context files: %w", err)
 		}
 
-		// Create a map of cold files for efficient exclusion
 		coldFilesMap := make(map[string]bool)
 		for _, file := range coldFiles {
 			coldFilesMap[file] = true
 		}
 
-		// Filter main files to exclude any that are also in cold files
 		var finalHotFiles []string
 		for _, file := range hotFiles {
 			if !coldFilesMap[file] {
@@ -1036,7 +977,6 @@ func (m *Manager) ResolveFilesAndTreesFromRules() ([]string, []string, error) {
 		return finalHotFiles, deduplicateStrings(treePaths), nil
 	}
 
-	// No cold patterns, return hot files as is
 	return hotFiles, deduplicateStrings(treePaths), nil
 }
 
@@ -1078,45 +1018,17 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 		return nil, nil, fmt.Errorf("failed to resolve patterns from rules file: %w", err)
 	}
 
-	// Extract patterns from RuleInfo
-	hotPatterns := make([]string, len(hotRules))
-	for i, rule := range hotRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			hotPatterns[i] = "!" + pattern
-		} else {
-			hotPatterns[i] = pattern
-		}
-	}
-
-	coldPatterns := make([]string, len(coldRules))
-	for i, rule := range coldRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			coldPatterns[i] = "!" + pattern
-		} else {
-			coldPatterns[i] = pattern
-		}
-	}
-
-	// Resolve files from hot patterns
-	hotFiles, err = m.resolveFilesFromPatterns(hotPatterns)
+	hotFiles, err = m.resolveFilesViaAST(hotRules)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error resolving hot context files: %w", err)
 	}
 
-	// Resolve files from cold patterns
-	if len(coldPatterns) > 0 {
-		coldFiles, err = m.resolveFilesFromPatterns(coldPatterns)
+	if len(coldRules) > 0 {
+		coldFiles, err = m.resolveFilesViaAST(coldRules)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error resolving cold context files: %w", err)
 		}
 
-		// Apply cold-over-hot precedence: remove hot files that are also in cold
 		coldFilesMap := make(map[string]bool)
 		for _, file := range coldFiles {
 			coldFilesMap[file] = true
@@ -1153,27 +1065,11 @@ func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 		return nil, fmt.Errorf("failed to resolve patterns for cold context: %w", err)
 	}
 
-	// Extract patterns from RuleInfo
-	coldPatterns := make([]string, len(coldRules))
-	for i, rule := range coldRules {
-		pattern := rule.Pattern
-		// Encode directive if present
-		pattern = encodeDirectives(pattern, rule.Directives)
-		if rule.IsExclude {
-			coldPatterns[i] = "!" + pattern
-		} else {
-			coldPatterns[i] = pattern
-		}
-	}
-
-	// Resolve files from only the cold patterns
-	coldFiles, err := m.resolveFilesFromPatterns(coldPatterns)
+	coldFiles, err := m.resolveFilesViaAST(coldRules)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving cold context files: %w", err)
 	}
 
-	// Sort for consistent output
-	sort.Strings(coldFiles)
 	return coldFiles, nil
 }
 
