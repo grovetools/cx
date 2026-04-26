@@ -355,7 +355,11 @@ coverage
 }
 
 func TestResolveFilesWithAttribution_ExternalFileExclusion(t *testing.T) {
-	// Setup: main project and an external project to simulate an alias
+	// Setup: main project and an external project to simulate an alias.
+	// Isolate XDG so the user's real ~/.config/grove/grove.toml doesn't
+	// participate in config merging — the project-config Context.AllowedPaths
+	// is dropped by mergeConfigs when a global config exists.
+	t.Setenv("GROVE_HOME", t.TempDir())
 	testDir := t.TempDir()
 	mainProjectDir := filepath.Join(testDir, "main-project")
 	externalProjectDir := filepath.Join(testDir, "external-project")
@@ -370,6 +374,13 @@ func TestResolveFilesWithAttribution_ExternalFileExclusion(t *testing.T) {
 	err = os.WriteFile(externalGoFile, []byte("package external"), 0o644)
 	assert.NoError(t, err)
 	err = os.WriteFile(externalJsonFile, []byte(`{"key":"value"}`), 0o644)
+	assert.NoError(t, err)
+
+	// grove.toml must exist before NewManager — config.LoadFrom is cached
+	// per workDir with a 2s TTL, so a config written after construction
+	// will be ignored by the manager's later allowed-roots lookup.
+	groveTOML := fmt.Sprintf("[context]\nallowed_paths = [%q]\n", externalProjectDir)
+	err = os.WriteFile(filepath.Join(mainProjectDir, "grove.toml"), []byte(groveTOML), 0o644)
 	assert.NoError(t, err)
 
 	// Create manager for the main project
