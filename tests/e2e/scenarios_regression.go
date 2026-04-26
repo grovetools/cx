@@ -122,6 +122,53 @@ func EmptyRuleFilePatternsScenario() *harness.Scenario {
 	}
 }
 
+// LiteralNegationScenario tests that a literal file inclusion followed by a
+// literal exclusion (`Makefile` then `!Makefile`) correctly removes the file.
+// This guards against the historic fast-path bypass in resolveFilesFromPatterns
+// where literal files were dumped into a uniqueFiles map ahead of the
+// patternMatcher.classify() loop, so `!` rules never saw them.
+func LiteralNegationScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-literal-negation",
+		Description: "Tests that a literal file inclusion followed by a literal exclusion correctly removes the file.",
+		Tags:        []string{"cx", "rules", "exclusion", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup workspace", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "Makefile"), "build:\n\techo 'build'\n"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "app.go"), "package main\n"); err != nil {
+					return err
+				}
+				rules := "app.go\nMakefile\n!Makefile\n"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run 'cx list' and verify exclusion", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				if result.Error != nil {
+					return result.Error
+				}
+
+				output := result.Stdout
+				if !strings.Contains(output, "app.go") {
+					return fmt.Errorf("expected 'app.go' to be included")
+				}
+				if strings.Contains(output, "Makefile") {
+					return fmt.Errorf("expected 'Makefile' to be excluded by !Makefile, but it was present in output: %s", output)
+				}
+				return nil
+			}),
+		},
+	}
+}
+
 // GitignoreStyleBasenameExclusionScenario tests that a floating, literal exclusion pattern
 // (e.g., !main.go) correctly excludes files with that basename in any subdirectory.
 func GitignoreStyleBasenameExclusionScenario() *harness.Scenario {

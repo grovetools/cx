@@ -26,6 +26,7 @@ func main() {
 		GitignoreStyleBasenameExclusionScenario(),
 		EmptyPatternResolveScenario(),
 		EmptyRuleFilePatternsScenario(),
+		LiteralNegationScenario(),
 
 		// Alias Scenarios
 		AliasWorkflowScenario(),

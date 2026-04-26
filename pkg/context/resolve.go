@@ -33,6 +33,11 @@ type patternInfo struct {
 	pattern    string
 	directives []SearchDirective
 	isExclude  bool
+	// node is the polymorphic AST node for this rule. Populated when the
+	// patternInfo is built in resolveFilesFromPatterns. For the wedge it is
+	// either a *GlobNode or a *LiteralNode; downstream phases will introduce
+	// additional node kinds (FilterNode, ImportNode, ...).
+	node RuleNode
 }
 
 // patternMatcher holds pre-processed patterns and provides a method to classify files.
@@ -123,7 +128,18 @@ func (pm *patternMatcher) classify(m *Manager, path, relPath string) bool {
 			}
 		}
 
-		match = m.matchPattern(cleanPattern, matchPath)
+		// Polymorphic dispatch via the wedge AST. classify can adjust
+		// cleanPattern in the IsRelativeExternalPath branch above, so we
+		// rebuild a transient node of the same kind rather than calling
+		// info.node.Match directly with a stale pattern.
+		switch info.node.(type) {
+		case *GlobNode:
+			match = (&GlobNode{Pattern: cleanPattern}).Match(m, matchPath)
+		case *LiteralNode:
+			match = (&LiteralNode{ExpectedPath: cleanPattern}).Match(m, matchPath)
+		default:
+			match = m.matchPattern(cleanPattern, matchPath)
+		}
 
 		if match {
 			isValidMatch := false
@@ -1433,10 +1449,18 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 			cleanProcessedPattern = strings.TrimPrefix(processedPattern, "!")
 		}
 
+		var node RuleNode
+		if strings.ContainsAny(cleanProcessedPattern, "*?[") {
+			node = &GlobNode{Pattern: cleanProcessedPattern}
+		} else {
+			node = &LiteralNode{ExpectedPath: cleanProcessedPattern}
+		}
+
 		patternInfos = append(patternInfos, patternInfo{
 			pattern:    cleanProcessedPattern,
 			directives: tempInfos[i].directives,
 			isExclude:  isExclude,
+			node:       node,
 		})
 	}
 
@@ -1501,35 +1525,16 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 	var deferredExclusionInfos []patternInfo            // Store exclusion patterns to process after inclusions
 	var floatingExclusionInfos []patternInfo            // Store floating exclusions (no path separator, apply globally)
 
-	// First pass: process inclusion and exclusion patterns
+	// First pass: process inclusion and exclusion patterns.
+	//
+	// Wedge change: previously, INCLUSION patterns whose os.Stat resolved to
+	// a real (non-directory) file were dumped directly into uniqueFiles and
+	// short-circuited the patternMatcher.classify() loop. That fast path
+	// bypassed exclusion (`!`) rules entirely (cf. cx-literal-negation
+	// regression). All literal inclusions now fall through to
+	// walkAndMatchPatterns and are classified through the same last-match-
+	// wins evaluator as glob inclusions.
 	for _, info := range patternInfos {
-		// Check if this is an exact file path that exists
-		// IMPORTANT: Only treat as an exact file for INCLUSION patterns.
-		// Exclusion patterns should always be treated as patterns, not exact files,
-		// to support gitignore-style semantics (e.g., !main.go should exclude all main.go files).
-		if !info.isExclude {
-			filePath := info.pattern
-			if !filepath.IsAbs(filePath) {
-				filePath = filepath.Join(m.rulesBaseDir, filePath)
-			}
-			filePath = filepath.Clean(filePath)
-
-			if fstat, err := os.Stat(filePath); err == nil && !fstat.IsDir() {
-				if filepath.IsAbs(info.pattern) || IsRelativeExternalPath(info.pattern) {
-					uniqueFiles[filePath] = true
-				} else {
-					relPath, err := filepath.Rel(m.rulesBaseDir, filePath)
-					if err == nil {
-						uniqueFiles[relPath] = true
-					} else {
-						uniqueFiles[filePath] = true
-					}
-				}
-				continue
-			}
-		}
-
-		// If not an exact file, treat as a pattern
 		if info.isExclude {
 			// Identify "floating" exclusions (gitignore-style patterns without path separators)
 			// These should apply to ALL walks (local and external), not just the current directory
@@ -1560,6 +1565,13 @@ func (m *Manager) resolveFilesFromPatterns(patterns []string) ([]string, error) 
 				for strings.ContainsAny(basePath, "*?[") {
 					basePath = filepath.Dir(basePath)
 				}
+			} else if fstat, err := os.Stat(basePath); err == nil && !fstat.IsDir() {
+				// Wedge: literal absolute file paths previously hit the
+				// uniqueFiles fast-path. Now they flow through
+				// walkAndMatchPatterns, which skips its rootPath when
+				// relPath is "." — so for a file we must walk the parent
+				// directory and rely on classify() to match the literal.
+				basePath = filepath.Dir(basePath)
 			}
 
 			absolutePathInfos[basePath] = append(absolutePathInfos[basePath], info)
