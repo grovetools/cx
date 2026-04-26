@@ -105,6 +105,7 @@ func main() {
 		StatsPrefixAttributionScenario(),
 
 		// Search Directive Scenarios
+		PlainGlobDirectiveScenario(),
 		FindDirectiveScenario(),
 		FindDirectiveGlobScenario(),
 		FindDirectiveRegexScenario(),
@@ -171,6 +172,7 @@ func main() {
 
 		// Path Normalization Scenarios
 		PathNormalizationWorktreeScenario(),
+		TrailingSlashDirPatternScenario(),
 		// PathNormalizationSymlinkScenario(), // TODO: Fix symlink test
 
 		// Tree Directive Scenarios

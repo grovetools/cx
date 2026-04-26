@@ -2751,3 +2751,49 @@ func EmptyGrepQueryScenario() *harness.Scenario {
 		},
 	}
 }
+
+func PlainGlobDirectiveScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-plain-glob-directive",
+		Description: "@grep on plain glob filters file content (Phase 3A bug fix)",
+		Tags:        []string{"cx", "search-directives", "phase3"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup project with mixed content", func(ctx *harness.Context) error {
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "pkg", "alpha.go"): "package pkg\nfunc FindRulesetFile() {}\n",
+					filepath.Join(ctx.RootDir, "pkg", "beta.go"):  "package pkg\nfunc Other() {}\n",
+				}
+				for p, c := range files {
+					if err := fs.WriteString(p, c); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules with plain glob + @grep directive", func(ctx *harness.Context) error {
+				rules := `pkg/**/*.go @grep: "FindRulesetFile"`
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Verify only matching file resolved", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+				out := result.Stdout
+				if !strings.Contains(out, "alpha.go") {
+					return fmt.Errorf("@grep on plain glob dropped matching file alpha.go: %s", out)
+				}
+				if strings.Contains(out, "beta.go") {
+					return fmt.Errorf("@grep on plain glob leaked non-matching beta.go: %s", out)
+				}
+				return nil
+			}),
+		},
+	}
+}

@@ -153,146 +153,58 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 		return nil, nil, nil, nil, err
 	}
 
-	result := make(AttributionResult)
-	exclusions := make(ExclusionResult)
-	filtered := make(FilteredResult)
-
-	// 6. For each included file, find all matching rules to determine attribution,
-	// superseded rules, and directive-filtered rules.
-	for _, file := range allFiles {
-		// Get both absolute and relative paths for matching
-		absPath := file
-		if !filepath.IsAbs(file) {
-			absPath = filepath.Join(m.workDir, file)
-		}
-
-		relPath, err := filepath.Rel(m.workDir, absPath)
-		if err != nil {
-			relPath = file
-		}
-		relPath = filepath.ToSlash(relPath)
-
-		var matchingInclusionRules []RuleInfo
-
-		for _, rule := range allRules {
-			// Floating inclusion patterns should not match external files
-			isFloatingInclusion := !rule.IsExclude && !strings.Contains(rule.Pattern, "/")
-			isExternalFile := strings.HasPrefix(relPath, "..")
-			if isFloatingInclusion && isExternalFile {
-				continue
-			}
-
-			// For absolute path patterns (e.g., from Git repos), match against absolute path
-			// For relative patterns, match against relative path
-			pathToMatch := relPath
-			if filepath.IsAbs(rule.Pattern) {
-				pathToMatch = filepath.ToSlash(absPath)
-			}
-
-			baseMatch := m.matchPattern(rule.Pattern, pathToMatch)
-
-			if baseMatch && !rule.IsExclude {
-				if len(rule.Directives) > 0 {
-					allMatch := true
-					for _, d := range rule.Directives {
-						if !m.matchDirective(file, d.Name, d.Query) {
-							allMatch = false
-							break
-						}
-					}
-					if allMatch {
-						matchingInclusionRules = append(matchingInclusionRules, rule)
-					}
-				} else {
-					// Match is valid
-					matchingInclusionRules = append(matchingInclusionRules, rule)
-				}
-			}
-		}
-
-		if len(matchingInclusionRules) > 0 {
-			winnerRule := matchingInclusionRules[len(matchingInclusionRules)-1]
-			winnerLineNum := winnerRule.EffectiveLineNum
-
-			// Attribute the file to the winning rule
-			result[winnerLineNum] = append(result[winnerLineNum], file)
-
-			// Use a map to track which lines we've already marked for this file to avoid duplicates
-			processedLines := make(map[int]bool)
-
-			// For all other inclusion rules that matched, mark them as superseded
-			for i := 0; i < len(matchingInclusionRules)-1; i++ {
-				supersededRule := matchingInclusionRules[i]
-				supersededLineNum := supersededRule.EffectiveLineNum
-				if !processedLines[supersededLineNum] {
-					filtered[supersededLineNum] = append(filtered[supersededLineNum], FilteredFileInfo{
-						File:           file,
-						WinningLineNum: winnerLineNum,
-					})
-					processedLines[supersededLineNum] = true
-				}
-			}
-
-			// This block has been removed as it was the source of the bug.
-			// Files filtered by a directive should not be considered for superseded attribution.
+	// Phase 3A: single-pass node-based attribution. Build synthetic AST nodes
+	// from the expanded rules and run ResolveAST against the legacy-discovered
+	// file set. This deletes the second-pass m.matchPattern re-derivation.
+	syntheticNodes := ruleInfosToNodes(allRules)
+	allFilesUnion := make([]string, 0, len(allFiles)+len(potentialFiles))
+	seenUnion := make(map[string]bool)
+	for _, f := range allFiles {
+		if !seenUnion[f] {
+			seenUnion[f] = true
+			allFilesUnion = append(allFilesUnion, f)
 		}
 	}
-
-	// 7. For each potential file, determine if it was excluded and by which rule
-	for _, file := range potentialFiles {
-		// Get both absolute and relative paths for matching
-		absPath := file
-		if !filepath.IsAbs(file) {
-			absPath = filepath.Join(m.workDir, file)
+	for _, f := range potentialFiles {
+		if !seenUnion[f] {
+			seenUnion[f] = true
+			allFilesUnion = append(allFilesUnion, f)
 		}
+	}
+	astCtx := newProdResolutionContext(m).withFileSet(allFilesUnion)
+	astAttr, astExcl, astFilt := ResolveAST(syntheticNodes, astCtx)
 
-		relPath, err := filepath.Rel(m.workDir, absPath)
-		if err != nil {
-			relPath = file
-		}
-		relPath = filepath.ToSlash(relPath)
-
-		lastMatchEffectiveLineNum := -1
-		wasExcluded := false
-
-		// Check if this file matches any rule
-		for _, rule := range allRules {
-			// Floating inclusion patterns should not match external files
-			isFloatingInclusion := !rule.IsExclude && !strings.Contains(rule.Pattern, "/")
-			isExternalFile := strings.HasPrefix(relPath, "..")
-			if isFloatingInclusion && isExternalFile {
-				continue
-			}
-
-			// For absolute path patterns (e.g., from Git repos), match against absolute path
-			// For relative patterns, match against relative path
-			pathToMatch := relPath
-			if filepath.IsAbs(rule.Pattern) {
-				pathToMatch = filepath.ToSlash(absPath)
-			}
-
-			match := m.matchPattern(rule.Pattern, pathToMatch)
-
-			// If the pattern matches, check if directive filter passes (if present)
-			if match && len(rule.Directives) > 0 && !rule.IsExclude {
-				// Apply directive filters (AND logic - all must match)
-				for _, d := range rule.Directives {
-					if !m.matchDirective(file, d.Name, d.Query) {
-						match = false
-						break
-					}
-				}
-			}
-
-			if match {
-				lastMatchEffectiveLineNum = rule.EffectiveLineNum
-				wasExcluded = rule.IsExclude
+	// Restrict attribution to files that survived legacy exclusion processing.
+	includedSet := make(map[string]bool, len(allFiles))
+	for _, f := range allFiles {
+		includedSet[f] = true
+	}
+	result := make(AttributionResult)
+	for line, files := range astAttr {
+		for _, f := range files {
+			if includedSet[f] {
+				result[line] = append(result[line], f)
 			}
 		}
-
-		// If the last matching rule was an exclusion, track it
-		if wasExcluded && lastMatchEffectiveLineNum != -1 {
-			exclusions[lastMatchEffectiveLineNum] = append(exclusions[lastMatchEffectiveLineNum], file)
+	}
+	_ = astExcl
+	_ = astFilt
+	// Restrict exclusions to files that were not finally included.
+	exclusions := make(ExclusionResult)
+	for line, files := range astExcl {
+		for _, f := range files {
+			if !includedSet[f] {
+				exclusions[line] = append(exclusions[line], f)
+			}
+		}
+	}
+	// Restrict filtered (superseded inclusion) tracking to finally-included files.
+	filtered := make(FilteredResult)
+	for line, infos := range astFilt {
+		for _, fi := range infos {
+			if includedSet[fi.File] {
+				filtered[line] = append(filtered[line], fi)
+			}
 		}
 	}
 

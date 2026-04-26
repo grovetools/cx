@@ -381,3 +381,52 @@ func main() {
 		},
 	}
 }
+
+func TrailingSlashDirPatternScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-trailing-slash-dir-pattern",
+		Description: "Trailing-slash dir pattern (cx/) resolves recursively, not zero",
+		Tags:        []string{"cx", "path", "normalization", "phase3"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup project with subdir", func(ctx *harness.Context) error {
+				files := map[string]string{
+					filepath.Join(ctx.RootDir, "src", "a.go"):        "package src",
+					filepath.Join(ctx.RootDir, "src", "sub", "b.go"): "package sub",
+					filepath.Join(ctx.RootDir, "other.go"):           "package other",
+				}
+				for p, c := range files {
+					if err := fs.WriteString(p, c); err != nil {
+						return err
+					}
+				}
+				return nil
+			}),
+			harness.NewStep("Create rules with trailing-slash dir pattern", func(ctx *harness.Context) error {
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), "src/")
+			}),
+			harness.NewStep("Verify recursive resolution", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+				out := result.Stdout
+				if !strings.Contains(out, "src/a.go") {
+					return fmt.Errorf("trailing-slash dir pattern dropped src/a.go: %s", out)
+				}
+				if !strings.Contains(out, filepath.Join("src", "sub", "b.go")) {
+					return fmt.Errorf("trailing-slash dir pattern dropped src/sub/b.go: %s", out)
+				}
+				if strings.Contains(out, "other.go") && !strings.Contains(out, filepath.Join("src", "other.go")) {
+					return fmt.Errorf("trailing-slash dir pattern leaked top-level other.go: %s", out)
+				}
+				return nil
+			}),
+		},
+	}
+}

@@ -5,6 +5,7 @@ package context
 // remove it; the metadata accessors are stable.
 type RuleNode interface {
 	Match(m *Manager, path string) bool
+	Resolve(ctx ResolutionContext) []FileAttribution
 	Line() int
 	Raw() string
 	IsExclude() bool
