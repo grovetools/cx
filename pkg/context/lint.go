@@ -99,6 +99,18 @@ func (m *Manager) lintRulesContent(content []byte) ([]LintIssue, error) {
 		case *LiteralNode:
 			issues = appendPatternIssues(issues, m, node.ExpectedPath, raw, line)
 		case *FilterNode:
+			for _, d := range node.Directives {
+				if d.Name == "grep" || d.Name == "grep!" || d.Name == "grep-i" {
+					if _, err := regexp.Compile(d.Query); err != nil {
+						issues = append(issues, LintIssue{
+							LineNum:  line,
+							Line:     raw,
+							Severity: "Warning",
+							Message:  fmt.Sprintf("Invalid regex in @%s directive: %s", d.Name, err),
+						})
+					}
+				}
+			}
 			switch child := node.Child.(type) {
 			case *GlobNode:
 				issues = appendPatternIssues(issues, m, child.Pattern, raw, line)

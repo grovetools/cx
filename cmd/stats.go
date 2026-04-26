@@ -319,7 +319,7 @@ func outputPerLineStats(args []string) error {
 		// Store non-empty, non-comment lines
 		// Include @alias: and @a: lines as they are rules, but exclude config directives
 		isConfigDirective := strings.HasPrefix(line, "@view:") || strings.HasPrefix(line, "@v:") ||
-			strings.HasPrefix(line, "@default:") || strings.HasPrefix(line, "@freeze-cache") ||
+			strings.HasPrefix(line, "@freeze-cache") ||
 			strings.HasPrefix(line, "@no-expire") || strings.HasPrefix(line, "@disable-cache") ||
 			strings.HasPrefix(line, "@expire-time") || strings.HasPrefix(line, "@find:") ||
 			strings.HasPrefix(line, "@grep:")

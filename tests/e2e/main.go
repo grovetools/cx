@@ -109,6 +109,7 @@ func main() {
 		StatsPerLineEveryRuleEmittedScenario(),
 		StatsPerLineSeverityScenario(),
 		StatsPerLineExcludedByLineScenario(),
+		StatsPerLineLintOverlayScenario(),
 
 		// Search Directive Scenarios
 		PlainGlobDirectiveScenario(),
