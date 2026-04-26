@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grovetools/core/pkg/alias"
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/pathutil"
 )
 
@@ -874,5 +876,37 @@ func TestManager_SetActiveRules(t *testing.T) {
 	err = m.SetActiveRules(filepath.Join(testDir, "non-existent.txt"))
 	if err == nil {
 		t.Error("SetActiveRules should fail for non-existent file")
+	}
+}
+
+func TestResolveLineForRulePreview_BraceInAlias(t *testing.T) {
+	nodes := []*workspace.WorkspaceNode{
+		{Name: "eco", Path: "/fake/eco", Kind: workspace.KindEcosystemRoot},
+		{Name: "alpha", Path: "/fake/eco/alpha", Kind: workspace.KindEcosystemSubProject, ParentEcosystemPath: "/fake/eco", RootEcosystemPath: "/fake/eco"},
+		{Name: "beta", Path: "/fake/eco/beta", Kind: workspace.KindEcosystemSubProject, ParentEcosystemPath: "/fake/eco", RootEcosystemPath: "/fake/eco"},
+	}
+
+	resolver := alias.NewAliasResolver()
+	resolver.InitProviderFromNodes(nodes)
+
+	m := NewManager(t.TempDir())
+	m.aliasResolver = resolver
+
+	resolved, err := m.ResolveLineForRulePreview("@a:eco:{alpha,beta}/main.go")
+	if err != nil {
+		t.Fatalf("ResolveLineForRulePreview failed: %v", err)
+	}
+
+	lines := strings.Split(resolved, "\n")
+	sort.Strings(lines)
+
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 resolved lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "/fake/eco/alpha/main.go" {
+		t.Errorf("lines[0] = %q, want /fake/eco/alpha/main.go", lines[0])
+	}
+	if lines[1] != "/fake/eco/beta/main.go" {
+		t.Errorf("lines[1] = %q, want /fake/eco/beta/main.go", lines[1])
 	}
 }

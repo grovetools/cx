@@ -122,6 +122,14 @@ func TestParseToAST(t *testing.T) {
 				{kind: "import", path: "proj", ruleset: "default", line: 1},
 			},
 		},
+		{
+			name:  "alias_brace_expansion",
+			input: "@a:eco:{a,b}/main.go\n",
+			wantNodes: []expectedNode{
+				{kind: "import", path: "eco:a/main.go", line: 1},
+				{kind: "import", path: "eco:b/main.go", line: 1},
+			},
+		},
 	}
 
 	for _, tt := range tests {

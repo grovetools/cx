@@ -665,7 +665,19 @@ func (m *Manager) ResolveLineForRulePreview(line string) (string, error) {
 
 	// 2. Handle simple aliases or plain patterns
 	if resolver != nil && (strings.Contains(trimmedLine, "@alias:") || strings.Contains(trimmedLine, "@a:")) {
-		return resolver.ResolveLine(trimmedLine)
+		expanded := ExpandBraces(trimmedLine)
+		if len(expanded) == 1 {
+			return resolver.ResolveLine(trimmedLine)
+		}
+		var results []string
+		for _, variant := range expanded {
+			resolved, err := resolver.ResolveLine(variant)
+			if err != nil {
+				return "", err
+			}
+			results = append(results, resolved)
+		}
+		return strings.Join(results, "\n"), nil
 	}
 
 	// 3. If not an alias or import, return the original line.
