@@ -169,6 +169,133 @@ func LiteralNegationScenario() *harness.Scenario {
 	}
 }
 
+// InlineCommentStripScenario tests that ` # comment` suffixes on rule lines are stripped.
+func InlineCommentStripScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-inline-comment-strip",
+		Description: "Tests that inline trailing comments on rule lines are stripped before pattern matching.",
+		Tags:        []string{"cx", "rules", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "foo.go"), "package main\n"); err != nil {
+					return err
+				}
+				rules := "foo.go # this is a comment\n"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run cx list and verify foo.go matches", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+				if !strings.Contains(result.Stdout, "foo.go") {
+					return fmt.Errorf("expected foo.go in output, got: %s", result.Stdout)
+				}
+				return nil
+			}),
+		},
+	}
+}
+
+// TrailingSlashDirectoryScenario tests that "cx/" expands to recursive directory contents.
+func TrailingSlashDirectoryScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-trailing-slash-dir",
+		Description: "Tests that a directory with trailing slash matches all files recursively.",
+		Tags:        []string{"cx", "rules", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "src", "main.go"), "package main\n"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "src", "util.go"), "package main\n"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "other.go"), "package main\n"); err != nil {
+					return err
+				}
+				rules := "src/\n"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run cx list and verify src/* but not other.go", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := command.New(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+				if !strings.Contains(result.Stdout, "src/main.go") {
+					return fmt.Errorf("expected src/main.go in output, got: %s", result.Stdout)
+				}
+				if !strings.Contains(result.Stdout, "src/util.go") {
+					return fmt.Errorf("expected src/util.go in output, got: %s", result.Stdout)
+				}
+				if strings.Contains(result.Stdout, "other.go") && !strings.Contains(result.Stdout, "src/") {
+					return fmt.Errorf("did not expect other.go (outside src/), got: %s", result.Stdout)
+				}
+				return nil
+			}),
+		},
+	}
+}
+
+// MultipleSeparatorWarningScenario tests that a second `---` emits a warning but parsing continues.
+func MultipleSeparatorWarningScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-multiple-separator-warning",
+		Description: "Tests that multiple `---` separators emit a warning and rules after the first separator still parse.",
+		Tags:        []string{"cx", "rules", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "a.go"), "package main\n"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "b.go"), "package main\n"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "c.go"), "package main\n"); err != nil {
+					return err
+				}
+				rules := "a.go\n---\nb.go\n---\nc.go\n"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run cx list + list-cache and verify warning + all files included", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				hot := command.New(cx, "list").Dir(ctx.RootDir)
+				hotResult := hot.Run()
+				ctx.ShowCommandOutput(hot.String(), hotResult.Stdout, hotResult.Stderr)
+				cold := command.New(cx, "list-cache").Dir(ctx.RootDir)
+				coldResult := cold.Run()
+				ctx.ShowCommandOutput(cold.String(), coldResult.Stdout, coldResult.Stderr)
+				combinedStderr := hotResult.Stderr + coldResult.Stderr
+				combinedStdout := hotResult.Stdout + coldResult.Stdout
+				if !strings.Contains(combinedStderr, "multiple '---' separators") {
+					return fmt.Errorf("expected stderr warning for multiple ---, got: %s", combinedStderr)
+				}
+				for _, f := range []string{"a.go", "b.go", "c.go"} {
+					if !strings.Contains(combinedStdout, f) {
+						return fmt.Errorf("expected %s in combined output, got: %s", f, combinedStdout)
+					}
+				}
+				return nil
+			}),
+		},
+	}
+}
+
 // GitignoreStyleBasenameExclusionScenario tests that a floating, literal exclusion pattern
 // (e.g., !main.go) correctly excludes files with that basename in any subdirectory.
 func GitignoreStyleBasenameExclusionScenario() *harness.Scenario {

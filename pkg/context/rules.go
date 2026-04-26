@@ -462,6 +462,29 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 
 // ExpandBraces recursively expands shell-style brace patterns.
 // Example: "path/{a,b}/{c,d}" -> ["path/a/c", "path/a/d", "path/b/c", "path/b/d"]
+// expandHomeAndDot expands a leading ~ and strips a leading ./ on a rule line,
+// preserving any leading ! exclusion marker.
+func expandHomeAndDot(line string) string {
+	excl := ""
+	if strings.HasPrefix(line, "!") {
+		excl = "!"
+		line = line[1:]
+	}
+	if strings.HasPrefix(line, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			line = filepath.Join(home, line[2:])
+		}
+	} else if line == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			line = home
+		}
+	}
+	for strings.HasPrefix(line, "./") {
+		line = line[2:]
+	}
+	return excl + line
+}
+
 func ExpandBraces(pattern string) []string {
 	// Find the first opening brace
 	leftBrace := strings.Index(pattern, "{")
@@ -668,6 +691,13 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 	results := &parsedRules{}
 	if len(rulesContent) == 0 {
 		return results, nil
+	}
+
+	// Surface ParseError warnings from the pure parser (Phase 2 shim).
+	if _, parseErrs := ParseToAST(rulesContent); len(parseErrs) > 0 {
+		for _, e := range parseErrs {
+			fmt.Fprintf(os.Stderr, "Warning: line %d: %s\n", e.Line, e.Msg)
+		}
 	}
 
 	// Create repo manager for processing Git URLs
@@ -914,13 +944,36 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 			continue
 		}
 		if line == "---" {
+			if inColdSection {
+				// Already past one separator; ignore additional ones (warning emitted by ParseToAST shim).
+				continue
+			}
 			inColdSection = true
 			continue
 		}
 		if line != "" && !strings.HasPrefix(line, "#") {
+			// Strip inline ` # comment` if no quoted directive contains a #.
+			if !strings.Contains(line, `"`) {
+				if cleaned := stripInlineComments(line); cleaned != "" {
+					line = cleaned
+				}
+			}
 			// First, parse out any inline search directives from the line.
 			// The rest of the logic will operate on the `rulePart`.
 			rulePart, directives, hasInlineDirectives := parseSearchDirectives(line)
+
+			// Expand ~ and strip leading ./ on rulePart (preserve ! prefix).
+			rulePart = expandHomeAndDot(rulePart)
+
+			// Trailing-slash → /** for plain paths (not aliases/git URLs/directives).
+			if !strings.HasPrefix(rulePart, "@") &&
+				!strings.HasPrefix(rulePart, "!@") &&
+				!strings.HasPrefix(rulePart, "http://") &&
+				!strings.HasPrefix(rulePart, "https://") &&
+				!strings.HasPrefix(rulePart, "git@") &&
+				strings.HasSuffix(rulePart, "/") && rulePart != "/" {
+				rulePart = rulePart + "**"
+			}
 
 			// Check for Git alias ruleset imports first (e.g., @a:git:owner/repo::ruleset)
 			// These need special handling to convert to GitHub URLs before processing
@@ -1097,6 +1150,9 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					processedLine = fullURL
 				}
 			} else if resolver != nil && (strings.Contains(rulePart, "@alias:") || strings.Contains(rulePart, "@a:")) {
+				if strings.HasSuffix(rulePart, "/") {
+					rulePart = rulePart + "**"
+				}
 				resolvedLine, resolveErr := resolver.ResolveLine(rulePart)
 				if resolveErr != nil {
 					fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in line '%s': %v\n", line, resolveErr)

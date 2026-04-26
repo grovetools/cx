@@ -27,6 +27,9 @@ func main() {
 		EmptyPatternResolveScenario(),
 		EmptyRuleFilePatternsScenario(),
 		LiteralNegationScenario(),
+		InlineCommentStripScenario(),
+		TrailingSlashDirectoryScenario(),
+		MultipleSeparatorWarningScenario(),
 
 		// Alias Scenarios
 		AliasWorkflowScenario(),
@@ -36,6 +39,7 @@ func main() {
 		AliasRulesetImportScenario(),
 		AliasEcosystemWorktreeScenario(),
 		AliasResolutionFromEcosystemWorktreeRootScenario(),
+		AliasTrailingSlashScenario(),
 
 		// Hybrid Context Scenarios
 		DualContextWorkflowScenario(),

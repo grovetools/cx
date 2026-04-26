@@ -1,6 +1,10 @@
 package context
 
 import (
+	"bufio"
+	"bytes"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -497,4 +501,203 @@ func parseSearchDirectiveLine(line, prefix string) map[string]string {
 	}
 
 	return parts
+}
+
+// stripInlineComments removes a trailing " # ..." comment unless the # is
+// inside a double-quoted span (preserves @grep: "foo # bar").
+func stripInlineComments(line string) string {
+	inQuote := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if c == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if !inQuote && c == '#' && i > 0 && (line[i-1] == ' ' || line[i-1] == '\t') {
+			return strings.TrimRight(line[:i], " \t")
+		}
+	}
+	return line
+}
+
+// canonicalizePath applies pure string-only path normalization: ~ home
+// expansion, leading ./ strip, trailing slash → /**.
+func canonicalizePath(p string) string {
+	if p == "" {
+		return p
+	}
+	if strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, p[2:])
+		}
+	} else if p == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = home
+		}
+	}
+	for strings.HasPrefix(p, "./") {
+		p = p[2:]
+	}
+	if strings.HasSuffix(p, "/") && p != "/" {
+		p = p + "**"
+	}
+	return p
+}
+
+// classifyAlias splits an alias body into (target, ruleset). target is the
+// part before "::" (or the whole body if "::" is absent).
+func classifyAlias(body string) (target, ruleset string) {
+	if idx := strings.Index(body, "::"); idx != -1 {
+		return body[:idx], body[idx+2:]
+	}
+	return body, ""
+}
+
+// hasGlobMeta reports whether a pattern has wildcard metacharacters.
+func hasGlobMeta(p string) bool {
+	return strings.ContainsAny(p, "*?[")
+}
+
+// ParseToAST is the pure parser: bytes in, AST + non-fatal errors out. It
+// performs no I/O beyond os.UserHomeDir for ~ expansion.
+func ParseToAST(content []byte) ([]RuleNode, []ParseError) {
+	var nodes []RuleNode
+	var errs []ParseError
+
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	lineNum := 0
+	seenSeparator := false
+
+	for scanner.Scan() {
+		lineNum++
+		raw := scanner.Text()
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if trimmed == "---" {
+			if seenSeparator {
+				errs = append(errs, ParseError{Line: lineNum, Msg: "multiple '---' separators found; rules support exactly one hot/cold separator"})
+				continue
+			}
+			seenSeparator = true
+			continue
+		}
+
+		// 1. Brace-expand FIRST.
+		expanded := ExpandBraces(trimmed)
+		for _, tok := range expanded {
+			tok = strings.TrimSpace(tok)
+			if tok == "" {
+				continue
+			}
+			// 2. Strip inline # comment (but preserve quoted #).
+			tok = strings.TrimSpace(stripInlineComments(tok))
+			if tok == "" {
+				continue
+			}
+
+			// Detect exclusion.
+			excluded := false
+			if strings.HasPrefix(tok, "!") {
+				excluded = true
+				tok = strings.TrimSpace(tok[1:])
+			}
+
+			// Capital-letter directive guard.
+			if strings.HasPrefix(tok, "@") && len(tok) > 1 {
+				rest := tok[1:]
+				if rest != "" && rest[0] >= 'A' && rest[0] <= 'Z' && strings.Contains(rest, ":") {
+					errs = append(errs, ParseError{Line: lineNum, Msg: "unrecognized directive '" + tok[:strings.Index(tok, ":")+1] + "' - did you mean lowercase?"})
+					continue
+				}
+			}
+
+			// Dangling ::name.
+			if strings.HasPrefix(tok, "::") {
+				errs = append(errs, ParseError{Line: lineNum, Msg: "invalid ruleset import '" + tok + "' - missing workspace prefix"})
+				continue
+			}
+
+			// Multi-alias-per-line detection (after brace expansion).
+			if countAliasMarkers(tok) > 1 {
+				errs = append(errs, ParseError{Line: lineNum, Msg: "multiple aliases on a single line are not supported"})
+				continue
+			}
+
+			// 3. Extract directives.
+			basePattern, directives, hasDirectives := parseSearchDirectives(tok)
+
+			// 4. Classify and canonicalize per-type.
+			var node RuleNode
+			switch {
+			case strings.HasPrefix(basePattern, "@a:") || strings.HasPrefix(basePattern, "@alias:"):
+				body := strings.TrimPrefix(basePattern, "@alias:")
+				body = strings.TrimPrefix(body, "@a:")
+				body = strings.TrimSpace(body)
+				if body == "" {
+					errs = append(errs, ParseError{Line: lineNum, Msg: "empty alias target provided"})
+					continue
+				}
+				target, ruleset := classifyAlias(body)
+				// Apply trailing-slash → /** to the target's path portion.
+				if ruleset == "" {
+					target = canonicalizeAliasTarget(target)
+				}
+				node = &ImportNode{
+					Target:   target,
+					Ruleset:  ruleset,
+					LineNum:  lineNum,
+					RawText:  raw,
+					Excluded: excluded,
+				}
+			case strings.HasPrefix(basePattern, "@cmd:"):
+				cmd := strings.TrimSpace(strings.TrimPrefix(basePattern, "@cmd:"))
+				node = &CommandNode{Command: cmd, LineNum: lineNum, RawText: raw, Excluded: excluded}
+			default:
+				canonical := canonicalizePath(basePattern)
+				if hasGlobMeta(canonical) {
+					node = &GlobNode{Pattern: canonical, LineNum: lineNum, RawText: raw, Excluded: excluded}
+				} else {
+					node = &LiteralNode{ExpectedPath: canonical, LineNum: lineNum, RawText: raw, Excluded: excluded}
+				}
+			}
+
+			if hasDirectives {
+				node = &FilterNode{
+					Child:      node,
+					Directives: directives,
+					LineNum:    lineNum,
+					RawText:    raw,
+					Excluded:   excluded,
+				}
+			}
+			nodes = append(nodes, node)
+		}
+	}
+
+	return nodes, errs
+}
+
+// canonicalizeAliasTarget applies trailing-slash → /** to alias targets.
+func canonicalizeAliasTarget(t string) string {
+	if strings.HasSuffix(t, "/") && t != "/" {
+		return t + "**"
+	}
+	return t
+}
+
+// countAliasMarkers counts independent @a:/@alias: occurrences in a line.
+func countAliasMarkers(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '@' {
+			rest := s[i:]
+			if strings.HasPrefix(rest, "@a:") || strings.HasPrefix(rest, "@alias:") {
+				n++
+			}
+		}
+	}
+	return n
 }

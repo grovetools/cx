@@ -746,3 +746,62 @@ main.go
 		},
 	}
 }
+
+// AliasTrailingSlashScenario tests that an alias with a trailing slash expands recursively.
+func AliasTrailingSlashScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-alias-trailing-slash",
+		Description: "Tests that @a:proj/ expands to recursive contents (trailing slash → /**).",
+		Tags:        []string{"cx", "alias", "rules", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup ecosystem", func(ctx *harness.Context) error {
+				grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
+				groveConfig := fmt.Sprintf("groves:\n  test:\n    path: %s\n    enabled: true\n", grovesDir)
+				if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig); err != nil {
+					return err
+				}
+				libDir := filepath.Join(grovesDir, "lib-trail")
+				if err := fs.WriteString(filepath.Join(libDir, "a.go"), "package lib"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(libDir, "sub", "b.go"), "package sub"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(libDir, "grove.yml"), "name: lib-trail"); err != nil {
+					return err
+				}
+				if result := command.New("git", "init").Dir(libDir).Run(); result.Error != nil {
+					return fmt.Errorf("git init: %w", result.Error)
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), "name: main"); err != nil {
+					return err
+				}
+				return fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
+			}),
+			harness.NewStep("Write rules with alias trailing slash", func(ctx *harness.Context) error {
+				rules := "@a:lib-trail/\n"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run cx list and verify recursive match", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+				if !strings.Contains(result.Stdout, "a.go") {
+					return fmt.Errorf("expected a.go in output: %s", result.Stdout)
+				}
+				if !strings.Contains(result.Stdout, "b.go") {
+					return fmt.Errorf("expected sub/b.go (recursive) in output: %s", result.Stdout)
+				}
+				return nil
+			}),
+		},
+	}
+}
