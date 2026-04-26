@@ -302,7 +302,22 @@ func (m *Manager) ResolveRulesWritePath() string {
 
 // GetRulesFileFromJob parses the frontmatter of a markdown job file to find a `rules_file` key.
 // It returns the absolute resolved path to the rules file.
+//
+// If jobFilePath is a bare basename (no separator), it is resolved relative to
+// the active plan dir, falling back to the manager's workDir.
 func (m *Manager) GetRulesFileFromJob(jobFilePath string) (string, error) {
+	if jobFilePath != "" && !filepath.IsAbs(jobFilePath) && !strings.Contains(jobFilePath, string(filepath.Separator)) {
+		if planName := m.GetActivePlanName(); planName != "" {
+			if planDir := plan.ResolvePlanDir(m.workDir, planName); planDir != "" {
+				jobFilePath = filepath.Join(planDir, jobFilePath)
+			} else {
+				jobFilePath = filepath.Join(m.workDir, jobFilePath)
+			}
+		} else {
+			jobFilePath = filepath.Join(m.workDir, jobFilePath)
+		}
+	}
+
 	file, err := os.Open(jobFilePath)
 	if err != nil {
 		return "", err

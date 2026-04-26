@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -17,8 +18,6 @@ type LintIssue struct {
 	Message  string
 }
 
-// validDirectives contains all recognized directives for typo-checking.
-// Includes both long and short forms.
 var validDirectives = map[string]bool{
 	"@alias": true, "@a": true,
 	"@view": true, "@v": true,
@@ -27,11 +26,10 @@ var validDirectives = map[string]bool{
 	"@freeze-cache": true, "@no-expire": true,
 	"@disable-cache": true, "@expire-time": true,
 	"@include": true, "@changed": true, "@diff": true, "@tree": true,
-	"@find!": true, "@grep!": true, "@grep-i": true,
+	"@find!": true, "@grep!": true, "@grep-i": true, "@recent": true,
 }
 
-// directiveRegex finds tokens that look like directives (@ followed by word chars and hyphens).
-var directiveRegex = regexp.MustCompile(`@[a-zA-Z][a-zA-Z0-9-]*`)
+var directiveRegex = regexp.MustCompile(`@[a-zA-Z][a-zA-Z0-9-]*!?`)
 
 // LintRulesFile parses a specific rules file and returns a list of potential issues.
 func (m *Manager) LintRulesFile(rulesFilePath string) ([]LintIssue, error) {
@@ -57,82 +55,127 @@ func (m *Manager) lintRulesContent(content []byte) ([]LintIssue, error) {
 	}
 
 	var issues []LintIssue
+
+	// Directive-typo pass — operates on raw lines so unknown directives are
+	// caught even when ParseToAST cannot make sense of the line.
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	lineNum := 0
-
 	for scanner.Scan() {
 		lineNum++
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-
-		// Skip empty lines and comments
+		raw := scanner.Text()
+		trimmed := strings.TrimSpace(raw)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-
-		// 1. Directive Typos Check
-		matches := directiveRegex.FindAllString(trimmed, -1)
-		for _, match := range matches {
-			if !validDirectives[match] {
+		for _, tok := range directiveRegex.FindAllString(trimmed, -1) {
+			if !validDirectives[tok] {
 				issues = append(issues, LintIssue{
 					LineNum:  lineNum,
 					Line:     trimmed,
 					Severity: "Warning",
-					Message:  fmt.Sprintf("Unrecognized directive '%s' - possible typo", match),
-				})
-			}
-		}
-
-		parsedLine := ParseRulesLine(trimmed)
-
-		// Determine the file pattern for safety and zero-match checks
-		var basePattern string
-		switch parsedLine.Type {
-		case LineTypePattern:
-			basePattern = parsedLine.Parts["pattern"]
-		case LineTypeExclude:
-			basePattern = parsedLine.Parts["pattern"]
-		case LineTypeFindDirective, LineTypeGrepDirective:
-			if parsedLine.Parts["inline"] == "true" {
-				basePattern = parsedLine.Parts["pattern"]
-			}
-		}
-
-		// 2. Rule Safety & Breadth Check
-		if basePattern != "" {
-			if basePattern == "*" || basePattern == ".*" {
-				issues = append(issues, LintIssue{
-					LineNum:  lineNum,
-					Line:     trimmed,
-					Severity: "Warning",
-					Message:  "Pattern is overly broad and may match too many files",
-				})
-			}
-
-			if err := m.validateRuleSafety(basePattern); err != nil {
-				issues = append(issues, LintIssue{
-					LineNum:  lineNum,
-					Line:     trimmed,
-					Severity: "Warning",
-					Message:  err.Error(),
-				})
-			}
-		}
-
-		// 3. Zero Matches Check (inclusion patterns only)
-		// Skip excludes and aliases to keep lint fast
-		if parsedLine.Type == LineTypePattern {
-			files, err := m.resolveFilesFromPatterns([]string{basePattern})
-			if err == nil && len(files) == 0 {
-				issues = append(issues, LintIssue{
-					LineNum:  lineNum,
-					Line:     trimmed,
-					Severity: "Warning",
-					Message:  "Pattern matches 0 files in the workspace",
+					Message:  fmt.Sprintf("Unrecognized directive '%s' - possible typo", tok),
 				})
 			}
 		}
 	}
 
-	return issues, scanner.Err()
+	nodes, parseErrs := ParseToAST(content)
+
+	for _, pe := range parseErrs {
+		issues = append(issues, LintIssue{
+			LineNum:  pe.Line,
+			Severity: "Error",
+			Message:  pe.Msg,
+		})
+	}
+
+	for _, n := range nodes {
+		raw := strings.TrimSpace(n.Raw())
+		line := n.Line()
+
+		switch node := n.(type) {
+		case *GlobNode:
+			issues = appendPatternIssues(issues, m, node.Pattern, raw, line)
+		case *LiteralNode:
+			issues = appendPatternIssues(issues, m, node.ExpectedPath, raw, line)
+		case *FilterNode:
+			switch child := node.Child.(type) {
+			case *GlobNode:
+				issues = appendPatternIssues(issues, m, child.Pattern, raw, line)
+			case *LiteralNode:
+				issues = appendPatternIssues(issues, m, child.ExpectedPath, raw, line)
+			}
+		}
+	}
+
+	return issues, nil
+}
+
+func appendPatternIssues(issues []LintIssue, m *Manager, pattern, raw string, line int) []LintIssue {
+	if pattern == "" {
+		return issues
+	}
+
+	if containsTraversalEscape(m.workDir, pattern) {
+		return append(issues, LintIssue{
+			LineNum:  line,
+			Line:     raw,
+			Severity: "Error",
+			Message:  fmt.Sprintf("Pattern '%s' attempts to traverse outside the workspace", pattern),
+		})
+	}
+
+	if pattern == "*" || pattern == ".*" {
+		issues = append(issues, LintIssue{
+			LineNum:  line,
+			Line:     raw,
+			Severity: "Warning",
+			Message:  "Pattern is overly broad and may match too many files",
+		})
+	}
+
+	if err := m.validateRuleSafety(pattern); err != nil {
+		issues = append(issues, LintIssue{
+			LineNum:  line,
+			Line:     raw,
+			Severity: "Warning",
+			Message:  err.Error(),
+		})
+	}
+
+	if strings.HasSuffix(pattern, ".rules") {
+		issues = append(issues, LintIssue{
+			LineNum:  line,
+			Line:     raw,
+			Severity: "Warning",
+			Message:  "this looks like a rules file path; did you mean @a:<workspace>::<name> to import its rules?",
+		})
+	}
+
+	files, err := m.resolveFilesFromPatterns([]string{pattern})
+	if err == nil && len(files) == 0 {
+		issues = append(issues, LintIssue{
+			LineNum:  line,
+			Line:     raw,
+			Severity: "Warning",
+			Message:  "Pattern matches 0 files in the workspace",
+		})
+	}
+
+	return issues
+}
+
+func containsTraversalEscape(workDir, pattern string) bool {
+	if !strings.Contains(pattern, "../") {
+		return false
+	}
+	if workDir == "" {
+		return strings.Contains(pattern, "../../")
+	}
+	abs := filepath.Clean(filepath.Join(workDir, pattern))
+	rel, err := filepath.Rel(workDir, abs)
+	if err != nil {
+		return true
+	}
+	return strings.HasPrefix(rel, "..")
 }

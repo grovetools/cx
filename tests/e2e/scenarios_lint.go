@@ -200,6 +200,43 @@ func LintMultipleIssuesScenario() *harness.Scenario {
 	}
 }
 
+// LintDangerousTraversalScenario asserts that path traversal escaping the workspace
+// is reported as an Error and causes a non-zero exit code.
+func LintDangerousTraversalScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-lint-dangerous-traversal",
+		Description: "Tests that '../../etc/passwd' is flagged as an Error and rc=1.",
+		Tags:        []string{"cx", "lint"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup test project", func(ctx *harness.Context) error {
+				return fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
+			}),
+			harness.NewStep("Write traversal pattern to rules", func(ctx *harness.Context) error {
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), "../../etc/passwd\n")
+			}),
+			harness.NewStep("Run 'cx lint' and verify rc=1 + Error", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := command.New(cxBinary, "lint").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error == nil {
+					return fmt.Errorf("expected non-zero exit, got rc=0; stdout=%s", result.Stdout)
+				}
+				if !strings.Contains(result.Stdout, "[Error]") {
+					return fmt.Errorf("expected [Error] in output, got: %s", result.Stdout)
+				}
+				if !strings.Contains(result.Stdout, "traverse outside the workspace") {
+					return fmt.Errorf("expected traversal message, got: %s", result.Stdout)
+				}
+				return nil
+			}),
+		},
+	}
+}
+
 // LintNoRulesScenario tests that linting gracefully handles absence of a rules file.
 func LintNoRulesScenario() *harness.Scenario {
 	return &harness.Scenario{

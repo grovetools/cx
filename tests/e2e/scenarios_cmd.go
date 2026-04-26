@@ -184,6 +184,81 @@ func FromCmdScenario() *harness.Scenario {
 	}
 }
 
+// FromCmdActivePlanScenario verifies that `cx from-cmd` writes to the active
+// plan-scoped rules file, not the .grove/rules fallback.
+func FromCmdActivePlanScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-from-cmd-active-plan",
+		Description: "from-cmd respects the active plan and writes to plans/<plan>/rules/default.rules",
+		Tags:        []string{"cx", "from-cmd", "plan"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup workspace + plan + branch", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), "name: testws\n"); err != nil {
+					return err
+				}
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "file.txt"), "hello\n"); err != nil {
+					return err
+				}
+				// Configure a global grove.yml with a notebook definition that uses
+				// the test root as a centralized notebook so the plan dir is predictable.
+				groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
+				cfg := fmt.Sprintf("notebooks:\n  definitions:\n    nb:\n      root_dir: %s\n  rules:\n    default: nb\n", filepath.Join(ctx.RootDir, "nb"))
+				if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), cfg); err != nil {
+					return err
+				}
+				planDir := filepath.Join(ctx.RootDir, "nb", "workspaces", "testws", "plans", "test-plan", "rules")
+				if err := os.MkdirAll(planDir, 0o755); err != nil {
+					return err
+				}
+				repo := command.New("git", "init", "-b", "test-plan").Dir(ctx.RootDir).Run()
+				if repo.Error != nil {
+					return fmt.Errorf("git init: %w", repo.Error)
+				}
+				if r := command.New("git", "config", "user.email", "t@t.t").Dir(ctx.RootDir).Run(); r.Error != nil {
+					return r.Error
+				}
+				if r := command.New("git", "config", "user.name", "t").Dir(ctx.RootDir).Run(); r.Error != nil {
+					return r.Error
+				}
+				if r := command.New("git", "add", "-A").Dir(ctx.RootDir).Run(); r.Error != nil {
+					return r.Error
+				}
+				if r := command.New("git", "commit", "-m", "init").Dir(ctx.RootDir).Run(); r.Error != nil {
+					return r.Error
+				}
+				return nil
+			}),
+			harness.NewStep("Run 'cx from-cmd' and verify plan-scoped write", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := ctx.Command(cxBinary, "from-cmd", "echo file.txt").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return fmt.Errorf("from-cmd failed: %w; stderr=%s; stdout=%s", result.Error, result.Stderr, result.Stdout)
+				}
+
+				planRules := filepath.Join(ctx.RootDir, "nb", "workspaces", "testws", "plans", "test-plan", "rules", "default.rules")
+				content, err := fs.ReadString(planRules)
+				if err != nil {
+					return fmt.Errorf("expected plan-scoped rules file at %s: %w; from-cmd stdout=%s", planRules, err, result.Stdout)
+				}
+				if !strings.Contains(content, "file.txt") {
+					return fmt.Errorf("expected file.txt in plan rules, got: %s", content)
+				}
+
+				fallback := filepath.Join(ctx.RootDir, ".grove", "rules")
+				if _, err := os.Stat(fallback); err == nil {
+					return fmt.Errorf("fallback %s should not exist when a plan is active", fallback)
+				}
+				return nil
+			}),
+		},
+	}
+}
+
 // FromCmdPipelineScenario tests complex pipeline commands with cx from-cmd.
 func FromCmdPipelineScenario() *harness.Scenario {
 	return &harness.Scenario{

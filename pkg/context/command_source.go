@@ -76,14 +76,7 @@ func (m *Manager) UpdateFromCmd(command string) error {
 		return fmt.Errorf("no valid files found in command output")
 	}
 
-	// Ensure .grove directory exists
-	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0o755); err != nil {
-		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
-	}
-
-	// Write to .grove/rules
-	rulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	rulesPath := m.ResolveRulesWritePath()
 	if err := m.WriteFilesList(rulesPath, validFiles); err != nil {
 		return err
 	}

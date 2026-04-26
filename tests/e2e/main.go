@@ -40,6 +40,7 @@ func main() {
 		AliasEcosystemWorktreeScenario(),
 		AliasResolutionFromEcosystemWorktreeRootScenario(),
 		AliasTrailingSlashScenario(),
+		AliasListJSONScenario(),
 
 		// Hybrid Context Scenarios
 		DualContextWorkflowScenario(),
@@ -85,6 +86,7 @@ func main() {
 
 		// Command-based Context Scenarios
 		FromCmdScenario(),
+		FromCmdActivePlanScenario(),
 		FromCmdPipelineScenario(),
 		CommandExpressionInRulesScenario(),
 		CommandExpressionAbsolutePathsScenario(),
@@ -203,6 +205,7 @@ func main() {
 		LintOverlyBroadScenario(),
 		LintMultipleIssuesScenario(),
 		LintNoRulesScenario(),
+		LintDangerousTraversalScenario(),
 
 		// Composite Ruleset Scenarios
 		CompositeRulesetBasicScenario(),

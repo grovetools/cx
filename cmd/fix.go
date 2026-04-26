@@ -1,31 +1,20 @@
 package cmd
 
 import (
-	"github.com/grovetools/core/logging"
-	"github.com/grovetools/cx/pkg/context"
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
-var fixPrettyLog = logging.NewPrettyLogger()
-
 func NewFixCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "fix",
-		Short: "Automatically fix context validation issues",
-		Long:  `Remove missing files and duplicates from the context file list.`,
+		Use:        "fix",
+		Short:      "Removed; context is now resolved dynamically from rules",
+		Hidden:     true,
+		Deprecated: "edit rules files directly; context is now resolved dynamically from rules",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mgr := context.NewManager(GetWorkDir())
-
-			fixPrettyLog.InfoPretty("Fixing context validation issues...")
-
-			if err := mgr.FixContext(); err != nil {
-				return err
-			}
-
-			fixPrettyLog.Success("Context fixed successfully")
-			return nil
+			return fmt.Errorf("cx fix has been removed; edit rules files directly")
 		},
 	}
-
 	return cmd
 }

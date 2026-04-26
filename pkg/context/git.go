@@ -84,14 +84,7 @@ func (m *Manager) UpdateFromGit(opts GitOptions) error {
 		return fmt.Errorf("no existing files found matching git criteria")
 	}
 
-	// Ensure .grove directory exists
-	groveDir := filepath.Join(m.workDir, GroveDir)
-	if err := os.MkdirAll(groveDir, 0o755); err != nil {
-		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
-	}
-
-	// Write to .grove/rules as explicit file paths
-	rulesPath := filepath.Join(m.workDir, ActiveRulesFile)
+	rulesPath := m.ResolveRulesWritePath()
 
 	// Check if file exists and prompt if neither --force nor --append
 	if _, err := os.Stat(rulesPath); err == nil {

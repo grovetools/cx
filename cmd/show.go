@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +29,8 @@ func NewShowCmd() *cobra.Command {
 				if err := mgr.GenerateContextFromRulesFile(targetRulesFile, true); err != nil {
 					return err
 				}
+			} else {
+				warnIfRulesStale(mgr)
 			}
 			return mgr.ShowContext()
 		},
@@ -34,4 +39,20 @@ func NewShowCmd() *cobra.Command {
 	AddRulesFileFlags(cmd, &jobFile, &rulesFile)
 
 	return cmd
+}
+
+func warnIfRulesStale(mgr *context.Manager) {
+	rulesPath := mgr.ResolveRulesPath()
+	cachedPath := mgr.ResolveCachedContextPath()
+	rulesStat, err := os.Stat(rulesPath)
+	if err != nil {
+		return
+	}
+	cachedStat, err := os.Stat(cachedPath)
+	if err != nil {
+		return
+	}
+	if rulesStat.ModTime().After(cachedStat.ModTime()) {
+		fmt.Fprintln(os.Stderr, "⚠ rules edited since last generate — run `cx generate` to refresh")
+	}
 }
