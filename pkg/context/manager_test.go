@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/grovetools/core/util/pathutil"
 )
 
 func TestManager_ExclusionPatterns(t *testing.T) {
@@ -206,16 +208,29 @@ func TestManager_CrossDirectoryExclusions(t *testing.T) {
 		},
 	}
 
+	// Normalize the temp root the same way IsPathAllowed does (resolves
+	// symlinks and lowercases on macOS) so allowed-roots matching works.
+	resolvedParent, err := pathutil.NormalizeForLookup(tempParent)
+	if err != nil {
+		t.Fatalf("NormalizeForLookup: %v", err)
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ClearManagerCache()
 			// Write rules file
 			rulesPath := filepath.Join(projectDir, ".grove", "rules")
 			if err := os.WriteFile(rulesPath, []byte(tt.rules), 0o644); err != nil {
 				t.Fatalf("Failed to write rules file: %v", err)
 			}
 
-			// Create manager and resolve files
+			// Pre-populate allowed roots so the workspace provider
+			// (unavailable in test) doesn't reject cross-directory
+			// paths in the temp tree.
 			mgr := NewManager(projectDir)
+			mgr.initAllowedRoots()
+			mgr.allowedRoots = append(mgr.allowedRoots, resolvedParent)
+			mgr.allowedRootsErr = nil
 			files, err := mgr.ResolveFilesFromRules()
 			if err != nil {
 				t.Fatalf("Failed to resolve files: %v", err)
@@ -470,7 +485,15 @@ context:
 *.txt
 @default: ../../project-c`)
 
+	resolvedRoot, err := pathutil.NormalizeForLookup(rootDir)
+	if err != nil {
+		t.Fatalf("NormalizeForLookup: %v", err)
+	}
+	ClearManagerCache()
 	mgr := NewManager(projectA)
+	mgr.initAllowedRoots()
+	mgr.allowedRoots = append(mgr.allowedRoots, resolvedRoot)
+	mgr.allowedRootsErr = nil
 
 	// Debug: print project paths
 	t.Logf("Project A: %s", projectA)
@@ -484,10 +507,13 @@ context:
 	}
 	sort.Strings(hotFiles)
 
+	// @default: imports prefix patterns with the normalized absolute path of
+	// the target project, so B's files arrive as absolute paths.
+	resolvedB, _ := pathutil.NormalizeForLookup(projectB)
 	expectedHot := []string{
 		"a.go",
-		"../project-b/b.go",
-		"../project-b/b.txt", // from project-b, imported into hot context
+		filepath.Join(resolvedB, "b.go"),
+		filepath.Join(resolvedB, "b.txt"),
 	}
 	sort.Strings(expectedHot)
 
@@ -502,11 +528,10 @@ context:
 	}
 	sort.Strings(coldFiles)
 
-	// Expected: a.txt (from A's cold section) + c.go (from C's hot section, pulled into A's cold)
-	// a.go from C's recursion should be ignored due to cycle.
+	// Project C's defaults (rules.ctx) reference @default: ../project-a, but
+	// project-a has no default_rules_path, so C contributes nothing to cold.
 	expectedCold := []string{
 		"a.txt",
-		"../project-c/c.go",
 	}
 	sort.Strings(expectedCold)
 

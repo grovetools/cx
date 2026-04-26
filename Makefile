@@ -28,7 +28,7 @@ LDFLAGS = -ldflags="\
 -X '$(VERSION_PKG).Branch=$(GIT_BRANCH)' \
 -X '$(VERSION_PKG).BuildDate=$(BUILD_DATE)'"
 
-.PHONY: all build test clean fmt fmt-check vet lint run check generate-docs dev build-all help setup
+.PHONY: all build test clean fmt fmt-check vet lint run check check-all generate-docs dev build-all help setup
 
 all: build
 
@@ -138,6 +138,9 @@ test-e2e: build
 	@echo "Running E2E tests..."
 	@tend run $(ARGS)
 
+# Run all checks including E2E tests
+check-all: check test-e2e
+
 # Show available targets
 help:
 	@echo "Available targets:"
@@ -149,7 +152,8 @@ help:
 	@echo "  make vet         - Run go vet"
 	@echo "  make lint        - Run linter"
 	@echo "  make run ARGS=.. - Run the CLI with arguments"
-	@echo "  make check       - Run all checks"
+	@echo "  make check       - Run all checks (unit/lint/vet/fmt)"
+	@echo "  make check-all   - Run all checks + E2E tests"
 	@echo "  make dev         - Build with race detector"
 	@echo "  make build-all   - Build for multiple platforms"
 	@echo "  make test-e2e ARGS=...- Run E2E tests (e.g., ARGS=\"-i cx-basic-generation\")"

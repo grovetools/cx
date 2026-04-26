@@ -2,7 +2,6 @@ package context
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -36,12 +35,13 @@ func TestManager_DiffContext(t *testing.T) {
 		t.Fatalf("Failed to diff context: %v", err)
 	}
 
-	// Check results
-	if len(diff.Added) != 1 || diff.Added[0].Path != filepath.Join(tempDir, "fileC.txt") {
+	// Check results — ResolveFilesFromRules returns relative paths, so
+	// diff entries carry relative paths (not absolute).
+	if len(diff.Added) != 1 || diff.Added[0].Path != "fileC.txt" {
 		t.Errorf("Expected fileC.txt to be added, got: %v", diff.Added)
 	}
 
-	if len(diff.Removed) != 1 || diff.Removed[0].Path != filepath.Join(tempDir, "fileA.txt") {
+	if len(diff.Removed) != 1 || diff.Removed[0].Path != "fileA.txt" {
 		t.Errorf("Expected fileA.txt to be removed, got: %v", diff.Removed)
 	}
 }

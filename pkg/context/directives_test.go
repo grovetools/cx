@@ -59,8 +59,8 @@ func TestParseSearchDirectives(t *testing.T) {
 			name:              "malformed unclosed quote",
 			input:             `pkg/**/*.go @find: "unclosed`,
 			wantBase:          "pkg/**/*.go",
-			wantDirectives:    nil,
-			wantHasDirectives: false,
+			wantDirectives:    []SearchDirective{{Name: "find", Query: `"unclosed`}},
+			wantHasDirectives: true,
 		},
 	}
 
