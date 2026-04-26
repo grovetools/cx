@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const propertyIterations = 50
+const propertyIterations = 500
 
 type lineKind int
 

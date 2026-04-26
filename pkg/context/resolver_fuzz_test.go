@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const fuzzIterations = 60
+const fuzzIterations = 500
 
 func randFakeFS(rng *rand.Rand) map[string]string {
 	fileNames := []string{"a.go", "b.go", "c.txt", "main.go", "helper.go", "x_test.go", "doc.md", "README.md"}
@@ -46,6 +46,35 @@ func randAST(rng *rand.Rand) []RuleNode {
 				LineNum:    line,
 				RawText:    p,
 				Excluded:   excluded,
+			}
+			if rng.Intn(20) == 0 {
+				node = &FilterNode{
+					Child:      node,
+					Directives: []SearchDirective{{Name: "find", Query: ".go"}},
+					LineNum:    line,
+					RawText:    p,
+					Excluded:   excluded,
+				}
+			}
+		}
+		switch rng.Intn(20) {
+		case 0:
+			targets := []string{"@a:eco:proj", "@a:foo", "@alias:eco:proj:wt/main.go"}
+			rulesets := []string{"", "dev", "ruleset"}
+			node = &ImportNode{
+				Target:   targets[rng.Intn(len(targets))],
+				Ruleset:  rulesets[rng.Intn(len(rulesets))],
+				LineNum:  line,
+				RawText:  p,
+				Excluded: excluded,
+			}
+		case 1:
+			cmds := []string{"ls", "find . -name '*.go'", "echo hello"}
+			node = &CommandNode{
+				Command:  cmds[rng.Intn(len(cmds))],
+				LineNum:  line,
+				RawText:  p,
+				Excluded: excluded,
 			}
 		}
 		nodes = append(nodes, node)
