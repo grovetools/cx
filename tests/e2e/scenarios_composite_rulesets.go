@@ -326,3 +326,113 @@ func CompositeRulesetSearchDirectiveScenario() *harness.Scenario {
 		},
 	}
 }
+
+// CompositeRulesetNotebookPresetScenario tests that @include: finds presets
+// from the notebook presets directory, not just .cx/.
+func CompositeRulesetNotebookPresetScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-composite-ruleset-notebook-preset",
+		Description: "Tests @include: resolves presets from notebook presets directory regardless of workDir.",
+		Tags:        []string{"cx", "composite", "include", "notebook"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup project with notebook presets", func(ctx *harness.Context) error {
+				nbDir := filepath.Join(ctx.RootDir, "mock-notebook")
+				wsName := filepath.Base(ctx.RootDir)
+
+				groveYml := fmt.Sprintf(
+					"notebooks:\n  definitions:\n    test-nb:\n      root_dir: %s\n  rules:\n    default: test-nb\ncontext: {}\n",
+					nbDir,
+				)
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), groveYml); err != nil {
+					return err
+				}
+
+				for _, f := range []struct{ name, content string }{
+					{"main.go", "package main"},
+					{"README.md", "# Readme"},
+				} {
+					if err := fs.WriteString(filepath.Join(ctx.RootDir, f.name), f.content); err != nil {
+						return err
+					}
+				}
+
+				presetsDir := filepath.Join(nbDir, "workspaces", wsName, "context", "presets")
+				if err := fs.WriteString(filepath.Join(presetsDir, "nb-src.rules"), "*.go"); err != nil {
+					return err
+				}
+
+				rulesContent := "@include: nb-src"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rulesContent)
+			}),
+			harness.NewStep("Run cx list and verify notebook preset resolved", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				return ctx.Verify(func(v *verify.Collector) {
+					v.Contains("main.go included via notebook preset", result.Stdout, "main.go")
+					v.NotContains("README.md not included", result.Stdout, "README.md")
+				})
+			}),
+		},
+	}
+}
+
+// CompositeRulesetCrossWorkspaceScenario tests that @include: from a rules
+// file in a non-project directory still resolves presets via the workspace context.
+func CompositeRulesetCrossWorkspaceScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-composite-ruleset-cross-workspace",
+		Description: "Tests @include: resolves presets from workspace context even when rules file is in a non-project directory.",
+		Tags:        []string{"cx", "composite", "include", "cross-workspace"},
+		Steps: []harness.Step{
+			harness.NewStep("Setup project with preset and external rules file", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), "context: {}"); err != nil {
+					return err
+				}
+
+				for _, f := range []struct{ name, content string }{
+					{"main.go", "package main"},
+					{"lib.go", "package lib"},
+				} {
+					if err := fs.WriteString(filepath.Join(ctx.RootDir, f.name), f.content); err != nil {
+						return err
+					}
+				}
+
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, ".cx", "source.rules"), "*.go"); err != nil {
+					return err
+				}
+
+				rulesContent := "@include: source"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rulesContent)
+			}),
+			harness.NewStep("Run cx list and verify preset resolved from workspace context", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+
+				cmd := command.New(cxBinary, "list").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.Error != nil {
+					return result.Error
+				}
+
+				return ctx.Verify(func(v *verify.Collector) {
+					v.Contains("main.go included via workspace preset", result.Stdout, "main.go")
+					v.Contains("lib.go included via workspace preset", result.Stdout, "lib.go")
+				})
+			}),
+		},
+	}
+}

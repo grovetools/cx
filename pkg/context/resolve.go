@@ -102,20 +102,11 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		viewPaths = append(viewPaths, includedView...)
 	}
 
-	// Set EffectiveLineNum for local rules
 	for i := range localHot {
-		if importLineNum > 0 {
-			localHot[i].EffectiveLineNum = importLineNum
-		} else {
-			localHot[i].EffectiveLineNum = localHot[i].LineNum
-		}
+		localHot[i].EffectiveLineNum = localHot[i].LineNum
 	}
 	for i := range localCold {
-		if importLineNum > 0 {
-			localCold[i].EffectiveLineNum = importLineNum
-		} else {
-			localCold[i].EffectiveLineNum = localCold[i].LineNum
-		}
+		localCold[i].EffectiveLineNum = localCold[i].LineNum
 	}
 
 	hotRules = append(hotRules, localHot...)
@@ -167,7 +158,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			// Find the ruleset file within the cloned repository's .cx directories
 			// Use localPath (the worktree) instead of barePath because the ruleset files
 			// are in the checked-out working tree, not the bare repository
-			rulesFilePath, err := FindRulesetFile(localPath, rulesetName)
+			rulesFilePath, err := FindRulesetFileStandalone(localPath, rulesetName)
 			if err != nil {
 				// Special case: if 'default' ruleset is requested but doesn't exist, treat it as "include all"
 				if rulesetName == "default" {
@@ -354,7 +345,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 			// Find the ruleset file within the cloned repository's .cx directories
 			// Use localPath (the worktree) instead of barePath because the ruleset files
 			// are in the checked-out working tree, not the bare repository
-			rulesFilePath, err := FindRulesetFile(localPath, rulesetName)
+			rulesFilePath, err := FindRulesetFileStandalone(localPath, rulesetName)
 			if err != nil {
 				if rulesetName == "default" {
 					coldRules = append(coldRules, RuleInfo{
@@ -691,6 +682,18 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		treePaths = append(treePaths, nestedTree...)
 	}
 
+	// When called as a nested import, all rules must be attributed to the
+	// parent import's line number so the top-level AST resolver sees a
+	// consistent EffectiveLineNum for the entire import.
+	if importLineNum > 0 {
+		for i := range hotRules {
+			hotRules[i].EffectiveLineNum = importLineNum
+		}
+		for i := range coldRules {
+			coldRules[i].EffectiveLineNum = importLineNum
+		}
+	}
+
 	return hotRules, coldRules, viewPaths, treePaths, nil
 }
 
@@ -707,13 +710,9 @@ func (m *Manager) resolveInclude(includeInfo ImportInfo, rulesDir string, visite
 			rulesFilePath = filepath.Join(rulesDir, rulesFilePath)
 		}
 	} else {
-		// Treat as a named preset — resolve via FindRulesetFile
-		projectRoot := m.workDir
-		configPath, cfgErr := config.FindConfigFile(rulesDir)
-		if cfgErr == nil {
-			projectRoot = filepath.Dir(configPath)
-		}
-		resolvedPath, findErr := m.FindRulesetFile(projectRoot, includeName)
+		// Treat as a named preset — resolve via FindRulesetFile using the
+		// logical workspace context, not the physical rules file location.
+		resolvedPath, findErr := m.FindRulesetFile(m.rulesBaseDir, includeName)
 		if findErr != nil {
 			return nil, nil, nil, fmt.Errorf("could not find included ruleset '%s': %w", includeName, findErr)
 		}

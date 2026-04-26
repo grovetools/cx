@@ -130,6 +130,65 @@ func TestResolveAST_TrailingSlashDirAutoStarStar(t *testing.T) {
 	}
 }
 
+func TestResolveAST_ImportedRulesNotSuppressedByUnrelatedExclusion(t *testing.T) {
+	ctx := newMockCtx(map[string]string{
+		"main.go":      "package main",
+		"main_test.go": "package main",
+		"go.mod":       "module example",
+		"go.sum":       "h1:abc123",
+	})
+
+	localGo := &GlobNode{Pattern: "*.go", LineNum: 1, RawText: "*.go"}
+	importedMod := &LiteralNode{ExpectedPath: "go.mod", LineNum: 5, RawText: "go.mod"}
+	importedSum := &LiteralNode{ExpectedPath: "go.sum", LineNum: 5, RawText: "go.sum"}
+	excludeTest := &GlobNode{Pattern: "*_test.go", LineNum: 10, RawText: "!*_test.go", Excluded: true}
+
+	attrs, excl, _, _ := ResolveAST([]RuleNode{localGo, importedMod, importedSum, excludeTest}, ctx)
+
+	goFiles := attrs[1]
+	sort.Strings(goFiles)
+	if len(goFiles) != 1 || !strings.HasSuffix(goFiles[0], "main.go") {
+		t.Fatalf("expected main.go on line 1, got: %v", goFiles)
+	}
+
+	importedFiles := attrs[5]
+	sort.Strings(importedFiles)
+	if len(importedFiles) != 2 {
+		t.Fatalf("expected go.mod and go.sum attributed to line 5, got: %v", importedFiles)
+	}
+	if !strings.HasSuffix(importedFiles[0], "go.mod") || !strings.HasSuffix(importedFiles[1], "go.sum") {
+		t.Fatalf("expected go.mod and go.sum, got: %v", importedFiles)
+	}
+
+	if len(excl[10]) != 1 || !strings.HasSuffix(excl[10][0], "main_test.go") {
+		t.Fatalf("expected main_test.go excluded at line 10, got: %v", excl[10])
+	}
+}
+
+func TestResolveAST_ImportedAtLineZeroBug(t *testing.T) {
+	ctx := newMockCtx(map[string]string{
+		"main.go":      "package main",
+		"main_test.go": "package main",
+		"go.mod":       "module example",
+	})
+
+	importedMod := &LiteralNode{ExpectedPath: "go.mod", LineNum: 0, RawText: "go.mod"}
+	localGo := &GlobNode{Pattern: "*.go", LineNum: 1, RawText: "*.go"}
+	excludeTest := &GlobNode{Pattern: "*_test.go", LineNum: 10, RawText: "!*_test.go", Excluded: true}
+
+	attrs, excl, _, _ := ResolveAST([]RuleNode{importedMod, localGo, excludeTest}, ctx)
+
+	if len(attrs[0]) != 1 || !strings.HasSuffix(attrs[0][0], "go.mod") {
+		t.Fatalf("go.mod at LineNum=0 should still be included, got attrs: %v", attrs)
+	}
+	if len(attrs[1]) != 1 || !strings.HasSuffix(attrs[1][0], "main.go") {
+		t.Fatalf("main.go should be included at line 1, got: %v", attrs[1])
+	}
+	if len(excl[10]) != 1 || !strings.HasSuffix(excl[10][0], "main_test.go") {
+		t.Fatalf("main_test.go should be excluded at line 10, got: %v", excl[10])
+	}
+}
+
 func TestResolveAST_LastWriteWinsExclusion(t *testing.T) {
 	ctx := newMockCtx(map[string]string{
 		"a.go":      "package a",

@@ -218,6 +218,8 @@ func main() {
 		CompositeRulesetPathAndNestedScenario(),
 		CompositeRulesetCircularScenario(),
 		CompositeRulesetSearchDirectiveScenario(),
+		CompositeRulesetNotebookPresetScenario(),
+		CompositeRulesetCrossWorkspaceScenario(),
 	}
 
 	// Setup signal handling for graceful shutdown.

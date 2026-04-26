@@ -1519,12 +1519,29 @@ func (m *Manager) FindRulesetFile(projectPath, rulesetName string) (string, erro
 		return rulesFilePath, nil
 	}
 
+	// 4. Notebook-global fallback: check the manager's own workspace presets
+	// when the target project is different (cross-workspace preset sharing).
+	if selfNode, err := workspace.GetProjectByPath(m.rulesBaseDir); err == nil {
+		if workDir, err := m.locator.GetContextPresetsWorkDir(selfNode); err == nil {
+			nbWorkPath := filepath.Join(workDir, rulesetName+RulesExt)
+			if _, statErr := os.Stat(nbWorkPath); statErr == nil {
+				return nbWorkPath, nil
+			}
+		}
+		if presetsDir, err := m.locator.GetContextPresetsDir(selfNode); err == nil {
+			nbPresetsPath := filepath.Join(presetsDir, rulesetName+RulesExt)
+			if _, statErr := os.Stat(nbPresetsPath); statErr == nil {
+				return nbPresetsPath, nil
+			}
+		}
+	}
+
 	return "", fmt.Errorf("ruleset '%s' not found in notebook presets or %s/ or %s/", rulesetName, RulesWorkDir, RulesDir)
 }
 
 // FindRulesetFileStandalone searches for a ruleset file using only legacy .cx.work/ and .cx/ directories.
 // This is used for external project imports where notebook context is not available.
-func FindRulesetFile(projectPath, rulesetName string) (string, error) {
+func FindRulesetFileStandalone(projectPath, rulesetName string) (string, error) {
 	// Check .cx.work/ directory first for local overrides
 	rulesFilePath := filepath.Join(projectPath, RulesWorkDir, rulesetName+RulesExt)
 	if _, err := os.Stat(rulesFilePath); err == nil {
