@@ -101,7 +101,7 @@ func TestResolveAST_FilterNodeWrappingGlob(t *testing.T) {
 		RawText:    "pkg/**/*.go @grep: \"Foo\"",
 	}
 
-	attrs, _, _ := ResolveAST([]RuleNode{node}, ctx)
+	attrs, _, _, _ := ResolveAST([]RuleNode{node}, ctx)
 	files := attrs[1]
 	sort.Strings(files)
 	if len(files) != 1 || !strings.HasSuffix(files[0], "foo.go") {
@@ -117,7 +117,7 @@ func TestResolveAST_TrailingSlashDirAutoStarStar(t *testing.T) {
 	})
 
 	node := &GlobNode{Pattern: "src/", LineNum: 1, RawText: "src/"}
-	attrs, _, _ := ResolveAST([]RuleNode{node}, ctx)
+	attrs, _, _, _ := ResolveAST([]RuleNode{node}, ctx)
 	files := attrs[1]
 	sort.Strings(files)
 	if len(files) != 2 {
@@ -139,7 +139,7 @@ func TestResolveAST_LastWriteWinsExclusion(t *testing.T) {
 	include := &GlobNode{Pattern: "*.go", LineNum: 1, RawText: "*.go"}
 	exclude := &GlobNode{Pattern: "*_test.go", LineNum: 2, RawText: "!*_test.go", Excluded: true}
 
-	attrs, excl, _ := ResolveAST([]RuleNode{include, exclude}, ctx)
+	attrs, excl, _, _ := ResolveAST([]RuleNode{include, exclude}, ctx)
 	if len(attrs[1]) != 1 || !strings.HasSuffix(attrs[1][0], "a.go") {
 		t.Fatalf("expected only a.go on line 1, got: %v", attrs[1])
 	}

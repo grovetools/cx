@@ -693,10 +693,10 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 		return results, nil
 	}
 
-	// Surface ParseError warnings from the pure parser (Phase 2 shim).
+	// Surface ParseError issues from the pure parser (Phase 2 shim).
 	if _, parseErrs := ParseToAST(rulesContent); len(parseErrs) > 0 {
 		for _, e := range parseErrs {
-			fmt.Fprintf(os.Stderr, "Warning: line %d: %s\n", e.Line, e.Msg)
+			fmt.Fprintf(os.Stderr, "Error: line %d: %s\n", e.Line, e.Msg)
 		}
 	}
 

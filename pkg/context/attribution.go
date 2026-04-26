@@ -48,27 +48,36 @@ type FilteredFileInfo struct {
 // FilteredResult maps a line number to files that matched the base pattern but were filtered by directive.
 type FilteredResult map[int][]FilteredFileInfo
 
+// ExcludedByInfo tracks a file that was excluded by a later !pattern.
+type ExcludedByInfo struct {
+	File             string `json:"file"`
+	ExcludingLineNum int    `json:"excludingLineNum"`
+}
+
+// ExcludedByResult maps an inclusion line number to files that were excluded by a later !pattern.
+type ExcludedByResult map[int][]ExcludedByInfo
+
 // ResolveFilesWithAttribution walks the filesystem once and attributes each included file
 // to the rule that was responsible for its inclusion. It also tracks exclusions and filtered matches.
-func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionResult, []RuleInfo, ExclusionResult, FilteredResult, error) {
+func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionResult, []RuleInfo, ExclusionResult, FilteredResult, ExcludedByResult, error) {
 	defer profiling.Start("context.ResolveFilesWithAttribution").Stop()
 	// 1. Write rulesContent to a temporary file so we can use expandAllRules
 	tmpFile, err := os.CreateTemp("", "grove-rules-*.rules")
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to create temp rules file: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create temp rules file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	if _, err := tmpFile.WriteString(rulesContent); err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to write temp rules file: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to write temp rules file: %w", err)
 	}
 	tmpFile.Close()
 
 	// 2. Use expandAllRules to get all rules with proper import handling
 	hotRules, coldRules, _, _, err := m.expandAllRules(tmpFile.Name(), make(map[string]bool), 0)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to expand rules: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to expand rules: %w", err)
 	}
 
 	// 3. Combine hot and cold rules into a single list (for attribution purposes, we treat them the same)
@@ -133,9 +142,10 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 	var result AttributionResult
 	var exclusions ExclusionResult
 	var filtered FilteredResult
+	var excludedBy ExcludedByResult
 
 	if !hasExclusion {
-		result, exclusions, filtered = ResolveAST(nodes, ctx)
+		result, exclusions, filtered, excludedBy = ResolveAST(nodes, ctx)
 	} else {
 		// Two-phase: resolve inclusions first to discover files across all
 		// walk roots, then re-evaluate all rules so exclusions see the full set.
@@ -145,16 +155,16 @@ func (m *Manager) ResolveFilesWithAttribution(rulesContent string) (AttributionR
 				inclNodes = append(inclNodes, n)
 			}
 		}
-		inclAttr, _, _ := ResolveAST(inclNodes, ctx)
+		inclAttr, _, _, _ := ResolveAST(inclNodes, ctx)
 		var discovered []string
 		for _, paths := range inclAttr {
 			discovered = append(discovered, paths...)
 		}
 		primedCtx := newProdResolutionContext(m).withFileSet(discovered)
-		result, exclusions, filtered = ResolveAST(nodes, primedCtx)
+		result, exclusions, filtered, excludedBy = ResolveAST(nodes, primedCtx)
 	}
 
-	return result, rawRules, exclusions, filtered, nil
+	return result, rawRules, exclusions, filtered, excludedBy, nil
 }
 
 // matchPattern matches a file path against a pattern using gitignore-style matching

@@ -1783,7 +1783,7 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	}
 
 	// Get attribution to identify explicitly excluded files
-	_, _, exclusionResult, _, err := m.ResolveFilesWithAttribution(string(rulesContent))
+	_, _, exclusionResult, _, _, err := m.ResolveFilesWithAttribution(string(rulesContent))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve attribution: %w", err)
 	}

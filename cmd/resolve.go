@@ -41,7 +41,7 @@ func resolveWithContext(mgr *context.Manager, rulesFile string, lineNumber int, 
 	rulesContent := strings.Join(rulesBeforeLine, "\n")
 
 	// Use attribution to get all potential files from earlier rules
-	attribution, _, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, _, _, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve context: %w", err)
 	}

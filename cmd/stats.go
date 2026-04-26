@@ -267,7 +267,7 @@ func outputPerLineStats(args []string) error {
 	}
 
 	mgr := context.NewManager(workDir)
-	attribution, _, exclusions, filteredMatches, err := mgr.ResolveFilesWithAttribution(string(rulesContent))
+	attribution, _, exclusions, filteredMatches, excludedByResult, err := mgr.ResolveFilesWithAttribution(string(rulesContent))
 	if err != nil {
 		return fmt.Errorf("failed to analyze rules: %w", err)
 	}
@@ -285,6 +285,12 @@ func outputPerLineStats(args []string) error {
 		Files      []string `json:"files,omitempty"`
 	}
 
+	type ExcludedByLine struct {
+		LineNumber int      `json:"lineNumber"`
+		Count      int      `json:"count"`
+		Files      []string `json:"files,omitempty"`
+	}
+
 	type PerLineStat struct {
 		LineNumber        int              `json:"lineNumber"`
 		Rule              string           `json:"rule"`
@@ -292,11 +298,12 @@ func outputPerLineStats(args []string) error {
 		ExcludedFileCount int              `json:"excludedFileCount,omitempty"`
 		ExcludedTokens    int              `json:"excludedTokens,omitempty"`
 		FilteredByLine    []FilteredByLine `json:"filteredByLine,omitempty"`
+		ExcludedByLine    []ExcludedByLine `json:"excludedByLine,omitempty"`
 		TotalTokens       int              `json:"totalTokens"`
 		TotalSize         int64            `json:"totalSize"`
 		GitInfo           *GitInfo         `json:"gitInfo,omitempty"`
 		ResolvedPaths     []string         `json:"resolvedPaths"`
-		SkipReason        string           `json:"skipReason,omitempty"` // Reason why this rule was skipped
+		SkipReason        string           `json:"skipReason,omitempty"`
 	}
 
 	statsProvider := context.GetStatsProvider()
@@ -693,6 +700,42 @@ func outputPerLineStats(args []string) error {
 				Rule:       skipped.Rule,
 				FileCount:  0,
 				SkipReason: skipped.Reason,
+			})
+		}
+	}
+
+	// Ensure every rule line in ruleMap has a record (catch zero-match rules not covered above)
+	existingLines := make(map[int]bool, len(results))
+	for _, r := range results {
+		existingLines[r.LineNumber] = true
+	}
+	for lineNum, ruleText := range ruleMap {
+		if !existingLines[lineNum] {
+			results = append(results, PerLineStat{
+				LineNumber:    lineNum,
+				Rule:          ruleText,
+				FileCount:     0,
+				ResolvedPaths: []string{},
+			})
+		}
+	}
+
+	// Enrich results with excludedByLine data from the resolver
+	for i := range results {
+		if infos, ok := excludedByResult[results[i].LineNumber]; ok {
+			lineGroupMap := make(map[int][]string)
+			for _, info := range infos {
+				lineGroupMap[info.ExcludingLineNum] = append(lineGroupMap[info.ExcludingLineNum], info.File)
+			}
+			for exclLine, filesForLine := range lineGroupMap {
+				results[i].ExcludedByLine = append(results[i].ExcludedByLine, ExcludedByLine{
+					LineNumber: exclLine,
+					Count:      len(filesForLine),
+					Files:      filesForLine,
+				})
+			}
+			sort.Slice(results[i].ExcludedByLine, func(a, b int) bool {
+				return results[i].ExcludedByLine[a].LineNumber < results[i].ExcludedByLine[b].LineNumber
 			})
 		}
 	}

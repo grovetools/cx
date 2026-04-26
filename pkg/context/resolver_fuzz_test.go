@@ -87,7 +87,7 @@ func TestResolveAST_Fuzz_ExclusionInclusionExclusive(t *testing.T) {
 	for i := 0; i < fuzzIterations; i++ {
 		ctx := newMockCtx(randFakeFS(rng))
 		nodes := randAST(rng)
-		attr, excl, _ := ResolveAST(nodes, ctx)
+		attr, excl, _, _ := ResolveAST(nodes, ctx)
 		included := map[string]bool{}
 		for _, files := range attr {
 			for _, f := range files {
@@ -175,8 +175,8 @@ func TestResolveAST_Fuzz_Deterministic(t *testing.T) {
 		nodes := randAST(rng)
 		ctx1 := newMockCtx(fs)
 		ctx2 := newMockCtx(fs)
-		a1, e1, f1 := ResolveAST(nodes, ctx1)
-		a2, e2, f2 := ResolveAST(nodes, ctx2)
+		a1, e1, f1, _ := ResolveAST(nodes, ctx1)
+		a2, e2, f2, _ := ResolveAST(nodes, ctx2)
 		if !sameAttribution(a1, a2) {
 			t.Fatalf("iter %d: AttributionResult not deterministic\nrun1=%v\nrun2=%v", i, a1, a2)
 		}

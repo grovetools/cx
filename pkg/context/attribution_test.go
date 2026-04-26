@@ -58,7 +58,7 @@ dist/
 	// Broad rule that should be filtered by gitignore
 	rulesContent := `**/*`
 
-	attribution, _, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, _, exclusions, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestResolveFilesWithAttribution_Exclusions(t *testing.T) {
 	rulesContent := `**/*.go
 !*_test.go`
 
-	attribution, rules, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, rules, exclusions, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestResolveFilesWithAttribution_NoExclusions(t *testing.T) {
 	// Test case: only inclusion pattern, no exclusions
 	rulesContent := `**/*.go`
 
-	attribution, rules, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, rules, exclusions, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestResolveFilesWithAttribution_OnlyExclusions(t *testing.T) {
 	// Test case: only exclusion pattern (should result in no files)
 	rulesContent := `!*_test.go`
 
-	attribution, rules, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, rules, exclusions, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
 	}
@@ -322,7 +322,7 @@ coverage
 	// Use * pattern which should respect .gitignore
 	rulesContent := `*`
 
-	attribution, _, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, _, _, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	if err != nil {
 		t.Fatalf("ResolveFilesWithAttribution failed: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestResolveFilesWithAttribution_ExternalFileExclusion(t *testing.T) {
 		filepath.ToSlash(externalProjectDir),
 	)
 
-	attribution, _, exclusions, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
+	attribution, _, exclusions, _, _, err := mgr.ResolveFilesWithAttribution(rulesContent)
 	assert.NoError(t, err)
 
 	// Verify attribution: only the .go file should be included from line 1

@@ -249,7 +249,7 @@ func TestRegression_ASTResolver(t *testing.T) {
 			if len(perrs) != 0 {
 				t.Fatalf("ParseToAST produced parse errors: %+v", perrs)
 			}
-			astAttr, _, _ := ResolveAST(nodes, newProdResolutionContext(m))
+			astAttr, _, _, _ := ResolveAST(nodes, newProdResolutionContext(m))
 			astSet := flattenAttrSet(astAttr, dir)
 
 			expectedSet := make(map[string]struct{}, len(fx.expected))

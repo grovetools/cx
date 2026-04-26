@@ -166,7 +166,7 @@ func walkRootForPattern(pattern, base string) string {
 // ResolveAST evaluates the AST in a single pass. The reducer applies
 // last-write-wins to inclusion vs. exclusion decisions and tracks superseded
 // inclusion rules in FilteredResult.
-func ResolveAST(nodes []RuleNode, ctx ResolutionContext) (AttributionResult, ExclusionResult, FilteredResult) {
+func ResolveAST(nodes []RuleNode, ctx ResolutionContext) (AttributionResult, ExclusionResult, FilteredResult, ExcludedByResult) {
 	perFile := map[string][]FileAttribution{}
 	for _, n := range nodes {
 		for _, a := range n.Resolve(ctx) {
@@ -177,11 +177,21 @@ func ResolveAST(nodes []RuleNode, ctx ResolutionContext) (AttributionResult, Exc
 	attrR := make(AttributionResult)
 	exclR := make(ExclusionResult)
 	filtR := make(FilteredResult)
+	ebyR := make(ExcludedByResult)
 
 	for path, ms := range perFile {
 		last := ms[len(ms)-1]
 		if last.IsExclude {
 			exclR[last.EffectiveLineNum] = append(exclR[last.EffectiveLineNum], path)
+			// Track which inclusion lines had this file excluded
+			for i := 0; i < len(ms)-1; i++ {
+				if !ms[i].IsExclude {
+					ebyR[ms[i].EffectiveLineNum] = append(ebyR[ms[i].EffectiveLineNum], ExcludedByInfo{
+						File:             path,
+						ExcludingLineNum: last.EffectiveLineNum,
+					})
+				}
+			}
 			continue
 		}
 		winner := last.EffectiveLineNum
@@ -203,7 +213,7 @@ func ResolveAST(nodes []RuleNode, ctx ResolutionContext) (AttributionResult, Exc
 		}
 	}
 
-	return attrR, exclR, filtR
+	return attrR, exclR, filtR, ebyR
 }
 
 // ruleInfosToNodes synthesizes AST nodes from expanded RuleInfo records so
@@ -312,7 +322,7 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 	ctx := newProdResolutionContext(m)
 
 	if !hasExclusion {
-		attr, _, _ := ResolveAST(nodes, ctx)
+		attr, _, _, _ := ResolveAST(nodes, ctx)
 		return m.flattenAttrResult(attr), nil
 	}
 
@@ -323,7 +333,7 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 			inclRules = append(inclRules, r)
 		}
 	}
-	inclAttr, _, _ := ResolveAST(ruleInfosToNodes(inclRules), ctx)
+	inclAttr, _, _, _ := ResolveAST(ruleInfosToNodes(inclRules), ctx)
 	var discovered []string
 	for _, paths := range inclAttr {
 		discovered = append(discovered, paths...)
@@ -332,7 +342,7 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 	// Phase 2: re-evaluate all rules against the discovered set so
 	// exclusions see files from every walk root.
 	primedCtx := newProdResolutionContext(m).withFileSet(discovered)
-	attr, _, _ := ResolveAST(nodes, primedCtx)
+	attr, _, _, _ := ResolveAST(nodes, primedCtx)
 	return m.flattenAttrResult(attr), nil
 }
 
