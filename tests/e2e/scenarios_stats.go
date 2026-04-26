@@ -421,6 +421,59 @@ func StatsPerLineEveryRuleEmittedScenario() *harness.Scenario {
 	}
 }
 
+func StatsPerLineSeverityScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-stats-per-line-severity",
+		Description: "Each per-line JSON record has a severity field matching cx lint classification",
+		Tags:        []string{"cx", "stats", "severity", "regression"},
+		Steps: []harness.Step{
+			harness.NewStep("Create project with Error and Warning lint issues", func(ctx *harness.Context) error {
+				if err := fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main"); err != nil {
+					return err
+				}
+				// Line 1: traversal → Error, Line 2: zero-match → Warning, Line 3: clean match
+				rules := "../../etc/passwd\nnonexistent-xyz-file.go\nmain.go"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("Run cx stats --per-line and verify severity fields", func(ctx *harness.Context) error {
+				cx, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				cmd := ctx.Command(cx, "stats", "--per-line", ".grove/rules").Dir(ctx.RootDir)
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+
+				var stats []struct {
+					LineNumber int    `json:"lineNumber"`
+					Rule       string `json:"rule"`
+					Severity   string `json:"severity"`
+				}
+				if err := json.Unmarshal([]byte(result.Stdout), &stats); err != nil {
+					return fmt.Errorf("failed to parse JSON: %w\nOutput:\n%s", err, result.Stdout)
+				}
+
+				severityByLine := make(map[int]string)
+				for _, s := range stats {
+					severityByLine[s.LineNumber] = s.Severity
+				}
+
+				if severityByLine[1] != "Error" {
+					return fmt.Errorf("line 1 (traversal): expected severity=Error, got %q", severityByLine[1])
+				}
+				if severityByLine[2] != "Warning" {
+					return fmt.Errorf("line 2 (zero-match): expected severity=Warning, got %q", severityByLine[2])
+				}
+				if severityByLine[3] != "" {
+					return fmt.Errorf("line 3 (clean match): expected no severity, got %q", severityByLine[3])
+				}
+
+				return nil
+			}),
+		},
+	}
+}
+
 func StatsPerLineExcludedByLineScenario() *harness.Scenario {
 	return &harness.Scenario{
 		Name:        "cx-stats-per-line-excluded-by-line",

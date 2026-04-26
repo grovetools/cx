@@ -107,6 +107,7 @@ func main() {
 		StatsPrefixAttributionScenario(),
 		StatsPerLineJSONStdoutCleanScenario(),
 		StatsPerLineEveryRuleEmittedScenario(),
+		StatsPerLineSeverityScenario(),
 		StatsPerLineExcludedByLineScenario(),
 
 		// Search Directive Scenarios

@@ -304,6 +304,7 @@ func outputPerLineStats(args []string) error {
 		GitInfo           *GitInfo         `json:"gitInfo,omitempty"`
 		ResolvedPaths     []string         `json:"resolvedPaths"`
 		SkipReason        string           `json:"skipReason,omitempty"`
+		Severity          string           `json:"severity,omitempty"`
 	}
 
 	statsProvider := context.GetStatsProvider()
@@ -737,6 +738,17 @@ func outputPerLineStats(args []string) error {
 			sort.Slice(results[i].ExcludedByLine, func(a, b int) bool {
 				return results[i].ExcludedByLine[a].LineNumber < results[i].ExcludedByLine[b].LineNumber
 			})
+		}
+	}
+
+	// Enrich results with lint severity
+	lintIssues, _ := mgr.LintRulesFile(absRulesPath)
+	if len(lintIssues) > 0 {
+		byLine := context.LintIssuesByLine(lintIssues)
+		for i := range results {
+			if lineIssues, ok := byLine[results[i].LineNumber]; ok {
+				results[i].Severity = context.HighestSeverity(lineIssues)
+			}
 		}
 	}
 

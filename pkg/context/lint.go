@@ -165,6 +165,35 @@ func appendPatternIssues(issues []LintIssue, m *Manager, pattern, raw string, li
 	return issues
 }
 
+func FormatLintIssue(issue LintIssue) string {
+	return fmt.Sprintf("[%s] Line %d: %s", issue.Severity, issue.LineNum, issue.Message)
+}
+
+func LintIssuesByLine(issues []LintIssue) map[int][]LintIssue {
+	m := make(map[int][]LintIssue, len(issues))
+	for _, issue := range issues {
+		m[issue.LineNum] = append(m[issue.LineNum], issue)
+	}
+	return m
+}
+
+func HighestSeverity(issues []LintIssue) string {
+	severity := ""
+	for _, issue := range issues {
+		switch issue.Severity {
+		case "Error":
+			return "Error"
+		case "Warning":
+			severity = "Warning"
+		case "Notice":
+			if severity == "" {
+				severity = "Notice"
+			}
+		}
+	}
+	return severity
+}
+
 func containsTraversalEscape(workDir, pattern string) bool {
 	if !strings.Contains(pattern, "../") {
 		return false

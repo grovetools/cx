@@ -182,6 +182,17 @@ func NewResolveCmd() *cobra.Command {
 				}
 			}
 
+			// Surface lint issues for this line on stderr
+			if rulesFile != "" && lineNumber > 0 {
+				if lintIssues, lintErr := mgr.LintRulesFile(rulesFile); lintErr == nil {
+					for _, issue := range lintIssues {
+						if issue.LineNum == lineNumber {
+							fmt.Fprintf(os.Stderr, "%s\n", context.FormatLintIssue(issue))
+						}
+					}
+				}
+			}
+
 			// Print the list of files to stdout, one per line.
 			for _, file := range files {
 				fmt.Println(file)
