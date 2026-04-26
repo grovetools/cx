@@ -180,6 +180,18 @@ func regressionCorpus() []regressionFixture {
 			rules: "@a:eco:proj\n!@a:eco:proj/sub\n",
 			skip:  "alias resolution requires ecosystem config not available in this harness",
 		},
+		{
+			name:  "alias_brace_expansion",
+			files: []string{"main.go"},
+			rules: "@a:test:{a,b}/main.go\n",
+			skip:  "alias resolution requires ecosystem config not available in this harness",
+		},
+		{
+			name:     "anchored_toplevel_literal",
+			files:    []string{"go.mod", "sub/go.mod"},
+			rules:    "/go.mod\n",
+			expected: []string{"go.mod"},
+		},
 	}
 }
 

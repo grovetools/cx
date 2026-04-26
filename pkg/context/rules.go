@@ -975,352 +975,356 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 				rulePart = rulePart + "**"
 			}
 
-			// Check for Git alias ruleset imports first (e.g., @a:git:owner/repo::ruleset)
-			// These need special handling to convert to GitHub URLs before processing
-			isGitAliasRuleset := false
-			if strings.HasPrefix(rulePart, "@alias:git:") || strings.HasPrefix(rulePart, "@a:git:") {
-				// Extract the git alias part
-				tempLine := rulePart
-				prefix := "@a:git:"
-				if strings.HasPrefix(tempLine, "@alias:git:") {
-					prefix = "@alias:git:"
-				}
-				gitPart := strings.TrimPrefix(tempLine, prefix)
+			// Expand braces before type-specific processing so alias patterns
+			// like @a:eco:{a,b}/path resolve each alternative independently.
+			expandedRuleParts := ExpandBraces(rulePart)
+			for _, rulePart := range expandedRuleParts {
 
-				// Check if it has a ruleset specifier (::)
-				if strings.Contains(gitPart, "::") {
-
-					isGitAliasRuleset = true
-					// Split on :: to get repo part and ruleset name
-					parts := strings.SplitN(gitPart, "::", 2)
-					if len(parts) == 2 {
-						repoPart := parts[0]    // e.g., "owner/repo" or "owner/repo@version"
-						rulesetName := parts[1] // e.g., "default"
-
-						// Check if repoPart is already a full URL or use GitHub as default
-						var fullURL string
-						if strings.HasPrefix(repoPart, "http://") ||
-							strings.HasPrefix(repoPart, "https://") ||
-							strings.HasPrefix(repoPart, "git@") ||
-							strings.HasPrefix(repoPart, "file://") {
-							// Use as-is - already a full URL
-							fullURL = repoPart
-						} else {
-							// Shorthand - default to GitHub
-							fullURL = "https://github.com/" + repoPart
-						}
-
-						// Parse to extract version if present
-						_, repoURL, version, _ := m.ParseGitRule(fullURL)
-
-						// Create git import identifier
-						importIdentifier := fmt.Sprintf("git::%s@%s::%s", repoURL, version, rulesetName)
-
-						if inColdSection {
-							results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
-								OriginalLine:     line,
-								ImportIdentifier: importIdentifier,
-								LineNum:          lineNum,
-								Directives:       directives,
-							})
-						} else {
-							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
-								OriginalLine:     line,
-								ImportIdentifier: importIdentifier,
-								LineNum:          lineNum,
-								Directives:       directives,
-							})
-						}
+				isGitAliasRuleset := false
+				if strings.HasPrefix(rulePart, "@alias:git:") || strings.HasPrefix(rulePart, "@a:git:") {
+					// Extract the git alias part
+					tempLine := rulePart
+					prefix := "@a:git:"
+					if strings.HasPrefix(tempLine, "@alias:git:") {
+						prefix = "@alias:git:"
 					}
-				}
-			}
+					gitPart := strings.TrimPrefix(tempLine, prefix)
 
-			if isGitAliasRuleset {
-				continue // Skip further processing for this line
-			}
+					// Check if it has a ruleset specifier (::)
+					if strings.Contains(gitPart, "::") {
 
-			// Check for regular ruleset imports (using :: delimiter)
-			// Format: @alias:project-name::ruleset-name or @a:project-name::ruleset-name
-			isRuleSetAlias := false
-			if strings.HasPrefix(rulePart, "@alias:") || strings.HasPrefix(rulePart, "@a:") {
-				// Extract the alias part
-				aliasPart := rulePart
-				if strings.HasPrefix(aliasPart, "@alias:") {
-					aliasPart = strings.TrimPrefix(aliasPart, "@alias:")
-				} else {
-					aliasPart = strings.TrimPrefix(aliasPart, "@a:")
-				}
+						isGitAliasRuleset = true
+						// Split on :: to get repo part and ruleset name
+						parts := strings.SplitN(gitPart, "::", 2)
+						if len(parts) == 2 {
+							repoPart := parts[0]    // e.g., "owner/repo" or "owner/repo@version"
+							rulesetName := parts[1] // e.g., "default"
 
-				// Check for '::' to identify a ruleset import
-				if strings.Contains(aliasPart, "::") {
-					isRuleSetAlias = true
-					// Preserve '::' delimiter for the resolver to correctly parse multi-part aliases
-					parts := strings.SplitN(aliasPart, "::", 2)
-					if len(parts) == 2 {
-						importIdentifier := strings.Join(parts, "::")
+							// Check if repoPart is already a full URL or use GitHub as default
+							var fullURL string
+							if strings.HasPrefix(repoPart, "http://") ||
+								strings.HasPrefix(repoPart, "https://") ||
+								strings.HasPrefix(repoPart, "git@") ||
+								strings.HasPrefix(repoPart, "file://") {
+								// Use as-is - already a full URL
+								fullURL = repoPart
+							} else {
+								// Shorthand - default to GitHub
+								fullURL = "https://github.com/" + repoPart
+							}
 
-						if inColdSection {
-							results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
-								OriginalLine:     line,
-								ImportIdentifier: importIdentifier,
-								LineNum:          lineNum,
-								Directives:       directives,
-							})
-						} else {
-							results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
-								OriginalLine:     line,
-								ImportIdentifier: importIdentifier,
-								LineNum:          lineNum,
-								Directives:       directives,
-							})
-						}
-					}
-				}
-			}
+							// Parse to extract version if present
+							_, repoURL, version, _ := m.ParseGitRule(fullURL)
 
-			if isRuleSetAlias {
-				continue // Skip further processing for this line
-			}
+							// Create git import identifier
+							importIdentifier := fmt.Sprintf("git::%s@%s::%s", repoURL, version, rulesetName)
 
-			// Check for command expressions
-			if strings.HasPrefix(line, "@cmd:") {
-				cmdExpr := strings.TrimPrefix(line, "@cmd:")
-				cmdExpr = strings.TrimSpace(cmdExpr)
-
-				// Execute the command and get file paths
-				if cmdFiles, cmdErr := m.executeCommandExpression(cmdExpr); cmdErr == nil {
-					// Add each file from command output as a pattern
-					for _, file := range cmdFiles {
-						if inColdSection {
-							results.coldRules = append(results.coldRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
-						} else {
-							results.hotRules = append(results.hotRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
-						}
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "Warning: command expression failed: %s: %v\n", cmdExpr, cmdErr)
-				}
-				continue
-			}
-
-			// Handle Git aliases before workspace aliases.
-			// e.g., @a:git:owner/repo[@version]
-			isGitAlias := false
-			tempLineForCheck := rulePart
-			if strings.HasPrefix(tempLineForCheck, "!") {
-				tempLineForCheck = strings.TrimSpace(strings.TrimPrefix(tempLineForCheck, "!"))
-			}
-			if strings.HasPrefix(tempLineForCheck, "@a:git:") || strings.HasPrefix(tempLineForCheck, "@alias:git:") {
-				isGitAlias = true
-			}
-
-			// Resolve alias if present (supports both @alias: and @a:), before further processing
-			processedLine := rulePart
-			if isGitAlias {
-				isExclude := false
-				tempLine := rulePart
-				if strings.HasPrefix(tempLine, "!") {
-					isExclude = true
-					tempLine = strings.TrimPrefix(tempLine, "!")
-				}
-				tempLine = strings.TrimSpace(tempLine)
-
-				prefix := "@a:git:"
-				if strings.HasPrefix(tempLine, "@alias:git:") {
-					prefix = "@alias:git:"
-				}
-				repoPart := strings.TrimPrefix(tempLine, prefix)
-
-				// Check if repoPart is already a full URL or use GitHub as default
-				var fullURL string
-				if strings.HasPrefix(repoPart, "http://") ||
-					strings.HasPrefix(repoPart, "https://") ||
-					strings.HasPrefix(repoPart, "git@") ||
-					strings.HasPrefix(repoPart, "file://") {
-					// Use as-is - already a full URL
-					fullURL = repoPart
-				} else {
-					// Shorthand - default to GitHub
-					fullURL = "https://github.com/" + repoPart
-				}
-
-				if isExclude {
-					processedLine = "!" + fullURL
-				} else {
-					processedLine = fullURL
-				}
-			} else if resolver != nil && (strings.Contains(rulePart, "@alias:") || strings.Contains(rulePart, "@a:")) {
-				if strings.HasSuffix(rulePart, "/") {
-					rulePart = rulePart + "**"
-				}
-				resolvedLine, resolveErr := resolver.ResolveLine(rulePart)
-				if resolveErr != nil {
-					fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in line '%s': %v\n", line, resolveErr)
-					continue // Skip this line if alias resolution fails
-				}
-
-				// Extract the project path from the resolved line to validate against workspace exclusions
-				// The resolved line will be something like "/path/to/project/**" or "!/path/to/project/src/**/*.go"
-				pathToValidate := resolvedLine
-				if strings.HasPrefix(pathToValidate, "!") {
-					pathToValidate = strings.TrimPrefix(pathToValidate, "!")
-				}
-				// Parse out any search directives to get the base path
-				basePathForValidation, _, _ := parseSearchDirectives(pathToValidate)
-				// Extract just the directory part (remove glob patterns)
-				// For patterns like "/path/to/project/**" or "/path/to/project/src/**/*.go"
-				// we want to extract the project root path
-				pathParts := strings.Split(basePathForValidation, string(filepath.Separator))
-				var projectPath string
-				for i, part := range pathParts {
-					if strings.Contains(part, "*") || strings.Contains(part, "?") {
-						// Found the first glob part, take everything before it
-						projectPath = strings.Join(pathParts[:i], string(filepath.Separator))
-						break
-					}
-				}
-				if projectPath == "" {
-					// No glob found, the entire path might be a directory
-					projectPath = basePathForValidation
-				}
-
-				// Validate that the resolved project path is allowed
-				if allowed, reason := m.IsPathAllowed(projectPath); !allowed {
-					fmt.Fprintf(os.Stderr, "Warning: skipping rule '%s': %s\n", line, reason)
-					m.addSkippedRule(lineNum, line, reason)
-					continue
-				}
-
-				processedLine = resolvedLine
-
-				// If the resolved line is just a directory path (no glob pattern),
-				// append /** to match all files in that directory
-				// Check the base pattern part before any directives
-				baseForCheck, _, _ := parseSearchDirectives(processedLine)
-				if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
-					// Check if the path is actually a directory before appending /**
-					checkPath := baseForCheck
-					// Handle exclusion prefix
-					if strings.HasPrefix(checkPath, "!") {
-						checkPath = strings.TrimPrefix(checkPath, "!")
-					}
-					if info, err := os.Stat(checkPath); err == nil && info.IsDir() {
-						// It's a directory, append /**
-						// Replace the base pattern with base + /**
-						if baseForCheck == processedLine {
-							// No directive, just append /**
-							processedLine = processedLine + "/**"
-						} else {
-							// Has directive, insert /** before it
-							directivePart := strings.TrimPrefix(processedLine, baseForCheck)
-							processedLine = baseForCheck + "/**" + directivePart
-						}
-					}
-					// If it's a file or doesn't exist, keep as-is
-				}
-			}
-
-			// Process Git URLs
-			if repoManager != nil {
-				isExclude := strings.HasPrefix(processedLine, "!")
-				cleanLine := processedLine
-				if isExclude {
-					cleanLine = strings.TrimPrefix(processedLine, "!")
-				}
-
-				if isGitURL, repoURL, version, ruleset := m.ParseGitRule(cleanLine); isGitURL {
-					// If a ruleset is specified, treat this as a special import, not a pattern
-					if ruleset != "" {
-						importIdentifier := fmt.Sprintf("git::%s@%s::%s", repoURL, version, ruleset)
-						if isExclude {
-							// Exclusions on git ruleset imports are not yet supported.
-							fmt.Fprintf(os.Stderr, "Warning: exclusion prefix '!' on git ruleset import is not supported: %s\n", processedLine)
-						} else {
 							if inColdSection {
 								results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
 									OriginalLine:     line,
 									ImportIdentifier: importIdentifier,
 									LineNum:          lineNum,
+									Directives:       directives,
 								})
 							} else {
 								results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
 									OriginalLine:     line,
 									ImportIdentifier: importIdentifier,
 									LineNum:          lineNum,
+									Directives:       directives,
 								})
 							}
 						}
-						continue // This is an import, so we're done with this line.
+					}
+				}
+
+				if isGitAliasRuleset {
+					continue // Skip further processing for this line
+				}
+
+				// Check for regular ruleset imports (using :: delimiter)
+				// Format: @alias:project-name::ruleset-name or @a:project-name::ruleset-name
+				isRuleSetAlias := false
+				if strings.HasPrefix(rulePart, "@alias:") || strings.HasPrefix(rulePart, "@a:") {
+					// Extract the alias part
+					aliasPart := rulePart
+					if strings.HasPrefix(aliasPart, "@alias:") {
+						aliasPart = strings.TrimPrefix(aliasPart, "@alias:")
+					} else {
+						aliasPart = strings.TrimPrefix(aliasPart, "@a:")
 					}
 
-					// Ensure the repository worktree exists for the specified version
-					localPath, _, cloneErr := repoManager.EnsureVersion(m.Context(), repoURL, version)
-					if cloneErr != nil {
-						fmt.Fprintf(os.Stderr, "Warning: could not ensure repository version %s: %v\n", repoURL, cloneErr)
+					// Check for '::' to identify a ruleset import
+					if strings.Contains(aliasPart, "::") {
+						isRuleSetAlias = true
+						// Preserve '::' delimiter for the resolver to correctly parse multi-part aliases
+						parts := strings.SplitN(aliasPart, "::", 2)
+						if len(parts) == 2 {
+							importIdentifier := strings.Join(parts, "::")
+
+							if inColdSection {
+								results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
+									OriginalLine:     line,
+									ImportIdentifier: importIdentifier,
+									LineNum:          lineNum,
+									Directives:       directives,
+								})
+							} else {
+								results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
+									OriginalLine:     line,
+									ImportIdentifier: importIdentifier,
+									LineNum:          lineNum,
+									Directives:       directives,
+								})
+							}
+						}
+					}
+				}
+
+				if isRuleSetAlias {
+					continue // Skip further processing for this line
+				}
+
+				// Check for command expressions
+				if strings.HasPrefix(line, "@cmd:") {
+					cmdExpr := strings.TrimPrefix(line, "@cmd:")
+					cmdExpr = strings.TrimSpace(cmdExpr)
+
+					// Execute the command and get file paths
+					if cmdFiles, cmdErr := m.executeCommandExpression(cmdExpr); cmdErr == nil {
+						// Add each file from command output as a pattern
+						for _, file := range cmdFiles {
+							if inColdSection {
+								results.coldRules = append(results.coldRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
+							} else {
+								results.hotRules = append(results.hotRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: lineNum})
+							}
+						}
+					} else {
+						fmt.Fprintf(os.Stderr, "Warning: command expression failed: %s: %v\n", cmdExpr, cmdErr)
+					}
+					continue
+				}
+
+				// Handle Git aliases before workspace aliases.
+				// e.g., @a:git:owner/repo[@version]
+				isGitAlias := false
+				tempLineForCheck := rulePart
+				if strings.HasPrefix(tempLineForCheck, "!") {
+					tempLineForCheck = strings.TrimSpace(strings.TrimPrefix(tempLineForCheck, "!"))
+				}
+				if strings.HasPrefix(tempLineForCheck, "@a:git:") || strings.HasPrefix(tempLineForCheck, "@alias:git:") {
+					isGitAlias = true
+				}
+
+				// Resolve alias if present (supports both @alias: and @a:), before further processing
+				processedLine := rulePart
+				if isGitAlias {
+					isExclude := false
+					tempLine := rulePart
+					if strings.HasPrefix(tempLine, "!") {
+						isExclude = true
+						tempLine = strings.TrimPrefix(tempLine, "!")
+					}
+					tempLine = strings.TrimSpace(tempLine)
+
+					prefix := "@a:git:"
+					if strings.HasPrefix(tempLine, "@alias:git:") {
+						prefix = "@alias:git:"
+					}
+					repoPart := strings.TrimPrefix(tempLine, prefix)
+
+					// Check if repoPart is already a full URL or use GitHub as default
+					var fullURL string
+					if strings.HasPrefix(repoPart, "http://") ||
+						strings.HasPrefix(repoPart, "https://") ||
+						strings.HasPrefix(repoPart, "git@") ||
+						strings.HasPrefix(repoPart, "file://") {
+						// Use as-is - already a full URL
+						fullURL = repoPart
+					} else {
+						// Shorthand - default to GitHub
+						fullURL = "https://github.com/" + repoPart
+					}
+
+					if isExclude {
+						processedLine = "!" + fullURL
+					} else {
+						processedLine = fullURL
+					}
+				} else if resolver != nil && (strings.Contains(rulePart, "@alias:") || strings.Contains(rulePart, "@a:")) {
+					if strings.HasSuffix(rulePart, "/") {
+						rulePart = rulePart + "**"
+					}
+					resolvedLine, resolveErr := resolver.ResolveLine(rulePart)
+					if resolveErr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: could not resolve alias in line '%s': %v\n", line, resolveErr)
+						continue // Skip this line if alias resolution fails
+					}
+
+					// Extract the project path from the resolved line to validate against workspace exclusions
+					// The resolved line will be something like "/path/to/project/**" or "!/path/to/project/src/**/*.go"
+					pathToValidate := resolvedLine
+					if strings.HasPrefix(pathToValidate, "!") {
+						pathToValidate = strings.TrimPrefix(pathToValidate, "!")
+					}
+					// Parse out any search directives to get the base path
+					basePathForValidation, _, _ := parseSearchDirectives(pathToValidate)
+					// Extract just the directory part (remove glob patterns)
+					// For patterns like "/path/to/project/**" or "/path/to/project/src/**/*.go"
+					// we want to extract the project root path
+					pathParts := strings.Split(basePathForValidation, string(filepath.Separator))
+					var projectPath string
+					for i, part := range pathParts {
+						if strings.Contains(part, "*") || strings.Contains(part, "?") {
+							// Found the first glob part, take everything before it
+							projectPath = strings.Join(pathParts[:i], string(filepath.Separator))
+							break
+						}
+					}
+					if projectPath == "" {
+						// No glob found, the entire path might be a directory
+						projectPath = basePathForValidation
+					}
+
+					// Validate that the resolved project path is allowed
+					if allowed, reason := m.IsPathAllowed(projectPath); !allowed {
+						fmt.Fprintf(os.Stderr, "Warning: skipping rule '%s': %s\n", line, reason)
+						m.addSkippedRule(lineNum, line, reason)
 						continue
 					}
 
-					// Extract any path pattern that comes after the repo URL
-					// e.g., https://github.com/owner/repo@v1.0.0/**/*.yml -> /**/*.yml
-					// We need to find what remains after protocol://domain/owner/repo[@version]
-					pathPattern := "/**"
+					processedLine = resolvedLine
 
-					// Build the full repo reference (URL with optional version)
-					repoRef := repoURL
-					if version != "" {
-						repoRef = repoURL + "@" + version
+					// If the resolved line is just a directory path (no glob pattern),
+					// append /** to match all files in that directory
+					// Check the base pattern part before any directives
+					baseForCheck, _, _ := parseSearchDirectives(processedLine)
+					if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
+						// Check if the path is actually a directory before appending /**
+						checkPath := baseForCheck
+						// Handle exclusion prefix
+						if strings.HasPrefix(checkPath, "!") {
+							checkPath = strings.TrimPrefix(checkPath, "!")
+						}
+						if info, err := os.Stat(checkPath); err == nil && info.IsDir() {
+							// It's a directory, append /**
+							// Replace the base pattern with base + /**
+							if baseForCheck == processedLine {
+								// No directive, just append /**
+								processedLine = processedLine + "/**"
+							} else {
+								// Has directive, insert /** before it
+								directivePart := strings.TrimPrefix(processedLine, baseForCheck)
+								processedLine = baseForCheck + "/**" + directivePart
+							}
+						}
+						// If it's a file or doesn't exist, keep as-is
 					}
+				}
 
-					// Check if cleanLine has additional path after the repo reference
-					if len(cleanLine) > len(repoRef) && strings.HasPrefix(cleanLine, repoRef) {
-						pathPattern = cleanLine[len(repoRef):]
-					}
-
-					// Replace the Git URL with the local path pattern
-					processedLine = localPath + pathPattern
+				// Process Git URLs
+				if repoManager != nil {
+					isExclude := strings.HasPrefix(processedLine, "!")
+					cleanLine := processedLine
 					if isExclude {
-						processedLine = "!" + processedLine
+						cleanLine = strings.TrimPrefix(processedLine, "!")
+					}
+
+					if isGitURL, repoURL, version, ruleset := m.ParseGitRule(cleanLine); isGitURL {
+						// If a ruleset is specified, treat this as a special import, not a pattern
+						if ruleset != "" {
+							importIdentifier := fmt.Sprintf("git::%s@%s::%s", repoURL, version, ruleset)
+							if isExclude {
+								// Exclusions on git ruleset imports are not yet supported.
+								fmt.Fprintf(os.Stderr, "Warning: exclusion prefix '!' on git ruleset import is not supported: %s\n", processedLine)
+							} else {
+								if inColdSection {
+									results.coldImportedRuleSets = append(results.coldImportedRuleSets, ImportInfo{
+										OriginalLine:     line,
+										ImportIdentifier: importIdentifier,
+										LineNum:          lineNum,
+									})
+								} else {
+									results.mainImportedRuleSets = append(results.mainImportedRuleSets, ImportInfo{
+										OriginalLine:     line,
+										ImportIdentifier: importIdentifier,
+										LineNum:          lineNum,
+									})
+								}
+							}
+							continue // This is an import, so we're done with this line.
+						}
+
+						// Ensure the repository worktree exists for the specified version
+						localPath, _, cloneErr := repoManager.EnsureVersion(m.Context(), repoURL, version)
+						if cloneErr != nil {
+							fmt.Fprintf(os.Stderr, "Warning: could not ensure repository version %s: %v\n", repoURL, cloneErr)
+							continue
+						}
+
+						// Extract any path pattern that comes after the repo URL
+						// e.g., https://github.com/owner/repo@v1.0.0/**/*.yml -> /**/*.yml
+						// We need to find what remains after protocol://domain/owner/repo[@version]
+						pathPattern := "/**"
+
+						// Build the full repo reference (URL with optional version)
+						repoRef := repoURL
+						if version != "" {
+							repoRef = repoURL + "@" + version
+						}
+
+						// Check if cleanLine has additional path after the repo reference
+						if len(cleanLine) > len(repoRef) && strings.HasPrefix(cleanLine, repoRef) {
+							pathPattern = cleanLine[len(repoRef):]
+						}
+
+						// Replace the Git URL with the local path pattern
+						processedLine = localPath + pathPattern
+						if isExclude {
+							processedLine = "!" + processedLine
+						}
 					}
 				}
-			}
 
-			// We already parsed inline directives at the start.
-			// Now we check if we should apply a global directive.
-			basePattern := processedLine
+				// We already parsed inline directives at the start.
+				// Now we check if we should apply a global directive.
+				basePattern := processedLine
 
-			// If no inline directives but there are global directives, use them
-			if !hasInlineDirectives && len(globalDirectives) > 0 {
-				directives = globalDirectives
-				hasInlineDirectives = true // Mark that directives are now active
-			}
-
-			// Apply brace expansion to the base pattern
-			expandedPatterns := ExpandBraces(basePattern)
-
-			// Add each expanded pattern to the appropriate list
-			for _, expandedPattern := range expandedPatterns {
-				// Detect if this is an exclusion pattern
-				isExclude := strings.HasPrefix(expandedPattern, "!")
-				cleanPattern := expandedPattern
-				if isExclude {
-					cleanPattern = strings.TrimPrefix(expandedPattern, "!")
+				// If no inline directives but there are global directives, use them
+				if !hasInlineDirectives && len(globalDirectives) > 0 {
+					directives = globalDirectives
+					hasInlineDirectives = true // Mark that directives are now active
 				}
 
-				ruleInfo := RuleInfo{
-					Pattern:   cleanPattern,
-					IsExclude: isExclude,
-					LineNum:   lineNum,
-				}
-				if hasInlineDirectives {
-					ruleInfo.Directives = directives
-				}
+				// Apply brace expansion to the base pattern
+				expandedPatterns := ExpandBraces(basePattern)
 
-				if inColdSection {
-					results.coldRules = append(results.coldRules, ruleInfo)
-				} else {
-					results.hotRules = append(results.hotRules, ruleInfo)
+				// Add each expanded pattern to the appropriate list
+				for _, expandedPattern := range expandedPatterns {
+					// Detect if this is an exclusion pattern
+					isExclude := strings.HasPrefix(expandedPattern, "!")
+					cleanPattern := expandedPattern
+					if isExclude {
+						cleanPattern = strings.TrimPrefix(expandedPattern, "!")
+					}
+
+					ruleInfo := RuleInfo{
+						Pattern:   cleanPattern,
+						IsExclude: isExclude,
+						LineNum:   lineNum,
+					}
+					if hasInlineDirectives {
+						ruleInfo.Directives = directives
+					}
+
+					if inColdSection {
+						results.coldRules = append(results.coldRules, ruleInfo)
+					} else {
+						results.hotRules = append(results.hotRules, ruleInfo)
+					}
 				}
-			}
+			} // end expandedRuleParts loop
 		}
 	}
 

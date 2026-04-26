@@ -28,6 +28,23 @@ func (n *GlobNode) Resolve(ctx ResolutionContext) []FileAttribution {
 
 func (n *LiteralNode) Resolve(ctx ResolutionContext) []FileAttribution {
 	pattern := n.ExpectedPath
+
+	// Leading / that doesn't resolve as a real absolute path is a
+	// root-anchor (gitignore convention): /go.mod → workspace-root go.mod.
+	if filepath.IsAbs(pattern) {
+		if _, err := ctx.Stat(pattern); err != nil {
+			rel := pattern[1:]
+			target := filepath.Join(ctx.BaseDir(), rel)
+			if info, err := ctx.Stat(target); err == nil {
+				if info.IsDir() {
+					return walkAndEmit(ctx, rel+"/**", n.LineNum, n.Excluded)
+				}
+				return []FileAttribution{{Path: target, EffectiveLineNum: n.LineNum, IsExclude: n.Excluded}}
+			}
+			return nil
+		}
+	}
+
 	floating := !filepath.IsAbs(pattern) && !strings.Contains(pattern, "/")
 	// Floating exclusions use gitignore-style component matching via
 	// MatchPattern; don't expand to dir/** which anchors to top-level only.
