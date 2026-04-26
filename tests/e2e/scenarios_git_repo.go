@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/tend/pkg/command"
@@ -259,6 +261,54 @@ https://github.com/charmbracelet/lipgloss@v0.13.0
 					return fmt.Errorf("expected sync success message, got: %s", result.Stdout)
 				}
 
+				return nil
+			}),
+			harness.NewStep("Teardown test repos", func(ctx *harness.Context) error {
+				CleanupTestRepos(ctx)
+				return nil
+			}),
+		},
+	}
+}
+
+// GitRepoTimeoutScenario verifies that a rules file pointing at an unroutable
+// git URL fails fast (via context cancellation) rather than hanging the cx
+// process indefinitely. The cx CLI binds SIGINT/SIGHUP/SIGTERM to a root
+// context which the daemon RPC must honor; this scenario asserts that, when
+// the harness sends a kill signal after a brief grace window, cx exits.
+func GitRepoTimeoutScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "cx-git-repository-timeout",
+		Description: "Asserts that bare-git URL imports against an unreachable host fail fast (no zombie processes)",
+		Tags:        []string{"cx", "git", "timeout"},
+		Steps: []harness.Step{
+			harness.NewStep("Write rules file pointing at unroutable host", func(ctx *harness.Context) error {
+				// 10.255.255.1 is RFC1918 unrouted; TCP SYN gets no response.
+				rules := "*.go\nhttp://10.255.255.1/hang.git@main\n"
+				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+			}),
+			harness.NewStep("cx list honors SIGHUP while clone is in flight", func(ctx *harness.Context) error {
+				cxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
+				}
+				proc, err := command.New(cxBinary, "list").Dir(ctx.RootDir).Start()
+				if err != nil {
+					return fmt.Errorf("start cx list: %w", err)
+				}
+				time.Sleep(2 * time.Second)
+				if err := syscall.Kill(proc.PID, syscall.SIGHUP); err != nil {
+					_ = proc.Kill()
+					return fmt.Errorf("send SIGHUP: %w", err)
+				}
+				result := proc.Wait(14 * time.Second)
+				if result.Duration >= 14*time.Second {
+					return fmt.Errorf("cx list did not exit within 14s after SIGHUP (Duration=%s); signal-context plumbing is broken", result.Duration)
+				}
+				return nil
+			}),
+			harness.NewStep("Teardown test repos", func(ctx *harness.Context) error {
+				CleanupTestRepos(ctx)
 				return nil
 			}),
 		},

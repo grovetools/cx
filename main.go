@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/grovetools/core/cli"
 	"github.com/grovetools/core/logging"
@@ -64,6 +67,10 @@ func main() {
 	rootCmd.AddCommand(cmd.NewMigrateRulesNbCmd())
 	rootCmd.AddCommand(cmd.NewLintCmd())
 	rootCmd.AddCommand(cmd.NewAliasCmd())
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGHUP, syscall.SIGTERM)
+	defer cancel()
+	rootCmd.SetContext(ctx)
 
 	if err := cli.Execute(rootCmd); err != nil {
 		os.Exit(1)

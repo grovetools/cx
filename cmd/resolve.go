@@ -147,6 +147,7 @@ func NewResolveCmd() *cobra.Command {
 			}
 
 			mgr := context.NewManager(GetWorkDir())
+			mgr.SetContext(cmd.Context())
 
 			var files []string
 			var err error

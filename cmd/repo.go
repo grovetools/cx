@@ -148,7 +148,7 @@ func newRepoSyncCmd() *cobra.Command {
 
 			ulog.Progress("Syncing all tracked repositories").Log(ctx)
 
-			if err := manager.Sync(); err != nil {
+			if err := manager.Sync(ctx); err != nil {
 				return fmt.Errorf("failed to sync repositories: %w", err)
 			}
 
@@ -195,9 +195,9 @@ func newRepoAuditCmd() *cobra.Command {
 				return fmt.Errorf("--status flag requires a commit hash, not a repository URL")
 			}
 
-			ctx := stdctx.Background()
+			ctx := cmd.Context()
 			ulog.Progress("Preparing repository for audit").Log(ctx)
-			localPath, currentCommit, err := manager.EnsureVersion(repoURL, version)
+			localPath, currentCommit, err := manager.EnsureVersion(ctx, repoURL, version)
 			if err != nil {
 				return fmt.Errorf("failed to ensure repository version is checked out: %w", err)
 			}
@@ -315,13 +315,13 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 				return fmt.Errorf("failed to create repository manager: %w", err)
 			}
 
-			ctx := stdctx.Background()
+			ctx := cmd.Context()
 			ulog.Progress("Adding repository").
 				Field("repo", repoURL).
 				Pretty(fmt.Sprintf("Adding repository %s...", repoURL)).
 				Log(ctx)
 
-			err = manager.Ensure(repoURL)
+			err = manager.Ensure(ctx, repoURL)
 			if err != nil {
 				return fmt.Errorf("failed to add repository: %w", err)
 			}
@@ -342,7 +342,7 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 				Pretty(fmt.Sprintf("Creating worktree for %s...", versionForLog)).
 				Log(ctx)
 
-			localPath, commitHash, err := manager.EnsureVersion(repoURL, version)
+			localPath, commitHash, err := manager.EnsureVersion(ctx, repoURL, version)
 			if err != nil {
 				return fmt.Errorf("failed to create worktree for version '%s': %w", versionForLog, err)
 			}
@@ -578,7 +578,7 @@ If no ruleset name is provided, it defaults to 'default'.`,
 			}
 
 			// Ensure repo worktree is created and get local path
-			localPath, _, err := manager.EnsureVersion(repoURL, version)
+			localPath, _, err := manager.EnsureVersion(cmd.Context(), repoURL, version)
 			if err != nil {
 				return fmt.Errorf("failed to ensure repository version is available: %w", err)
 			}

@@ -2,12 +2,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/tend/pkg/fs"
 	"github.com/grovetools/tend/pkg/git"
@@ -254,4 +256,49 @@ README.md
 
 	ctx.Set("project_a_dir", projectADir)
 	return nil
+}
+
+// CleanupTestRepos removes any cx-managed bare clones whose URLs reference
+// the active test sandbox from the user's real ~/.local/share/grove/cx/repos.
+// Without this, e2e runs leak entries into `cx alias list` / `cx repo list`.
+func CleanupTestRepos(ctx *harness.Context) error {
+	mgr, err := repo.NewManager()
+	if err != nil {
+		return nil
+	}
+	manifest, err := mgr.LoadManifest()
+	if err != nil || manifest == nil {
+		return nil
+	}
+	rootDir := ctx.RootDir
+	for url, info := range manifest.Repositories {
+		if !looksLikeTestRepo(url, rootDir) {
+			continue
+		}
+		if info.BarePath != "" {
+			os.RemoveAll(info.BarePath)
+		}
+		delete(manifest.Repositories, url)
+	}
+	cxPath, err := repo.GetCxEcosystemPath()
+	if err != nil {
+		return nil
+	}
+	manifestPath := filepath.Join(cxPath, "manifest.json")
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil
+	}
+	_ = os.WriteFile(manifestPath, data, 0o644)
+	return nil
+}
+
+func looksLikeTestRepo(url, rootDir string) bool {
+	if rootDir != "" && strings.Contains(url, rootDir) {
+		return true
+	}
+	return strings.Contains(url, "grove-tend") ||
+		strings.Contains(url, "source-repo") ||
+		strings.Contains(url, "/var/folders/") ||
+		strings.Contains(url, "10.255.255.1")
 }

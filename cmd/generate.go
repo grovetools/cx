@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	stdctx "context"
 	"fmt"
 
 	"github.com/grovetools/core/pkg/workspace"
@@ -19,8 +18,9 @@ func NewGenerateCmd() *cobra.Command {
 		Short: "Generate .grove/context from .grove/context-files",
 		Long:  `Reads the .grove/context-files list and generates a concatenated .grove/context file with all specified files.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := stdctx.Background()
+			ctx := cmd.Context()
 			mgr := context.NewManager(GetWorkDir())
+			mgr.SetContext(ctx)
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {

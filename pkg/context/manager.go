@@ -82,6 +82,30 @@ type Manager struct {
 	log               *logrus.Entry
 	ulog              *grovelogging.UnifiedLogger
 	daemonClient      daemon.Client // Daemon client for cached workspace/git data
+	ctxMu             sync.RWMutex
+	ctx               gocontext.Context
+}
+
+// SetContext binds a cancellation context to the manager. Long-running
+// resolution paths (git imports, daemon RPCs) will honor cancellation
+// via this context. Callers should pass cmd.Context() from cobra RunEs.
+func (m *Manager) SetContext(ctx gocontext.Context) {
+	if ctx == nil {
+		ctx = gocontext.Background()
+	}
+	m.ctxMu.Lock()
+	m.ctx = ctx
+	m.ctxMu.Unlock()
+}
+
+// Context returns the manager's bound context (or context.Background() if unset).
+func (m *Manager) Context() gocontext.Context {
+	m.ctxMu.RLock()
+	defer m.ctxMu.RUnlock()
+	if m.ctx == nil {
+		return gocontext.Background()
+	}
+	return m.ctx
 }
 
 // managerCache memoizes Manager instances by absolute workDir. NewManager

@@ -14,8 +14,9 @@ import (
 
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/logging"
+	"github.com/grovetools/core/pkg/daemon"
+	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/profiling"
-	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/util/pathutil"
 	"github.com/sirupsen/logrus"
 )
@@ -367,18 +368,14 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				version = repoAndVersion[atIndex+1:]
 			}
 
-			// Instantiate repo manager
-			repoManager, err := repo.NewManager()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not create repository manager for git import: %v\n", err)
-				continue
-			}
-
-			localPath, _, err := repoManager.EnsureVersion(repoURL, version)
+			// route through daemon RPC so cancellation propagates to git and clones are single-flighted across cx invocations.
+			client := daemon.NewWithAutoStart(m.workDir)
+			resp, err := client.EnsureRepo(m.Context(), models.RepoEnsureRequest{URL: repoURL, Version: version})
 			if err != nil {
 				m.addSkippedRule(importInfo.LineNum, importInfo.OriginalLine, fmt.Sprintf("invalid git ref: %v", err))
 				continue
 			}
+			localPath := resp.WorktreePath
 
 			// Find the ruleset file within the cloned repository's .cx directories
 			// Use localPath (the worktree) instead of barePath because the ruleset files
@@ -559,17 +556,13 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 				version = repoAndVersion[atIndex+1:]
 			}
 
-			repoManager, err := repo.NewManager()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not create repository manager for git import: %v\n", err)
-				continue
-			}
-
-			localPath, _, err := repoManager.EnsureVersion(repoURL, version)
+			client := daemon.NewWithAutoStart(m.workDir)
+			resp, err := client.EnsureRepo(m.Context(), models.RepoEnsureRequest{URL: repoURL, Version: version})
 			if err != nil {
 				m.addSkippedRule(importInfo.LineNum, importInfo.OriginalLine, fmt.Sprintf("invalid git ref: %v", err))
 				continue
 			}
+			localPath := resp.WorktreePath
 
 			// Find the ruleset file within the cloned repository's .cx directories
 			// Use localPath (the worktree) instead of barePath because the ruleset files

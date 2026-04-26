@@ -16,6 +16,7 @@ func NewListCmd() *cobra.Command {
 		Long:  `Lists the absolute paths of all files in the context.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager(GetWorkDir())
+			mgr.SetContext(cmd.Context())
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {

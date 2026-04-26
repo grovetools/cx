@@ -68,6 +68,7 @@ func main() {
 
 		// Git Repository Scenarios
 		// GitRepositoryCloneScenario(),
+		GitRepoTimeoutScenario(),
 
 		// Git Alias Scenarios
 		GitAliasBasicScenario(),

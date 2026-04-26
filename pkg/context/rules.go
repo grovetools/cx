@@ -1198,7 +1198,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					}
 
 					// Ensure the repository worktree exists for the specified version
-					localPath, _, cloneErr := repoManager.EnsureVersion(repoURL, version)
+					localPath, _, cloneErr := repoManager.EnsureVersion(m.Context(), repoURL, version)
 					if cloneErr != nil {
 						fmt.Fprintf(os.Stderr, "Warning: could not ensure repository version %s: %v\n", repoURL, cloneErr)
 						continue
