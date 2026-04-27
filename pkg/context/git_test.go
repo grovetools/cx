@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -28,7 +29,8 @@ func TestGitIntegration(t *testing.T) {
 	_ = exec.Command("git", "config", "user.email", "test@example.com").Run()
 	_ = exec.Command("git", "config", "user.name", "Test User").Run()
 
-	mgr := NewManager(tempDir)
+	rulesFile := filepath.Join(tempDir, ".grove", "rules")
+	mgr := NewManagerWithOverride(tempDir, rulesFile)
 
 	// Create and commit some files
 	_ = os.WriteFile("file1.go", []byte("package main\n// File 1"), 0o644)
@@ -42,18 +44,14 @@ func TestGitIntegration(t *testing.T) {
 	_ = exec.Command("git", "add", "file3.go").Run()
 
 	t.Run("staged files", func(t *testing.T) {
-		opts := GitOptions{Staged: true}
+		opts := GitOptions{Staged: true, Force: true}
 		err := mgr.UpdateFromGit(opts)
 		if err != nil {
 			t.Fatalf("UpdateFromGit failed: %v", err)
 		}
 
-		// Check that only staged file is included
-		files, err := mgr.ResolveFilesFromRules()
-		if err != nil {
-			t.Fatalf("Failed to resolve files from rules: %v", err)
-		}
-
+		// Check that only staged file is included in the rules file
+		files := readRulesFileLines(t, rulesFile)
 		if len(files) != 1 || files[0] != "file3.go" {
 			t.Errorf("Expected only file3.go in context, got %v", files)
 		}
@@ -63,18 +61,14 @@ func TestGitIntegration(t *testing.T) {
 	_ = exec.Command("git", "commit", "-m", "Add file3").Run()
 
 	t.Run("last N commits", func(t *testing.T) {
-		opts := GitOptions{Commits: 1}
+		opts := GitOptions{Commits: 1, Force: true}
 		err := mgr.UpdateFromGit(opts)
 		if err != nil {
 			t.Fatalf("UpdateFromGit failed: %v", err)
 		}
 
-		// Check that only file from last commit is included
-		files, err := mgr.ResolveFilesFromRules()
-		if err != nil {
-			t.Fatalf("Failed to resolve files from rules: %v", err)
-		}
-
+		// Check that only file from last commit is included in the rules file
+		files := readRulesFileLines(t, rulesFile)
 		if len(files) != 1 || files[0] != "file3.go" {
 			t.Errorf("Expected only file3.go from last commit, got %v", files)
 		}
@@ -87,19 +81,14 @@ func TestGitIntegration(t *testing.T) {
 	_ = exec.Command("git", "commit", "-m", "Add feature").Run()
 
 	t.Run("branch comparison", func(t *testing.T) {
-		// Use HEAD~1..HEAD to compare last commit instead of branch names
-		opts := GitOptions{Branch: "HEAD~1..HEAD"}
+		opts := GitOptions{Branch: "HEAD~1..HEAD", Force: true}
 		err := mgr.UpdateFromGit(opts)
 		if err != nil {
 			t.Fatalf("UpdateFromGit failed: %v", err)
 		}
 
-		// Check that only feature branch file is included
-		files, err := mgr.ResolveFilesFromRules()
-		if err != nil {
-			t.Fatalf("Failed to resolve files from rules: %v", err)
-		}
-
+		// Check that only feature branch file is included in the rules file
+		files := readRulesFileLines(t, rulesFile)
 		if len(files) != 1 || files[0] != "feature.go" {
 			t.Errorf("Expected only feature.go from branch, got %v", files)
 		}
@@ -150,6 +139,23 @@ func TestParseGitFileList(t *testing.T) {
 			}
 		})
 	}
+}
+
+// readRulesFileLines reads a rules file and returns non-empty lines.
+func readRulesFileLines(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read rules file %s: %v", path, err)
+	}
+	var lines []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 func TestCheckGitRepo(t *testing.T) {
