@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	"github.com/grovetools/core/pkg/workspace"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 var useXMLFormat bool = true

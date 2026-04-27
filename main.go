@@ -10,10 +10,12 @@ import (
 	"github.com/grovetools/core/cli"
 	"github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/profiling"
+
 	// "github.com/grovetools/core/tui"
+	"github.com/sirupsen/logrus"
+
 	"github.com/grovetools/cx/cmd"
 	"github.com/grovetools/cx/cmd/view"
-	"github.com/sirupsen/logrus"
 )
 
 func main() {

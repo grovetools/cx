@@ -7,7 +7,6 @@ import (
 
 	"github.com/grovetools/tend/pkg/harness"
 	"github.com/grovetools/tend/pkg/tui"
-	"github.com/grovetools/tend/pkg/verify"
 )
 
 // TUIViewTreeScenario tests the primary features of `cx view`.
@@ -86,65 +85,6 @@ func testCXViewPageNavigation(ctx *harness.Context) error {
 	view3, _ := session.Capture()
 	ctx.ShowCommandOutput("After Tab #3", view3, "")
 	return nil
-}
-
-func testCXViewRuleModification(ctx *harness.Context) error {
-	session := ctx.Get("tui_session").(*tui.Session)
-	// Go to tree view (from list page, tab forward to tree)
-	if err := session.Type("Tab"); err != nil {
-		return err
-	}
-	// Wait for tree view to load (looking for directory indicators)
-	time.Sleep(500 * time.Millisecond)
-
-	// Navigate to untracked.txt
-	if err := session.NavigateToText("untracked.txt"); err != nil {
-		return err
-	}
-	// Add to hot context
-	if err := session.Type("h"); err != nil {
-		return err
-	}
-	if err := session.WaitForText("untracked.txt *", 3*time.Second); err != nil {
-		return err
-	}
-	// Move to cold context
-	if err := session.Type("c"); err != nil {
-		return err
-	}
-	if err := session.WaitForText("untracked.txt ❄️", 3*time.Second); err != nil {
-		return err
-	}
-	// Exclude it
-	if err := session.Type("x"); err != nil {
-		return err
-	}
-	return session.WaitForText("untracked.txt 🚫", 3*time.Second)
-}
-
-func testCXViewSearch(ctx *harness.Context) error {
-	session := ctx.Get("tui_session").(*tui.Session)
-	if err := session.Type("/"); err != nil { // Start search
-		return err
-	}
-	if err := session.Type("lib.go"); err != nil { // Type search term
-		return err
-	}
-	if err := session.Type("Enter"); err != nil { // Apply search
-		return err
-	}
-
-	if err := ctx.Verify(func(v *verify.Collector) {
-		v.Equal("lib.go is visible after search", nil,
-			session.WaitForText("lib.go", 3*time.Second))
-		v.Equal("main.go is not visible", nil,
-			session.AssertNotContains("main.go"))
-	}); err != nil {
-		return err
-	}
-
-	// Clear search
-	return session.Type("Escape")
 }
 
 func quitCXViewTUI(ctx *harness.Context) error {

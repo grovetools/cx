@@ -188,9 +188,7 @@ https://github.com/charmbracelet/lipgloss@v0.13.0
 				if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 					// Before failing, let's create the parent directory to ensure it's not a test setup issue.
 					// This is needed because tend might not have created all XDG dirs.
-					if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
-						// Ignore error, the os.Stat will fail anyway if something is wrong.
-					}
+					_ = os.MkdirAll(filepath.Dir(manifestPath), 0o755)
 					if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 						return fmt.Errorf("manifest file does not exist at %s", manifestPath)
 					}
@@ -264,7 +262,7 @@ https://github.com/charmbracelet/lipgloss@v0.13.0
 				return nil
 			}),
 			harness.NewStep("Teardown test repos", func(ctx *harness.Context) error {
-				CleanupTestRepos(ctx)
+				_ = CleanupTestRepos(ctx)
 				return nil
 			}),
 		},
@@ -308,7 +306,7 @@ func GitRepoTimeoutScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Teardown test repos", func(ctx *harness.Context) error {
-				CleanupTestRepos(ctx)
+				_ = CleanupTestRepos(ctx)
 				return nil
 			}),
 		},

@@ -160,10 +160,7 @@ func (m *Manager) GetDefaultRuleName() string {
 // parseGitRuleForModification is a helper to parse a rule line to check if it's a Git rule.
 // It handles both direct URLs and @a:git: aliases.
 func (m *Manager) parseGitRuleForModification(rule string) (isGit bool, repoURL, version, ruleset string) {
-	cleanRule := strings.TrimSpace(rule)
-	if strings.HasPrefix(cleanRule, "!") {
-		cleanRule = strings.TrimPrefix(cleanRule, "!")
-	}
+	cleanRule := strings.TrimPrefix(strings.TrimSpace(rule), "!")
 
 	// Handle @a:git: or @alias:git: alias
 	isGitAlias := false
@@ -288,7 +285,7 @@ func MatchesGitRule(rule GitRule, projectRepoURL, projectVersion, projectHeadCom
 	// resolve the branch to its commit hash and compare
 	if projectHeadCommit != "" && projectPath != "" {
 		// Use exec directly here to avoid circular dependency with grove-core
-		cmd := exec.Command("git", "-C", projectPath, "rev-parse", rule.Version)
+		cmd := exec.Command("git", "-C", projectPath, "rev-parse", rule.Version) //nolint:gosec // args from parsed rules file
 		output, err := cmd.Output()
 		if err == nil {
 			ruleCommit := strings.TrimSpace(string(output))
@@ -1164,10 +1161,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 
 					// Extract the project path from the resolved line to validate against workspace exclusions
 					// The resolved line will be something like "/path/to/project/**" or "!/path/to/project/src/**/*.go"
-					pathToValidate := resolvedLine
-					if strings.HasPrefix(pathToValidate, "!") {
-						pathToValidate = strings.TrimPrefix(pathToValidate, "!")
-					}
+					pathToValidate := strings.TrimPrefix(resolvedLine, "!")
 					// Parse out any search directives to get the base path
 					basePathForValidation, _, _ := parseSearchDirectives(pathToValidate)
 					// Extract just the directory part (remove glob patterns)
@@ -1202,11 +1196,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 					baseForCheck, _, _ := parseSearchDirectives(processedLine)
 					if !strings.Contains(baseForCheck, "*") && !strings.Contains(baseForCheck, "?") {
 						// Check if the path is actually a directory before appending /**
-						checkPath := baseForCheck
-						// Handle exclusion prefix
-						if strings.HasPrefix(checkPath, "!") {
-							checkPath = strings.TrimPrefix(checkPath, "!")
-						}
+						checkPath := strings.TrimPrefix(baseForCheck, "!")
 						if info, err := os.Stat(checkPath); err == nil && info.IsDir() {
 							// It's a directory, append /**
 							// Replace the base pattern with base + /**
@@ -1461,7 +1451,7 @@ func (m *Manager) SetActiveRules(sourcePath string) error {
 
 	// Write to active rules file (handles plan-scoped paths and creates parent dirs)
 	activeRulesPath := m.ResolveRulesWritePath()
-	if err := os.WriteFile(activeRulesPath, content, 0o644); err != nil {
+	if err := os.WriteFile(activeRulesPath, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 		return fmt.Errorf("error writing active rules file: %w", err)
 	}
 
@@ -1495,7 +1485,7 @@ func (m *Manager) WriteRulesTo(destPath string) error {
 	}
 
 	// Write to destination file, overwriting if it exists
-	if err := os.WriteFile(destPath, content, 0o644); err != nil {
+	if err := os.WriteFile(destPath, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 		return fmt.Errorf("error writing to destination file: %w", err)
 	}
 
@@ -1538,7 +1528,7 @@ func (m *Manager) removeGitRulesForRepo(repoURL string) error {
 	if len(newLines) > 0 && !strings.HasSuffix(newContent, "\n") {
 		newContent += "\n"
 	}
-	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644)
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644) //nolint:gosec // rules file, not sensitive
 }
 
 // AppendRule adds a rule to the active rules file in the specified context
@@ -1629,7 +1619,7 @@ func (m *Manager) AppendRule(rulePath, contextType string) error {
 	if len(lines) > 0 && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	return os.WriteFile(rulesFilePath, []byte(content), 0o644)
+	return os.WriteFile(rulesFilePath, []byte(content), 0o644) //nolint:gosec // rules file, not sensitive
 }
 
 // ToggleViewDirective adds or removes a `@view:` directive from the rules file.
@@ -1677,7 +1667,7 @@ func (m *Manager) ToggleViewDirective(path string) error {
 		newContent += "\n" // Ensure trailing newline
 	}
 
-	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644)
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644) //nolint:gosec // rules file, not sensitive
 }
 
 // GetRuleStatus checks the current status of a rule in the rules file
@@ -1761,7 +1751,7 @@ func (m *Manager) RemoveRule(rulePath string) error {
 		newContent += "\n"
 	}
 
-	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644)
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644) //nolint:gosec // rules file, not sensitive
 }
 
 // RemoveRuleForPath removes any rule that corresponds to the given repository path.
@@ -1832,15 +1822,13 @@ func (m *Manager) RemoveRuleForPath(path string) error {
 		newContent += "\n"
 	}
 
-	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644)
+	return os.WriteFile(rulesFilePath, []byte(newContent), 0o644) //nolint:gosec // rules file, not sensitive
 }
 
 // validateRuleSafety checks if a rule is safe to add
 func (m *Manager) validateRuleSafety(rulePath string) error {
-	// Skip validation for exclusion rules
-	if strings.HasPrefix(rulePath, "!") {
-		rulePath = strings.TrimPrefix(rulePath, "!")
-	}
+	// Strip exclusion prefix if present
+	rulePath = strings.TrimPrefix(rulePath, "!")
 
 	// Count parent directory traversals
 	traversalCount := strings.Count(rulePath, "../")

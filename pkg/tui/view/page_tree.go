@@ -12,6 +12,7 @@ import (
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/workspace"
 	core_theme "github.com/grovetools/core/tui/theme"
+
 	"github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/cx/pkg/context/tree"
 )
@@ -1171,7 +1172,7 @@ func (p *treePage) isPathPotentiallyDangerous(path string) (bool, string) {
 	return false, ""
 }
 
-func (p *treePage) handleRuleAction(relPath string, action string, isDir bool) tea.Cmd {
+func (p *treePage) handleRuleAction(relPath, action string, isDir bool) tea.Cmd {
 	// Check if path is potentially dangerous
 	isDangerous, warning := p.isPathPotentiallyDangerous(relPath)
 

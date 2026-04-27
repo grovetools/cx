@@ -20,23 +20,23 @@ func TestGetStats_ExternalRulesFile(t *testing.T) {
 
 	// Create the "project" directory with files
 	projectDir := t.TempDir()
-	os.WriteFile(filepath.Join(projectDir, "main.go"), []byte("package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"), 0o644)
-	os.WriteFile(filepath.Join(projectDir, "lib.go"), []byte("package main\n\nfunc helper() string {\n\treturn \"help\"\n}\n"), 0o644)
-	os.MkdirAll(filepath.Join(projectDir, ".grove"), 0o755)
-	os.WriteFile(filepath.Join(projectDir, "grove.yml"), []byte("name: test-project\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(projectDir, "main.go"), []byte("package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(projectDir, "lib.go"), []byte("package main\n\nfunc helper() string {\n\treturn \"help\"\n}\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(projectDir, ".grove"), 0o755)
+	_ = os.WriteFile(filepath.Join(projectDir, "grove.yml"), []byte("name: test-project\n"), 0o644)
 
 	// Create an "external notebook" directory with the rules file
 	notebookDir := t.TempDir()
 	rulesDir := filepath.Join(notebookDir, "plans", "test-plan", "rules")
-	os.MkdirAll(rulesDir, 0o755)
+	_ = os.MkdirAll(rulesDir, 0o755)
 	rulesFile := filepath.Join(rulesDir, "job.rules")
-	os.WriteFile(rulesFile, []byte("*.go\n"), 0o644)
+	_ = os.WriteFile(rulesFile, []byte("*.go\n"), 0o644)
 
 	// Set CWD to a DIFFERENT directory (simulates groveterm from ~)
 	otherDir := t.TempDir()
 	origDir, _ := os.Getwd()
-	os.Chdir(otherDir)
-	defer os.Chdir(origDir)
+	_ = os.Chdir(otherDir)
+	defer func() { _ = os.Chdir(origDir) }()
 
 	// Create manager the way the hosted BSP panel does:
 	// workDir = project, rulesFile = external notebook path

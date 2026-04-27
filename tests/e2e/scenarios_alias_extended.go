@@ -28,20 +28,20 @@ func AliasRulesetImportScenario() *harness.Scenario {
     path: %s
     enabled: true
 `, grovesDir)
-				fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig)
+				_ = fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig)
 
 				// Create target project with named rule sets
 				projectB := filepath.Join(grovesDir, "project-b")
-				fs.WriteString(filepath.Join(projectB, "grove.yml"), `name: project-b`)
-				fs.WriteString(filepath.Join(projectB, "docs/guide.md"), "Guide content")
-				fs.WriteString(filepath.Join(projectB, "src/api.go"), "package api")
-				fs.WriteString(filepath.Join(projectB, ".cx/docs.rules"), "docs/**/*.md")
-				fs.WriteString(filepath.Join(projectB, ".cx/api.rules"), "src/**/*.go")
+				_ = fs.WriteString(filepath.Join(projectB, "grove.yml"), `name: project-b`)
+				_ = fs.WriteString(filepath.Join(projectB, "docs/guide.md"), "Guide content")
+				_ = fs.WriteString(filepath.Join(projectB, "src/api.go"), "package api")
+				_ = fs.WriteString(filepath.Join(projectB, ".cx/docs.rules"), "docs/**/*.md")
+				_ = fs.WriteString(filepath.Join(projectB, ".cx/api.rules"), "src/**/*.go")
 				command.New("git", "init").Dir(projectB).Run() // Needed for discovery
 
 				// Create main project
-				fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), `name: project-a`)
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "grove.yml"), `name: project-a`)
 				command.New("git", "init").Dir(ctx.RootDir).Run()
 				return nil
 			}),
@@ -320,34 +320,34 @@ func AliasResolutionFromEcosystemWorktreeRootScenario() *harness.Scenario {
     path: %s
     enabled: true
 `, grovesDir)
-				fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig)
+				_ = fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig)
 
 				// Create ecosystem root
 				ecoRootDir := filepath.Join(grovesDir, "my-ecosystem")
 				ecoConfig := `name: my-ecosystem
 workspaces:
   - "*"`
-				fs.WriteString(filepath.Join(ecoRootDir, "grove.yml"), ecoConfig)
-				fs.WriteString(filepath.Join(ecoRootDir, ".gitmodules"), "# ecosystem")
+				_ = fs.WriteString(filepath.Join(ecoRootDir, "grove.yml"), ecoConfig)
+				_ = fs.WriteString(filepath.Join(ecoRootDir, ".gitmodules"), "# ecosystem")
 				command.New("git", "init").Dir(ecoRootDir).Run()
 
 				// Create ecosystem worktree
 				worktreeDir := filepath.Join(ecoRootDir, ".grove-worktrees", "feature-branch")
-				fs.WriteString(filepath.Join(worktreeDir, "grove.yml"), ecoConfig)
-				fs.WriteString(filepath.Join(worktreeDir, ".gitmodules"), "# ecosystem worktree")
-				fs.WriteString(filepath.Join(worktreeDir, ".git"), "gitdir: ../../.git/worktrees/feature-branch")
+				_ = fs.WriteString(filepath.Join(worktreeDir, "grove.yml"), ecoConfig)
+				_ = fs.WriteString(filepath.Join(worktreeDir, ".gitmodules"), "# ecosystem worktree")
+				_ = fs.WriteString(filepath.Join(worktreeDir, ".git"), "gitdir: ../../.git/worktrees/feature-branch")
 				ctx.Set("worktreeDir", worktreeDir)
 
 				// Create project-beta inside the worktree (the correct target)
 				projectBetaWorktreeDir := filepath.Join(worktreeDir, "project-beta")
-				fs.WriteString(filepath.Join(projectBetaWorktreeDir, "grove.yml"), `name: project-beta`)
-				fs.WriteString(filepath.Join(projectBetaWorktreeDir, "beta.go"), "package beta // from worktree")
+				_ = fs.WriteString(filepath.Join(projectBetaWorktreeDir, "grove.yml"), `name: project-beta`)
+				_ = fs.WriteString(filepath.Join(projectBetaWorktreeDir, "beta.go"), "package beta // from worktree")
 				command.New("git", "init").Dir(projectBetaWorktreeDir).Run()
 
 				// Create a decoy project-beta outside the ecosystem (the incorrect target)
 				decoyProjectBetaDir := filepath.Join(grovesDir, "project-beta")
-				fs.WriteString(filepath.Join(decoyProjectBetaDir, "grove.yml"), `name: project-beta`)
-				fs.WriteString(filepath.Join(decoyProjectBetaDir, "decoy.go"), "package beta // from decoy")
+				_ = fs.WriteString(filepath.Join(decoyProjectBetaDir, "grove.yml"), `name: project-beta`)
+				_ = fs.WriteString(filepath.Join(decoyProjectBetaDir, "decoy.go"), "package beta // from decoy")
 				command.New("git", "init").Dir(decoyProjectBetaDir).Run()
 
 				return nil
@@ -358,7 +358,7 @@ workspaces:
 
 				// Create rules file in the ecosystem worktree root
 				rules := `@a:project-beta/**/*.go`
-				fs.WriteString(filepath.Join(worktreeDir, ".grove", "rules"), rules)
+				_ = fs.WriteString(filepath.Join(worktreeDir, ".grove", "rules"), rules)
 
 				// Run the command from the ecosystem worktree root
 				cmd := ctx.Command(cx, "list").Dir(worktreeDir)

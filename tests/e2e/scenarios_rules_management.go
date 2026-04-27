@@ -20,13 +20,13 @@ func RulesWorkflowScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup project with multiple rule sets", func(ctx *harness.Context) error {
 				// Create files to be referenced by rules
-				fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Docs")
-				fs.WriteString(filepath.Join(ctx.RootDir, "api.go"), "package api")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Docs")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "api.go"), "package api")
 
 				// Create named rule sets in .cx/
-				fs.WriteString(filepath.Join(ctx.RootDir, ".cx", "dev.rules"), "*.go")
-				fs.WriteString(filepath.Join(ctx.RootDir, ".cx", "docs.rules"), "README.md")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, ".cx", "dev.rules"), "*.go")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, ".cx", "docs.rules"), "README.md")
 				return nil
 			}),
 			harness.NewStep("Run 'cx rules list' and verify initial state", func(ctx *harness.Context) error {

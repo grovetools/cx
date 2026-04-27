@@ -4,8 +4,9 @@ import (
 	stdctx "context"
 	"strings"
 
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // NewFromCmdCmd creates the from-cmd command

@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	core_theme "github.com/grovetools/core/tui/theme"
+
 	"github.com/grovetools/cx/pkg/context"
 )
 

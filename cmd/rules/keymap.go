@@ -10,6 +10,7 @@ package rules
 
 import (
 	"github.com/grovetools/core/tui/keymap"
+
 	tuirules "github.com/grovetools/cx/pkg/tui/rules"
 )
 

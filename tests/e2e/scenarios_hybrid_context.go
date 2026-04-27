@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	cxcontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/tend/pkg/command"
 	"github.com/grovetools/tend/pkg/fs"
 	"github.com/grovetools/tend/pkg/git"
 	"github.com/grovetools/tend/pkg/harness"
+
+	cxcontext "github.com/grovetools/cx/pkg/context"
 )
 
 // DualContextWorkflowScenario tests the complete workflow for dual hot/cold contexts.
@@ -21,11 +22,11 @@ func DualContextWorkflowScenario() *harness.Scenario {
 		Tags:        []string{"cx", "hybrid", "rules"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup project with hybrid rules file", func(ctx *harness.Context) error {
-				git.Init(ctx.RootDir)
-				fs.CreateDir(filepath.Join(ctx.RootDir, "src"))
-				fs.WriteString(filepath.Join(ctx.RootDir, "src", "main.go"), "package main // main content")
-				fs.WriteString(filepath.Join(ctx.RootDir, "src", "utils.go"), "package main // utils content")
-				fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Project README")
+				_ = git.Init(ctx.RootDir)
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "src"))
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "src", "main.go"), "package main // main content")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "src", "utils.go"), "package main // utils content")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Project README")
 
 				// 'src/utils.go' matches both hot and cold patterns, testing precedence.
 				rules := `# Hot context: frequently changing files
@@ -162,8 +163,8 @@ func NoSeparatorBackwardCompatibilityScenario() *harness.Scenario {
 		Tags:        []string{"cx", "hybrid", "rules"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup project with standard rules file", func(ctx *harness.Context) error {
-				fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Test")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Test")
 				rules := "*.go\n*.md"
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
@@ -217,8 +218,8 @@ func EmptyColdContextScenario() *harness.Scenario {
 		Tags:        []string{"cx", "hybrid", "rules"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup project with empty cold context rules", func(ctx *harness.Context) error {
-				fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Test")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Test")
 				rules := "*.go\n---\n"
 				return fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 			}),
@@ -286,19 +287,19 @@ func CachedContextOnlyColdFilesScenario() *harness.Scenario {
 		Tags:        []string{"cx", "hybrid", "cached-context"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup project with multiple hot and cold files", func(ctx *harness.Context) error {
-				git.Init(ctx.RootDir)
+				_ = git.Init(ctx.RootDir)
 
 				// Create hot files
-				fs.CreateDir(filepath.Join(ctx.RootDir, "src"))
-				fs.WriteString(filepath.Join(ctx.RootDir, "src", "main.go"), "package main // main hot file")
-				fs.WriteString(filepath.Join(ctx.RootDir, "src", "app.go"), "package main // app hot file")
-				fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Hot README")
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "src"))
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "src", "main.go"), "package main // main hot file")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "src", "app.go"), "package main // app hot file")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# Hot README")
 
 				// Create cold files
-				fs.CreateDir(filepath.Join(ctx.RootDir, "config"))
-				fs.WriteString(filepath.Join(ctx.RootDir, "config", "schema.json"), `{"type": "object"}`)
-				fs.WriteString(filepath.Join(ctx.RootDir, "LICENSE"), "MIT License")
-				fs.WriteString(filepath.Join(ctx.RootDir, "go.mod"), "module example")
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "config"))
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "config", "schema.json"), `{"type": "object"}`)
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "LICENSE"), "MIT License")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "go.mod"), "module example")
 
 				// Rules with clear separation
 				rules := `# Hot context

@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // resolveWithContext resolves a pattern in the context of a rules file.

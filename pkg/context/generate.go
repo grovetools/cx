@@ -128,7 +128,7 @@ func (m *Manager) GenerateContext(useXMLFormat bool) error {
 }
 
 // generateContextFromFilesAndTrees is a private helper that writes trees and a list of files to the hot context file.
-func (m *Manager) generateContextFromFilesAndTrees(files []string, treePaths []string, useXMLFormat bool) error {
+func (m *Manager) generateContextFromFilesAndTrees(files, treePaths []string, useXMLFormat bool) error {
 	// Resolve context file path (plan-scoped > notebook > local)
 	contextPath := m.ResolveContextWritePath()
 	ctxFile, err := os.Create(contextPath)
@@ -197,7 +197,7 @@ func (m *Manager) generateContextFromFilesAndTrees(files []string, treePaths []s
 				continue
 			}
 
-			ctxFile.Write(content)
+			_, _ = ctxFile.Write(content)
 
 			// Write end marker
 			fmt.Fprintf(ctxFile, "\n=== END FILE: %s ===\n\n", file)
@@ -298,7 +298,7 @@ func (m *Manager) generateCachedContextFromFiles(coldFiles []string) error {
 }
 
 // writeFileToXML writes a file's content to the XML output with proper indentation
-func (m *Manager) writeFileToXML(w io.Writer, file string, indent string) error {
+func (m *Manager) writeFileToXML(w io.Writer, file, indent string) error {
 	fmt.Fprintf(w, "%s<file path=\"%s\">\n", indent, file)
 
 	// Read file content
@@ -315,7 +315,7 @@ func (m *Manager) writeFileToXML(w io.Writer, file string, indent string) error 
 	}
 
 	// Write content directly without extra indentation (content already has its own)
-	w.Write(content)
+	_, _ = w.Write(content)
 
 	// Ensure there's a newline before the closing tag
 	if len(content) > 0 && content[len(content)-1] != '\n' {
@@ -350,7 +350,7 @@ func (m *Manager) GenerateTreeString(rootPath string) (string, error) {
 	return sb.String(), err
 }
 
-func (m *Manager) buildTreeString(sb *strings.Builder, dirPath string, prefix string, gitIgnored map[string]bool) error {
+func (m *Manager) buildTreeString(sb *strings.Builder, dirPath, prefix string, gitIgnored map[string]bool) error {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return err

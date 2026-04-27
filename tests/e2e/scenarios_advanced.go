@@ -77,16 +77,16 @@ func GitBasedContextScenario() *harness.Scenario {
 		Tags:        []string{"cx", "git"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup git repository", func(ctx *harness.Context) error {
-				git.Init(ctx.RootDir)
-				git.SetupTestConfig(ctx.RootDir)
-				fs.WriteString(filepath.Join(ctx.RootDir, "committed.txt"), "committed")
-				git.Add(ctx.RootDir, "committed.txt")
-				git.Commit(ctx.RootDir, "Initial commit")
+				_ = git.Init(ctx.RootDir)
+				_ = git.SetupTestConfig(ctx.RootDir)
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "committed.txt"), "committed")
+				_ = git.Add(ctx.RootDir, "committed.txt")
+				_ = git.Commit(ctx.RootDir, "Initial commit")
 				return nil
 			}),
 			harness.NewStep("Create and stage a new file", func(ctx *harness.Context) error {
-				fs.WriteString(filepath.Join(ctx.RootDir, "staged.txt"), "staged")
-				git.Add(ctx.RootDir, "staged.txt")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "staged.txt"), "staged")
+				_ = git.Add(ctx.RootDir, "staged.txt")
 				return nil
 			}),
 			harness.NewStep("Run 'cx from-git --staged'", func(ctx *harness.Context) error {
@@ -122,12 +122,12 @@ func ComplexPatternScenario() *harness.Scenario {
 		Tags:        []string{"cx", "rules"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup complex project structure", func(ctx *harness.Context) error {
-				fs.CreateDir(filepath.Join(ctx.RootDir, "src/api"))
-				fs.CreateDir(filepath.Join(ctx.RootDir, "vendor/lib"))
-				fs.WriteString(filepath.Join(ctx.RootDir, "src/api/handler.go"), "package api")
-				fs.WriteString(filepath.Join(ctx.RootDir, "src/api/handler_test.go"), "package api_test")
-				fs.WriteString(filepath.Join(ctx.RootDir, "vendor/lib/lib.go"), "package lib")
-				fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# complex")
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "src/api"))
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "vendor/lib"))
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "src/api/handler.go"), "package api")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "src/api/handler_test.go"), "package api_test")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "vendor/lib/lib.go"), "package lib")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "README.md"), "# complex")
 				return nil
 			}),
 			harness.NewStep("Create complex rules file", func(ctx *harness.Context) error {
@@ -176,20 +176,20 @@ func PlainDirectoryPatternScenario() *harness.Scenario {
 				nvimPluginDir := filepath.Join(groveNotebookDir, "nvim-plugin")
 
 				// Create grove-flow structure
-				fs.CreateDir(filepath.Join(groveFlowDir, "src"))
-				fs.CreateDir(filepath.Join(groveFlowDir, "pkg/core"))
-				fs.WriteString(filepath.Join(groveFlowDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(groveFlowDir, "README.md"), "# Grove Flow")
-				fs.WriteString(filepath.Join(groveFlowDir, "src/app.go"), "package src")
-				fs.WriteString(filepath.Join(groveFlowDir, "pkg/core/flow.go"), "package core")
+				_ = fs.CreateDir(filepath.Join(groveFlowDir, "src"))
+				_ = fs.CreateDir(filepath.Join(groveFlowDir, "pkg/core"))
+				_ = fs.WriteString(filepath.Join(groveFlowDir, "main.go"), "package main")
+				_ = fs.WriteString(filepath.Join(groveFlowDir, "README.md"), "# Grove Flow")
+				_ = fs.WriteString(filepath.Join(groveFlowDir, "src/app.go"), "package src")
+				_ = fs.WriteString(filepath.Join(groveFlowDir, "pkg/core/flow.go"), "package core")
 
 				// Create grove-notebook/nvim-plugin structure
-				fs.CreateDir(filepath.Join(nvimPluginDir, "lua"))
-				fs.CreateDir(filepath.Join(nvimPluginDir, "plugin"))
-				fs.WriteString(filepath.Join(nvimPluginDir, "init.lua"), "-- Neovim plugin")
-				fs.WriteString(filepath.Join(nvimPluginDir, "README.md"), "# Nvim Plugin")
-				fs.WriteString(filepath.Join(nvimPluginDir, "lua/config.lua"), "-- Config")
-				fs.WriteString(filepath.Join(nvimPluginDir, "plugin/main.vim"), "\" Main plugin")
+				_ = fs.CreateDir(filepath.Join(nvimPluginDir, "lua"))
+				_ = fs.CreateDir(filepath.Join(nvimPluginDir, "plugin"))
+				_ = fs.WriteString(filepath.Join(nvimPluginDir, "init.lua"), "-- Neovim plugin")
+				_ = fs.WriteString(filepath.Join(nvimPluginDir, "README.md"), "# Nvim Plugin")
+				_ = fs.WriteString(filepath.Join(nvimPluginDir, "lua/config.lua"), "-- Config")
+				_ = fs.WriteString(filepath.Join(nvimPluginDir, "plugin/main.vim"), "\" Main plugin")
 
 				// Create local grove.yml with allowed_paths configuration
 				groveConfig := fmt.Sprintf(`context:
@@ -283,19 +283,19 @@ func RecursiveParentPatternScenario() *harness.Scenario {
 				os.RemoveAll(siblingDir)
 
 				// Create sibling project structure with nested directories
-				fs.CreateDir(filepath.Join(siblingDir, "cmd"))
-				fs.CreateDir(filepath.Join(siblingDir, "pkg/util"))
-				fs.CreateDir(filepath.Join(siblingDir, "internal/core/db"))
+				_ = fs.CreateDir(filepath.Join(siblingDir, "cmd"))
+				_ = fs.CreateDir(filepath.Join(siblingDir, "pkg/util"))
+				_ = fs.CreateDir(filepath.Join(siblingDir, "internal/core/db"))
 
 				// Create Go files at various depths
-				fs.WriteString(filepath.Join(siblingDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(siblingDir, "cmd/root.go"), "package cmd")
-				fs.WriteString(filepath.Join(siblingDir, "pkg/util/helper.go"), "package util")
-				fs.WriteString(filepath.Join(siblingDir, "internal/core/db/manager.go"), "package db")
+				_ = fs.WriteString(filepath.Join(siblingDir, "main.go"), "package main")
+				_ = fs.WriteString(filepath.Join(siblingDir, "cmd/root.go"), "package cmd")
+				_ = fs.WriteString(filepath.Join(siblingDir, "pkg/util/helper.go"), "package util")
+				_ = fs.WriteString(filepath.Join(siblingDir, "internal/core/db/manager.go"), "package db")
 
 				// Create non-Go files to ensure pattern matching works
-				fs.WriteString(filepath.Join(siblingDir, "README.md"), "# Sibling")
-				fs.WriteString(filepath.Join(siblingDir, "pkg/util/config.json"), "{}")
+				_ = fs.WriteString(filepath.Join(siblingDir, "README.md"), "# Sibling")
+				_ = fs.WriteString(filepath.Join(siblingDir, "pkg/util/config.json"), "{}")
 
 				// Create local grove.yml with allowed_paths configuration
 				groveConfig := fmt.Sprintf(`context:
@@ -364,35 +364,35 @@ func ExclusionPatternsScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup project with test directories", func(ctx *harness.Context) error {
 				// Create main project structure
-				fs.CreateDir(filepath.Join(ctx.RootDir, "src"))
-				fs.CreateDir(filepath.Join(ctx.RootDir, "tests/unit"))
-				fs.CreateDir(filepath.Join(ctx.RootDir, "tests/integration"))
-				fs.CreateDir(filepath.Join(ctx.RootDir, "pkg/tests"))
-				fs.CreateDir(filepath.Join(ctx.RootDir, "internal/testutils"))
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "src"))
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "tests/unit"))
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "tests/integration"))
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "pkg/tests"))
+				_ = fs.CreateDir(filepath.Join(ctx.RootDir, "internal/testutils"))
 
 				// Create Go files
-				fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(ctx.RootDir, "src/app.go"), "package src")
-				fs.WriteString(filepath.Join(ctx.RootDir, "src/app_test.go"), "package src")
-				fs.WriteString(filepath.Join(ctx.RootDir, "tests/unit/user_test.go"), "package unit")
-				fs.WriteString(filepath.Join(ctx.RootDir, "tests/integration/api_test.go"), "package integration")
-				fs.WriteString(filepath.Join(ctx.RootDir, "pkg/tests/helper.go"), "package tests")
-				fs.WriteString(filepath.Join(ctx.RootDir, "internal/testutils/mock.go"), "package testutils")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "main.go"), "package main")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "src/app.go"), "package src")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "src/app_test.go"), "package src")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "tests/unit/user_test.go"), "package unit")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "tests/integration/api_test.go"), "package integration")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "pkg/tests/helper.go"), "package tests")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "internal/testutils/mock.go"), "package testutils")
 
 				// Create sibling project for cross-directory testing
 				parentDir := filepath.Dir(ctx.RootDir)
 				siblingDir := filepath.Join(parentDir, "sibling-project")
-				fs.CreateDir(filepath.Join(siblingDir, "cmd"))
-				fs.CreateDir(filepath.Join(siblingDir, "tests/e2e"))
-				fs.CreateDir(filepath.Join(siblingDir, "pkg/util"))
-				fs.CreateDir(filepath.Join(siblingDir, "internal/core/db"))
+				_ = fs.CreateDir(filepath.Join(siblingDir, "cmd"))
+				_ = fs.CreateDir(filepath.Join(siblingDir, "tests/e2e"))
+				_ = fs.CreateDir(filepath.Join(siblingDir, "pkg/util"))
+				_ = fs.CreateDir(filepath.Join(siblingDir, "internal/core/db"))
 
-				fs.WriteString(filepath.Join(siblingDir, "main.go"), "package main")
-				fs.WriteString(filepath.Join(siblingDir, "cmd/cli.go"), "package cmd")
-				fs.WriteString(filepath.Join(siblingDir, "cmd/root.go"), "package cmd")
-				fs.WriteString(filepath.Join(siblingDir, "tests/e2e/flow_test.go"), "package e2e")
-				fs.WriteString(filepath.Join(siblingDir, "pkg/util/helper.go"), "package util")
-				fs.WriteString(filepath.Join(siblingDir, "internal/core/db/manager.go"), "package db")
+				_ = fs.WriteString(filepath.Join(siblingDir, "main.go"), "package main")
+				_ = fs.WriteString(filepath.Join(siblingDir, "cmd/cli.go"), "package cmd")
+				_ = fs.WriteString(filepath.Join(siblingDir, "cmd/root.go"), "package cmd")
+				_ = fs.WriteString(filepath.Join(siblingDir, "tests/e2e/flow_test.go"), "package e2e")
+				_ = fs.WriteString(filepath.Join(siblingDir, "pkg/util/helper.go"), "package util")
+				_ = fs.WriteString(filepath.Join(siblingDir, "internal/core/db/manager.go"), "package db")
 
 				// Create local grove.yml with allowed_paths configuration
 				groveConfig := fmt.Sprintf(`context:
@@ -409,7 +409,7 @@ func ExclusionPatternsScenario() *harness.Scenario {
 			harness.NewStep("Test !tests pattern (gitignore compatible)", func(ctx *harness.Context) error {
 				rules := `**/*.go
 !tests`
-				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 
 				cx, _ := FindProjectBinary()
 				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
@@ -440,7 +440,7 @@ func ExclusionPatternsScenario() *harness.Scenario {
 			harness.NewStep("Test !**/tests/** pattern", func(ctx *harness.Context) error {
 				rules := `**/*.go
 !**/tests/**`
-				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 
 				cx, _ := FindProjectBinary()
 				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
@@ -460,7 +460,7 @@ func ExclusionPatternsScenario() *harness.Scenario {
 			harness.NewStep("Test cross-directory exclusions", func(ctx *harness.Context) error {
 				rules := `../sibling-project/**/*.go
 !tests`
-				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 
 				cx, _ := FindProjectBinary()
 				cmd := ctx.Command(cx, "list").Dir(ctx.RootDir)
@@ -511,12 +511,12 @@ func WorktreeExclusionScenario() *harness.Scenario {
 				siblingDir := filepath.Join(parentDir, "sibling-lib")
 
 				// Create a file that should be included
-				fs.CreateDir(filepath.Join(siblingDir, "src"))
-				fs.WriteString(filepath.Join(siblingDir, "src", "lib.go"), "package lib")
+				_ = fs.CreateDir(filepath.Join(siblingDir, "src"))
+				_ = fs.WriteString(filepath.Join(siblingDir, "src", "lib.go"), "package lib")
 
 				// Create a file in a worktree that MUST be excluded
-				fs.CreateDir(filepath.Join(siblingDir, ".grove-worktrees", "feature", "src"))
-				fs.WriteString(filepath.Join(siblingDir, ".grove-worktrees", "feature", "src", "feature.go"), "package feature")
+				_ = fs.CreateDir(filepath.Join(siblingDir, ".grove-worktrees", "feature", "src"))
+				_ = fs.WriteString(filepath.Join(siblingDir, ".grove-worktrees", "feature", "src", "feature.go"), "package feature")
 
 				// Create local grove.yml with allowed_paths configuration
 				groveConfig := fmt.Sprintf(`context:
@@ -578,11 +578,11 @@ func ExplicitWorktreeInclusionScenario() *harness.Scenario {
 
 				// Create a file in a worktree that we want to explicitly include
 				worktreePath := filepath.Join(externalDir, "project-meta", ".grove-worktrees", "feature-branch")
-				fs.CreateDir(worktreePath)
-				fs.WriteString(filepath.Join(worktreePath, "feature.go"), "package feature")
+				_ = fs.CreateDir(worktreePath)
+				_ = fs.WriteString(filepath.Join(worktreePath, "feature.go"), "package feature")
 
 				// Create a file that should be ignored by the rule
-				fs.WriteString(filepath.Join(worktreePath, "README.md"), "ignore this")
+				_ = fs.WriteString(filepath.Join(worktreePath, "README.md"), "ignore this")
 
 				// Create local grove.yml with allowed_paths configuration
 				groveConfig := fmt.Sprintf(`context:
@@ -636,21 +636,21 @@ func FromGitSafetyScenario() *harness.Scenario {
 		Tags:        []string{"cx", "git", "safety"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup git repository and initial rules file", func(ctx *harness.Context) error {
-				git.Init(ctx.RootDir)
-				git.SetupTestConfig(ctx.RootDir)
+				_ = git.Init(ctx.RootDir)
+				_ = git.SetupTestConfig(ctx.RootDir)
 
 				// Create and commit a file
-				fs.WriteString(filepath.Join(ctx.RootDir, "committed.txt"), "committed")
-				git.Add(ctx.RootDir, "committed.txt")
-				git.Commit(ctx.RootDir, "Initial commit")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "committed.txt"), "committed")
+				_ = git.Add(ctx.RootDir, "committed.txt")
+				_ = git.Commit(ctx.RootDir, "Initial commit")
 
 				// Create and stage a new file
-				fs.WriteString(filepath.Join(ctx.RootDir, "staged.txt"), "staged")
-				git.Add(ctx.RootDir, "staged.txt")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "staged.txt"), "staged")
+				_ = git.Add(ctx.RootDir, "staged.txt")
 
 				// Create initial rules file
 				rulesDir := filepath.Join(ctx.RootDir, ".grove")
-				os.MkdirAll(rulesDir, 0o755)
+				_ = os.MkdirAll(rulesDir, 0o755)
 				return fs.WriteString(filepath.Join(rulesDir, "rules"), "initial_rule.txt\n")
 			}),
 			harness.NewStep("No-stdin cancellation preserves existing rules", func(ctx *harness.Context) error {

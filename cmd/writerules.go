@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	"github.com/grovetools/core/logging"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 var (

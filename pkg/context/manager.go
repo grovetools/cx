@@ -286,17 +286,17 @@ func (m *Manager) ResolveRulesPath() string {
 // regardless of whether the file exists yet.
 func (m *Manager) ResolveRulesWritePath() string {
 	if m.rulesFileOverride != "" {
-		os.MkdirAll(filepath.Dir(m.rulesFileOverride), 0o755)
+		_ = os.MkdirAll(filepath.Dir(m.rulesFileOverride), 0o755)
 		return m.rulesFileOverride
 	}
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := m.GetPlanRulesPath(planName); p != "" {
-			os.MkdirAll(filepath.Dir(p), 0o755)
+			_ = os.MkdirAll(filepath.Dir(p), 0o755)
 			return p
 		}
 	}
 	p := m.ResolveRulesPath()
-	os.MkdirAll(filepath.Dir(p), 0o755)
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
 	return p
 }
 
@@ -377,14 +377,14 @@ func (m *Manager) ResolveContextPath() string {
 func (m *Manager) ResolveContextWritePath() string {
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.ContextPath(m.workDir, planName); p != "" {
-			os.MkdirAll(filepath.Dir(p), 0o755)
+			_ = os.MkdirAll(filepath.Dir(p), 0o755)
 			return p
 		}
 	}
 
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if genDir, err := m.locator.GetContextGeneratedDir(node); err == nil {
-			os.MkdirAll(genDir, 0o755)
+			_ = os.MkdirAll(genDir, 0o755)
 			return filepath.Join(genDir, "context")
 		}
 	}
@@ -416,14 +416,14 @@ func (m *Manager) ResolveCachedContextPath() string {
 func (m *Manager) ResolveCachedContextWritePath() string {
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.CachedContextPath(m.workDir, planName); p != "" {
-			os.MkdirAll(filepath.Dir(p), 0o755)
+			_ = os.MkdirAll(filepath.Dir(p), 0o755)
 			return p
 		}
 	}
 
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
-			os.MkdirAll(cacheDir, 0o755)
+			_ = os.MkdirAll(cacheDir, 0o755)
 			return filepath.Join(cacheDir, "cached-context")
 		}
 	}
@@ -455,14 +455,14 @@ func (m *Manager) ResolveCachedContextFilesListPath() string {
 func (m *Manager) ResolveCachedContextFilesListWritePath() string {
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.CachedContextFilesListPath(m.workDir, planName); p != "" {
-			os.MkdirAll(filepath.Dir(p), 0o755)
+			_ = os.MkdirAll(filepath.Dir(p), 0o755)
 			return p
 		}
 	}
 
 	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
-			os.MkdirAll(cacheDir, 0o755)
+			_ = os.MkdirAll(cacheDir, 0o755)
 			return filepath.Join(cacheDir, "cached-context-files")
 		}
 	}
@@ -901,9 +901,7 @@ func (m *Manager) getGitIgnoredFiles(forDir string) (map[string]bool, error) {
 			if !trackedFiles[relativePath] {
 				// Output from --directory will have a trailing slash for directories.
 				// We trim this so it matches the path provided by filepath.WalkDir.
-				if strings.HasSuffix(relativePath, "/") {
-					relativePath = strings.TrimSuffix(relativePath, "/")
-				}
+				relativePath = strings.TrimSuffix(relativePath, "/")
 
 				// Store the full absolute path for consistent and easy lookup later.
 				absolutePath := filepath.Join(gitRootPath, relativePath)
@@ -1029,10 +1027,10 @@ func (m *Manager) saveGitIgnoredToDiskCache(gitRootPath string, ignoredFiles map
 
 	// Write atomically by writing to temp file and renaming
 	tmpFile := cacheFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, data, 0o644); err != nil { //nolint:gosec // cache file, not sensitive
 		return
 	}
-	os.Rename(tmpFile, cacheFile)
+	_ = os.Rename(tmpFile, cacheFile)
 
 	// Clean up old cache files (keep only the current one)
 	m.cleanupOldCacheFiles(gitRootPath, cacheFile)
@@ -1069,7 +1067,7 @@ func (m *Manager) UpdateFromRules() error {
 			// Prompt user to create .grovectx for backward compatibility
 			fmt.Printf(".grovectx not found. Would you like to create one with '*' (include all files)? [Y/n]: ")
 			var response string
-			fmt.Scanln(&response)
+			_, _ = fmt.Scanln(&response)
 
 			if response == "" || strings.ToLower(response) == "y" || strings.ToLower(response) == "yes" {
 				// Create .grovectx with "*"
@@ -1106,9 +1104,7 @@ func (m *Manager) UpdateFromRules() error {
 // ParseGitRule checks if a rule is a Git URL and extracts the URL, optional version, and optional ruleset
 func (m *Manager) ParseGitRule(rule string) (isGitURL bool, repoURL, version, ruleset string) {
 	// Remove exclusion prefix if present
-	if strings.HasPrefix(rule, "!") {
-		rule = strings.TrimPrefix(rule, "!")
-	}
+	rule = strings.TrimPrefix(rule, "!")
 
 	// Check for and extract ruleset specifier (e.g., ::default)
 	if colonIndex := strings.LastIndex(rule, "::"); colonIndex != -1 {
@@ -1575,7 +1571,7 @@ func (m *Manager) ClearSkippedRules() {
 }
 
 // AddSkippedRule adds a skipped rule to the list
-func (m *Manager) addSkippedRule(lineNum int, rule string, reason string) {
+func (m *Manager) addSkippedRule(lineNum int, rule, reason string) {
 	m.skippedMutex.Lock()
 	defer m.skippedMutex.Unlock()
 	m.skippedRules = append(m.skippedRules, SkippedRule{
@@ -1649,7 +1645,7 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 			}
 		}
 
-		if err := os.WriteFile(rulesPath, rulesContent, 0o644); err != nil {
+		if err := os.WriteFile(rulesPath, rulesContent, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 			return "", fmt.Errorf("error creating %s: %w", rulesPath, err)
 		}
 	}
@@ -2104,9 +2100,7 @@ func (m *Manager) extractRootPaths(patterns []string) []string {
 	rootsMap[m.workDir] = true // Always include working directory
 
 	for _, pattern := range patterns {
-		if strings.HasPrefix(pattern, "!") {
-			pattern = strings.TrimPrefix(pattern, "!")
-		}
+		pattern = strings.TrimPrefix(pattern, "!")
 
 		// Extract base path from pattern
 		if filepath.IsAbs(pattern) {

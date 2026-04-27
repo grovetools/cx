@@ -16,9 +16,6 @@ func TestParseToAST(t *testing.T) {
 		line     int
 		excluded bool
 		ruleset  string
-		// for filter-wrapped nodes
-		childKind string
-		childPath string
 	}
 
 	tests := []struct {

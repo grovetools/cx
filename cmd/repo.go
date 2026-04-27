@@ -9,15 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/util/delegation"
 	"github.com/grovetools/core/util/sanitize"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 func NewRepoCmd() *cobra.Command {
@@ -77,7 +77,7 @@ func newRepoListCmd() *cobra.Command {
 			fmt.Fprintln(w, "---\t----------\t------")
 
 			for _, r := range repos {
-				if r.Worktrees == nil || len(r.Worktrees) == 0 {
+				if len(r.Worktrees) == 0 {
 					fmt.Fprintf(w, "%s\t(none)\t(none)\n", r.URL)
 					continue
 				}
@@ -212,7 +212,7 @@ func newRepoAuditCmd() *cobra.Command {
 			if err := os.Chdir(localPath); err != nil {
 				return fmt.Errorf("failed to change directory to %s: %w", localPath, err)
 			}
-			defer os.Chdir(originalDir)
+			defer func() { _ = os.Chdir(originalDir) }()
 
 			if err := setupDefaultAuditRules(localPath); err != nil {
 				return fmt.Errorf("failed to set up default audit rules: %w", err)
@@ -363,34 +363,6 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 	return cmd
 }
 
-func formatTimeSince(t time.Time) string {
-	duration := time.Since(t)
-
-	if duration < time.Minute {
-		return "just now"
-	} else if duration < time.Hour {
-		minutes := int(duration.Minutes())
-		if minutes == 1 {
-			return "1 minute ago"
-		}
-		return fmt.Sprintf("%d minutes ago", minutes)
-	} else if duration < 24*time.Hour {
-		hours := int(duration.Hours())
-		if hours == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", hours)
-	} else if duration < 30*24*time.Hour {
-		days := int(duration.Hours() / 24)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	} else {
-		return t.Format("2006-01-02")
-	}
-}
-
 // setupDefaultAuditRules creates a default .grove/rules file for auditing.
 func setupDefaultAuditRules(repoPath string) error {
 	// Check for zombie worktree - refuse to create rules in deleted worktrees
@@ -416,7 +388,7 @@ func setupDefaultAuditRules(repoPath string) error {
 		return err
 	}
 
-	return os.WriteFile(rulesPath, rulesContent, 0o644)
+	return os.WriteFile(rulesPath, rulesContent, 0o644) //nolint:gosec // rules file, not sensitive
 }
 
 // runInteractiveView executes the 'grove cx view' command as a subprocess.
@@ -498,7 +470,7 @@ func saveAuditReport(repoPath, commitHash, content string) (string, error) {
 	reportFileName := fmt.Sprintf("%s.md", commitHash)
 	reportPath := filepath.Join(auditsDir, reportFileName)
 
-	err := os.WriteFile(reportPath, []byte(content), 0o644)
+	err := os.WriteFile(reportPath, []byte(content), 0o644) //nolint:gosec // audit report, not sensitive
 	return reportPath, err
 }
 
@@ -612,7 +584,7 @@ If no ruleset name is provided, it defaults to 'default'.`,
 					Pretty(fmt.Sprintf("Creating new ruleset '%s' for %s", rulesetName, repoURL)).
 					Log(ctx)
 				content := []byte("*\n\n# Add glob patterns to include files from this repository.\n# Use '!' to exclude.\n")
-				if err := os.WriteFile(rulesFile, content, 0o644); err != nil {
+				if err := os.WriteFile(rulesFile, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 					return fmt.Errorf("failed to create initial rules file: %w", err)
 				}
 			}

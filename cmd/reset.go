@@ -8,8 +8,9 @@ import (
 	"strings"
 
 	"github.com/grovetools/core/state"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 func NewResetCmd() *cobra.Command {
@@ -45,7 +46,7 @@ func NewResetCmd() *cobra.Command {
 				fmt.Print("Are you sure you want to reset to defaults? (y/N): ")
 
 				var response string
-				fmt.Scanln(&response)
+				_, _ = fmt.Scanln(&response)
 				response = strings.ToLower(strings.TrimSpace(response))
 
 				if response != "y" && response != "yes" {
@@ -63,7 +64,7 @@ func NewResetCmd() *cobra.Command {
 			// Determine what content to write
 			if rulesContent != nil {
 				// We have default rules from grove.yml
-				if err := os.WriteFile(rulesPath, rulesContent, 0o644); err != nil {
+				if err := os.WriteFile(rulesPath, rulesContent, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 					return fmt.Errorf("error writing rules file: %w", err)
 				}
 				ulog.Success("Reset rules file to project defaults").
@@ -88,7 +89,7 @@ func NewResetCmd() *cobra.Command {
 # Filter with @grep (file content):
 #   pkg/**/*.go @grep: "TODO"
 `)
-				if err := os.WriteFile(rulesPath, boilerplate, 0o644); err != nil {
+				if err := os.WriteFile(rulesPath, boilerplate, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 					return fmt.Errorf("error writing rules file: %w", err)
 				}
 				ulog.Success("Reset rules file to basic defaults").

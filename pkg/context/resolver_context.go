@@ -35,9 +35,8 @@ type ResolutionContext interface {
 // pass mirrors the legacy file-discovery pipeline (gitignore semantics, dir
 // exclusions, binary skip) without re-walking the filesystem.
 type prodResolutionContext struct {
-	m            *Manager
-	fileSet      map[string]bool
-	gitIgnoredFn func(path string) bool
+	m       *Manager
+	fileSet map[string]bool
 }
 
 func newProdResolutionContext(m *Manager) *prodResolutionContext {

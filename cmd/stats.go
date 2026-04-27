@@ -14,8 +14,9 @@ import (
 	"github.com/grovetools/core/cli"
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/workspace"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 var (
@@ -228,7 +229,7 @@ Examples:
 	cmd.Flags().IntVar(&topN, "top", 5, "Number of largest files to show")
 	cmd.Flags().BoolVar(&perLine, "per-line", false, "Provide stats for each line in the rules file")
 	cmd.Flags().StringVar(&chatFile, "chat-file", "", "Legacy alias for --job")
-	cmd.Flags().MarkHidden("chat-file")
+	_ = cmd.Flags().MarkHidden("chat-file")
 	AddRulesFileFlags(cmd, &jobFile, &rulesFileFlag)
 
 	return cmd

@@ -11,9 +11,10 @@ import (
 	"github.com/grovetools/core/pkg/alias"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
+	"github.com/spf13/cobra"
+
 	"github.com/grovetools/cx/pkg/context"
 	rules "github.com/grovetools/cx/pkg/tui/rules"
-	"github.com/spf13/cobra"
 )
 
 // NewRulesCmd creates the 'rules' command and its subcommands.
@@ -118,7 +119,7 @@ Examples:
 			rulesPath := mgr.ResolveRulesWritePath()
 
 			// Write to resolved rules path
-			if err := os.WriteFile(rulesPath, content, 0o644); err != nil {
+			if err := os.WriteFile(rulesPath, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 				return fmt.Errorf("failed to write rules: %w", err)
 			}
 
@@ -438,7 +439,7 @@ Use the --work flag to save to .cx.work/ for temporary, untracked sets.`,
 			}
 
 			destPath := filepath.Join(destDir, name+context.RulesExt)
-			if err := os.WriteFile(destPath, content, 0o644); err != nil {
+			if err := os.WriteFile(destPath, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 				return fmt.Errorf("failed to save rule set: %w", err)
 			}
 
@@ -720,7 +721,7 @@ This isolates context edits to the current worktree/plan so they don't affect ot
 				return fmt.Errorf("failed to create directory: %w", err)
 			}
 
-			if err := os.WriteFile(planRulesPath, content, 0o644); err != nil {
+			if err := os.WriteFile(planRulesPath, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 				return fmt.Errorf("failed to write plan rules: %w", err)
 			}
 

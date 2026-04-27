@@ -5,6 +5,7 @@ import (
 
 	"github.com/grovetools/core/tui/components/pager"
 	"github.com/grovetools/core/tui/embed"
+
 	"github.com/grovetools/cx/pkg/tui/rules"
 )
 

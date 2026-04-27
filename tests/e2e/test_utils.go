@@ -61,7 +61,7 @@ func findGeneratedFile(rootDir, filename string) string {
 
 	// Broader search: find the file anywhere under rootDir
 	var found string
-	filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
 		}
@@ -289,7 +289,7 @@ func CleanupTestRepos(ctx *harness.Context) error {
 	if err != nil {
 		return nil
 	}
-	_ = os.WriteFile(manifestPath, data, 0o644)
+	_ = os.WriteFile(manifestPath, data, 0o644) //nolint:gosec // test manifest file
 	return nil
 }
 

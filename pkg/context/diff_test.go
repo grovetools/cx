@@ -9,25 +9,25 @@ func TestManager_DiffContext(t *testing.T) {
 	// Create temporary directory
 	tempDir := t.TempDir()
 	originalWd, _ := os.Getwd()
-	os.Chdir(tempDir)
-	defer os.Chdir(originalWd)
+	_ = os.Chdir(tempDir)
+	defer func() { _ = os.Chdir(originalWd) }()
 
 	mgr := NewManager(tempDir)
 
 	// Create .cx and .grove directories
-	os.MkdirAll(".cx", 0o755)
-	os.MkdirAll(".grove", 0o755)
+	_ = os.MkdirAll(".cx", 0o755)
+	_ = os.MkdirAll(".grove", 0o755)
 
 	// Create test files
-	os.WriteFile("fileA.txt", []byte("A"), 0o644)
-	os.WriteFile("fileB.txt", []byte("B"), 0o644)
-	os.WriteFile("fileC.txt", []byte("C"), 0o644)
+	_ = os.WriteFile("fileA.txt", []byte("A"), 0o644)
+	_ = os.WriteFile("fileB.txt", []byte("B"), 0o644)
+	_ = os.WriteFile("fileC.txt", []byte("C"), 0o644)
 
 	// Create current rules file (.grove/rules)
-	os.WriteFile(".grove/rules", []byte("fileB.txt\nfileC.txt\n"), 0o644)
+	_ = os.WriteFile(".grove/rules", []byte("fileB.txt\nfileC.txt\n"), 0o644)
 
 	// Create a named rule set to compare against (.cx/compare.rules)
-	os.WriteFile(".cx/compare.rules", []byte("fileA.txt\nfileB.txt\n"), 0o644)
+	_ = os.WriteFile(".cx/compare.rules", []byte("fileA.txt\nfileB.txt\n"), 0o644)
 
 	// Test diff against the named rule set
 	diff, err := mgr.DiffContext("compare")

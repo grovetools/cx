@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/core/tui/embed"
+
 	"github.com/grovetools/cx/pkg/context"
 )
 

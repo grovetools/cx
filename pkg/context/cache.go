@@ -305,7 +305,7 @@ func (sp *StatsProvider) generateCacheForWorktree(worktreePath string) (*RepoCac
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(cacheFilePath, data, 0o644); err != nil {
+	if err := os.WriteFile(cacheFilePath, data, 0o644); err != nil { //nolint:gosec // cache file, not sensitive
 		// Non-fatal, just log a warning
 		fmt.Fprintf(os.Stderr, "Warning: failed to save stats cache for %s: %v\n", worktreePath, err)
 	}

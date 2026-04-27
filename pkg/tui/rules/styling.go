@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	core_theme "github.com/grovetools/core/tui/theme"
+
 	"github.com/grovetools/cx/pkg/context"
 )
 

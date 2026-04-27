@@ -99,7 +99,7 @@ func ExternalRulesFileScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Teardown test repos", func(ctx *harness.Context) error {
-				CleanupTestRepos(ctx)
+				_ = CleanupTestRepos(ctx)
 				return nil
 			}),
 		},

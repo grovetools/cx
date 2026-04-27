@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/grovetools/core/tui/theme"
+
 	"github.com/grovetools/cx/pkg/context"
 )
 
@@ -99,10 +100,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	if isFiltering && filter != "" {
 		highlightStyle := lipgloss.NewStyle().Reverse(true)
 		if i.ecosystem != "" {
-			pathParts = append(pathParts, highlight(i.ecosystem, filter, themeStyle.Accent, themeStyle.Accent.Copy().Inherit(highlightStyle)))
+			accentHighlight := themeStyle.Accent.Inherit(highlightStyle)
+			pathParts = append(pathParts, highlight(i.ecosystem, filter, themeStyle.Accent, accentHighlight))
 		}
 		if i.repo != "" {
-			pathParts = append(pathParts, highlight(i.repo, filter, themeStyle.Highlight, themeStyle.Highlight.Copy().Inherit(highlightStyle)))
+			hlHighlight := themeStyle.Highlight.Inherit(highlightStyle)
+			pathParts = append(pathParts, highlight(i.repo, filter, themeStyle.Highlight, hlHighlight))
 		}
 		pathParts = append(pathParts, highlight(i.path, filter, lipgloss.NewStyle(), highlightStyle))
 	} else {

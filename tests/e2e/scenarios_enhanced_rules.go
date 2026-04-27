@@ -6,10 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	cxcontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/tend/pkg/command"
 	"github.com/grovetools/tend/pkg/fs"
 	"github.com/grovetools/tend/pkg/harness"
+
+	cxcontext "github.com/grovetools/cx/pkg/context"
 )
 
 // EnhancedRulesWorkflowScenario tests the enhanced rules workflow with .cx.work/, diff, load, and rm commands.
@@ -20,15 +21,15 @@ func EnhancedRulesWorkflowScenario() *harness.Scenario {
 		Tags:        []string{"cx", "rules", "enhanced"},
 		Steps: []harness.Step{
 			harness.NewStep("Setup project files", func(ctx *harness.Context) error {
-				fs.WriteString(filepath.Join(ctx.RootDir, "fileA.txt"), "content A")
-				fs.WriteString(filepath.Join(ctx.RootDir, "fileB.txt"), "content B")
-				fs.WriteString(filepath.Join(ctx.RootDir, "fileC.txt"), "content C")
-				fs.WriteString(filepath.Join(ctx.RootDir, "fileD.txt"), "content D")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "fileA.txt"), "content A")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "fileB.txt"), "content B")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "fileC.txt"), "content C")
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, "fileD.txt"), "content D")
 				return nil
 			}),
 			harness.NewStep("Create initial rules and save as 'baseline' to .cx/", func(ctx *harness.Context) error {
 				rules := "fileA.txt\nfileB.txt"
-				fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
+				_ = fs.WriteString(filepath.Join(ctx.RootDir, ".grove", "rules"), rules)
 
 				cx, _ := FindProjectBinary()
 				cmd := command.New(cx, "rules", "save", "baseline").Dir(ctx.RootDir)

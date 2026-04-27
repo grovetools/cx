@@ -15,8 +15,8 @@ func TestGitIntegration(t *testing.T) {
 
 	// Create temporary directory
 	tempDir := t.TempDir()
-	os.Chdir(tempDir)
-	defer os.Chdir("..")
+	_ = os.Chdir(tempDir)
+	defer func() { _ = os.Chdir("..") }()
 
 	// Initialize git repo
 	cmd := exec.Command("git", "init")
@@ -25,21 +25,21 @@ func TestGitIntegration(t *testing.T) {
 	}
 
 	// Configure git user for commits
-	exec.Command("git", "config", "user.email", "test@example.com").Run()
-	exec.Command("git", "config", "user.name", "Test User").Run()
+	_ = exec.Command("git", "config", "user.email", "test@example.com").Run()
+	_ = exec.Command("git", "config", "user.name", "Test User").Run()
 
 	mgr := NewManager(tempDir)
 
 	// Create and commit some files
-	os.WriteFile("file1.go", []byte("package main\n// File 1"), 0o644)
-	os.WriteFile("file2.go", []byte("package main\n// File 2"), 0o644)
-	exec.Command("git", "add", "file1.go", "file2.go").Run()
-	exec.Command("git", "commit", "-m", "Initial commit").Run()
+	_ = os.WriteFile("file1.go", []byte("package main\n// File 1"), 0o644)
+	_ = os.WriteFile("file2.go", []byte("package main\n// File 2"), 0o644)
+	_ = exec.Command("git", "add", "file1.go", "file2.go").Run()
+	_ = exec.Command("git", "commit", "-m", "Initial commit").Run()
 
 	// Create more files and stage them
-	os.WriteFile("file3.go", []byte("package main\n// File 3"), 0o644)
-	os.WriteFile("file4.go", []byte("package main\n// File 4"), 0o644)
-	exec.Command("git", "add", "file3.go").Run()
+	_ = os.WriteFile("file3.go", []byte("package main\n// File 3"), 0o644)
+	_ = os.WriteFile("file4.go", []byte("package main\n// File 4"), 0o644)
+	_ = exec.Command("git", "add", "file3.go").Run()
 
 	t.Run("staged files", func(t *testing.T) {
 		opts := GitOptions{Staged: true}
@@ -60,7 +60,7 @@ func TestGitIntegration(t *testing.T) {
 	})
 
 	// Commit the staged file
-	exec.Command("git", "commit", "-m", "Add file3").Run()
+	_ = exec.Command("git", "commit", "-m", "Add file3").Run()
 
 	t.Run("last N commits", func(t *testing.T) {
 		opts := GitOptions{Commits: 1}
@@ -81,10 +81,10 @@ func TestGitIntegration(t *testing.T) {
 	})
 
 	// Create a branch
-	exec.Command("git", "checkout", "-b", "feature").Run()
-	os.WriteFile("feature.go", []byte("package main\n// Feature"), 0o644)
-	exec.Command("git", "add", "feature.go").Run()
-	exec.Command("git", "commit", "-m", "Add feature").Run()
+	_ = exec.Command("git", "checkout", "-b", "feature").Run()
+	_ = os.WriteFile("feature.go", []byte("package main\n// Feature"), 0o644)
+	_ = exec.Command("git", "add", "feature.go").Run()
+	_ = exec.Command("git", "commit", "-m", "Add feature").Run()
 
 	t.Run("branch comparison", func(t *testing.T) {
 		// Use HEAD~1..HEAD to compare last commit instead of branch names
@@ -160,8 +160,8 @@ func TestCheckGitRepo(t *testing.T) {
 
 	t.Run("not in git repo", func(t *testing.T) {
 		tempDir := t.TempDir()
-		os.Chdir(tempDir)
-		defer os.Chdir("..")
+		_ = os.Chdir(tempDir)
+		defer func() { _ = os.Chdir("..") }()
 
 		err := checkGitRepo()
 		if err == nil {
@@ -171,8 +171,8 @@ func TestCheckGitRepo(t *testing.T) {
 
 	t.Run("in git repo", func(t *testing.T) {
 		tempDir := t.TempDir()
-		os.Chdir(tempDir)
-		defer os.Chdir("..")
+		_ = os.Chdir(tempDir)
+		defer func() { _ = os.Chdir("..") }()
 
 		// Initialize git repo
 		cmd := exec.Command("git", "init")

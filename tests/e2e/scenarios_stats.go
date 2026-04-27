@@ -215,7 +215,7 @@ api/user_api.go`
 				}
 				// THE CORE OF THE TEST: filteredByLine should be empty.
 				// user_api.go should NOT be considered a match for this line at all.
-				if line2Stats.FilteredByLine != nil && len(line2Stats.FilteredByLine) > 0 {
+				if len(line2Stats.FilteredByLine) > 0 {
 					return fmt.Errorf("expected line 2 to have an empty filteredByLine array, but it was not. Bug is still present.")
 				}
 
@@ -302,7 +302,7 @@ my-repo-hihi/**`
 					return fmt.Errorf("expected line 1 to have fileCount 1 (my-repo/file1.txt), got %d", line1Stats.FileCount)
 				}
 				// Should not have filtered files
-				if line1Stats.FilteredByLine != nil && len(line1Stats.FilteredByLine) > 0 {
+				if len(line1Stats.FilteredByLine) > 0 {
 					return fmt.Errorf("expected line 1 to have no filtered files, but found %v", line1Stats.FilteredByLine)
 				}
 

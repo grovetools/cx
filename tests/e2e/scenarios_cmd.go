@@ -113,11 +113,7 @@ func FromCmdScenario() *harness.Scenario {
 					if strings.Contains(line, "_test.go") {
 						return fmt.Errorf("rules file should not include test files, but found: %s", line)
 					}
-					if !found && line != "" {
-						// It's okay if the line contains ./ prefix or other variations
-						// Just log it for debugging
-						// Just continue, it's okay if the line contains ./ prefix or other variations
-					}
+					_ = !found && line != "" // ok if line has ./ prefix or other variations
 				}
 
 				// Count how many files were actually found

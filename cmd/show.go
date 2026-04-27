@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 func NewShowCmd() *cobra.Command {

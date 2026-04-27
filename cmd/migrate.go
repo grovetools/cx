@@ -11,8 +11,9 @@ import (
 
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/workspace"
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 func NewMigrateRulesNbCmd() *cobra.Command {
@@ -93,7 +94,7 @@ After migration, empty .cx/, .cx.work/, and .grove/ directories are removed.`,
 						if err := os.MkdirAll(filepath.Dir(rulesTarget), 0o755); err == nil {
 							content, _ := os.ReadFile(localRules)
 							if content != nil {
-								if err := os.WriteFile(rulesTarget, content, 0o644); err == nil {
+								if err := os.WriteFile(rulesTarget, content, 0o644); err == nil { //nolint:gosec // rules file, not sensitive
 									os.Remove(localRules)
 									moved++
 									ulog.Success("Moved").
@@ -208,7 +209,7 @@ func migrateRulesDir(ctx stdctx.Context, srcDir, destDir string, dryRun bool) in
 			continue
 		}
 
-		if err := os.WriteFile(destPath, content, 0o644); err != nil {
+		if err := os.WriteFile(destPath, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 			ulog.Warn("Failed to write file").Err(err).Log(ctx)
 			continue
 		}
@@ -262,7 +263,7 @@ func migrateGroveToml(ctx stdctx.Context, workDir string, dryRun bool) bool {
 	}
 
 	updated := re.ReplaceAllString(text, newLine)
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil { //nolint:gosec // config file, not sensitive
 		ulog.Warn("Failed to update grove.toml").Err(err).Log(ctx)
 		return false
 	}
@@ -285,7 +286,7 @@ func removeIfEmpty(dir string) {
 		}
 		sub := filepath.Join(dir, e.Name())
 		var hasFiles bool
-		filepath.WalkDir(sub, func(path string, d fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(sub, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}

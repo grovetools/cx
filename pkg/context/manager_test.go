@@ -453,14 +453,14 @@ func TestManager_DefaultDirectiveResolution(t *testing.T) {
 
 	// Project A (main project)
 	projectA := filepath.Join(rootDir, "project-a")
-	os.MkdirAll(filepath.Join(projectA, ".grove"), 0o755)
+	_ = os.MkdirAll(filepath.Join(projectA, ".grove"), 0o755)
 	fsWriteString(t, filepath.Join(projectA, "a.go"), "package a")
 	fsWriteString(t, filepath.Join(projectA, "a.txt"), "a text")
 	fsWriteString(t, filepath.Join(projectA, "grove.yml"), `version: 1.0`) // Add grove.yml for C to find
 
 	// Project B (dependency)
 	projectB := filepath.Join(rootDir, "project-b")
-	os.MkdirAll(filepath.Join(projectB, ".grove"), 0o755)
+	_ = os.MkdirAll(filepath.Join(projectB, ".grove"), 0o755)
 	fsWriteString(t, filepath.Join(projectB, "b.go"), "package b")
 	fsWriteString(t, filepath.Join(projectB, "b.txt"), "b text")
 	fsWriteString(t, filepath.Join(projectB, "grove.yml"), `version: 1.0
@@ -472,7 +472,7 @@ context:
 
 	// Project C (circular dependency back to A)
 	projectC := filepath.Join(rootDir, "project-c")
-	os.MkdirAll(filepath.Join(projectC, ".grove"), 0o755)
+	_ = os.MkdirAll(filepath.Join(projectC, ".grove"), 0o755)
 	fsWriteString(t, filepath.Join(projectC, "c.go"), "package c")
 	fsWriteString(t, filepath.Join(projectC, "grove.yml"), `version: 1.0
 context:

@@ -154,7 +154,7 @@ func getGitFilesSince(since string) ([]string, error) {
 	}
 
 	// Otherwise treat as a date
-	cmd = exec.Command("git", "log", "--since="+since, "--name-only", "--pretty=format:")
+	cmd = exec.Command("git", "log", "--since="+since, "--name-only", "--pretty=format:") //nolint:gosec // args from internal CLI flags
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get files since %s: %w", since, err)
@@ -175,7 +175,7 @@ func getGitFilesInBranch(branch string) ([]string, error) {
 
 // getGitFilesFromCommits returns files changed in the last N commits
 func getGitFilesFromCommits(n int) ([]string, error) {
-	cmd := exec.Command("git", "log", "-"+strconv.Itoa(n), "--name-only", "--pretty=format:")
+	cmd := exec.Command("git", "log", "-"+strconv.Itoa(n), "--name-only", "--pretty=format:") //nolint:gosec // args from internal CLI flags
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get files from last %d commits: %w", n, err)
@@ -305,7 +305,7 @@ func (m *Manager) generateDiffFile(ref string) (string, error) {
 	}
 
 	patchPath := filepath.Join(diffsDir, fmt.Sprintf("diff-%s.patch", safeRef))
-	if err := os.WriteFile(patchPath, output, 0o644); err != nil {
+	if err := os.WriteFile(patchPath, output, 0o644); err != nil { //nolint:gosec // patch file, not sensitive
 		return "", fmt.Errorf("failed to write patch file: %w", err)
 	}
 

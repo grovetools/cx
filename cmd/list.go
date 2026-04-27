@@ -3,8 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 func NewListCmd() *cobra.Command {

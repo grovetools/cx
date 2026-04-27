@@ -265,10 +265,8 @@ func (s *ContextStats) String(title string) string {
 		fmt.Sprintf("Total Tokens:   ~%s", FormatTokenCount(s.TotalTokens)),
 		fmt.Sprintf("Total Size:     %s", FormatBytes(int(s.TotalSize))),
 	)
-	summaryBox := theme.Box.Copy().
-		BorderForeground(theme.Colors.Cyan).
-		Padding(1, 2).
-		Render(strings.Join(summaryItems, "\n"))
+	boxStyle := theme.Box.BorderForeground(theme.Colors.Cyan).Padding(1, 2)
+	summaryBox := boxStyle.Render(strings.Join(summaryItems, "\n"))
 	b.WriteString(summaryBox + "\n\n")
 
 	// Language distribution

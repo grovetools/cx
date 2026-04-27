@@ -10,6 +10,7 @@ import (
 	"github.com/grovetools/core/state"
 	"github.com/grovetools/core/tui/embed"
 	"github.com/grovetools/core/tui/theme"
+
 	"github.com/grovetools/cx/pkg/context"
 )
 
@@ -171,7 +172,7 @@ func (m *rulesPickerModel) performLoadCmd(item ruleItem) tea.Cmd {
 		rulesPath := m.manager.ResolveRulesWritePath()
 
 		// Write to resolved rules path
-		if err := os.WriteFile(rulesPath, content, 0o644); err != nil {
+		if err := os.WriteFile(rulesPath, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 			return loadCompleteMsg{err: err}
 		}
 
@@ -259,7 +260,7 @@ func (m *rulesPickerModel) performSaveCmd(name string, toWork bool) tea.Cmd {
 		}
 
 		destPath := filepath.Join(destDir, name+context.RulesExt)
-		if err := os.WriteFile(destPath, content, 0o644); err != nil {
+		if err := os.WriteFile(destPath, content, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 			return saveCompleteMsg{err: fmt.Errorf("failed to save rule set: %w", err)}
 		}
 

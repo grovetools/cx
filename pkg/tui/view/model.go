@@ -13,6 +13,7 @@ import (
 	"github.com/grovetools/core/tui/components/nvim"
 	"github.com/grovetools/core/tui/components/pager"
 	"github.com/grovetools/core/tui/embed"
+
 	"github.com/grovetools/cx/pkg/context"
 	rulestui "github.com/grovetools/cx/pkg/tui/rules"
 )
@@ -222,14 +223,14 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.dispatchRefresh()
 		case tea.KeyMsg:
 			if msg.Type == tea.KeyCtrlC {
-				m.editorModel.Save()
+				_ = m.editorModel.Save()
 				m.editorModel.Close()
 				m.isEditing = false
 				m.editorModel = nil
 				return m, m.dispatchRefresh()
 			}
 			if msg.Type == tea.KeyTab || msg.Type == tea.KeyShiftTab {
-				m.editorModel.Save()
+				_ = m.editorModel.Save()
 				m.editorModel.Close()
 				m.isEditing = false
 				m.editorModel = nil

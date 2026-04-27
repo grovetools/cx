@@ -8,6 +8,7 @@ import (
 
 	"github.com/grovetools/core/pkg/profiling"
 	"github.com/grovetools/core/util/pathutil"
+
 	"github.com/grovetools/cx/pkg/context"
 )
 
@@ -262,7 +263,7 @@ func buildTreeWithExternals(rootPath string, nodes map[string]*FileNode) *FileNo
 }
 
 // ensureParentNodes creates directory nodes for all parents of a path
-func ensureParentNodes(rootPath string, path string, nodes map[string]*FileNode) {
+func ensureParentNodes(rootPath, path string, nodes map[string]*FileNode) {
 	if path == rootPath || path == "/" || path == "." {
 		return
 	}

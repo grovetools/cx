@@ -315,7 +315,7 @@ func main() {
 				)
 				if err != nil {
 					// Restore directory on error
-					os.Chdir(originalDir)
+					_ = os.Chdir(originalDir)
 					return fmt.Errorf("failed to start cx view TUI: %w", err)
 				}
 				ctx.Set("view_session", session)

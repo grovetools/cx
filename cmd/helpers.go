@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"github.com/grovetools/cx/pkg/context"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/cx/pkg/context"
 )
 
 // GlobalWorkDir holds the value of the --dir / -C persistent flag.

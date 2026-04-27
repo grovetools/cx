@@ -8,13 +8,13 @@ import (
 func TestManager_FixContext(t *testing.T) {
 	// Create temporary directory
 	tempDir := t.TempDir()
-	os.Chdir(tempDir)
-	defer os.Chdir("..")
+	_ = os.Chdir(tempDir)
+	defer func() { _ = os.Chdir("..") }()
 
 	mgr := NewManager(tempDir)
 
 	// Create .grove directory
-	os.MkdirAll(GroveDir, 0o755)
+	_ = os.MkdirAll(GroveDir, 0o755)
 
 	// FixContext is deprecated and just prints a message
 	err := mgr.FixContext()

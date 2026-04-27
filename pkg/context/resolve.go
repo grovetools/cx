@@ -12,14 +12,11 @@ import (
 	"time"
 
 	"github.com/grovetools/core/config"
-	"github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/profiling"
 	"github.com/grovetools/core/util/pathutil"
 )
-
-var log = logging.NewLogger("cx.context.resolve")
 
 // IsRelativeExternalPath checks if a pattern refers to a path outside the current directory.
 func IsRelativeExternalPath(pattern string) bool {
@@ -30,7 +27,7 @@ func IsRelativeExternalPath(pattern string) bool {
 // patternInfo holds information about a pattern including any associated directives
 
 // expandAllRules recursively resolves rules, including those from @default directives.
-func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, importLineNum int) (hotRules, coldRules []RuleInfo, viewPaths []string, treePaths []string, err error) {
+func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, importLineNum int) (hotRules, coldRules []RuleInfo, viewPaths, treePaths []string, err error) {
 	defer profiling.Start("context.expandAllRules").Stop()
 	// Resolve relative paths against workDir, not process CWD.
 	if !filepath.IsAbs(rulesPath) {
@@ -812,7 +809,7 @@ func deduplicateStrings(items []string) []string {
 }
 
 // ResolveFilesFromCustomRulesFile resolves both hot and cold files from a custom rules file path.
-func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFiles []string, coldFiles []string, err error) {
+func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFiles, coldFiles []string, err error) {
 	// Resolve relative paths against workDir, not process CWD.
 	if !filepath.IsAbs(rulesFilePath) {
 		rulesFilePath = filepath.Join(m.workDir, rulesFilePath)

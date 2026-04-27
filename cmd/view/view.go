@@ -11,8 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/compositor"
 	"github.com/grovetools/core/config"
-	tuiView "github.com/grovetools/cx/pkg/tui/view"
 	"github.com/spf13/cobra"
+
+	tuiView "github.com/grovetools/cx/pkg/tui/view"
 )
 
 // NewViewCmd creates the view command.

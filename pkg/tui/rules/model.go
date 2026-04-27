@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/components/help"
+
 	"github.com/grovetools/cx/pkg/context"
 )
 

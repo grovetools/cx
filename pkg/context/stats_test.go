@@ -9,21 +9,21 @@ import (
 func TestManager_GetStats(t *testing.T) {
 	// Create temporary directory
 	tempDir := t.TempDir()
-	os.Chdir(tempDir)
-	defer os.Chdir("..")
+	_ = os.Chdir(tempDir)
+	defer func() { _ = os.Chdir("..") }()
 
 	mgr := NewManager(tempDir)
 
 	// Create .grove directory
-	os.MkdirAll(GroveDir, 0o755)
+	_ = os.MkdirAll(GroveDir, 0o755)
 
 	// Create test files of different types
-	os.WriteFile("main.go", []byte("package main\n\nfunc main() {\n\t// Main function\n}"), 0o644)
-	os.WriteFile("README.md", []byte("# Test Project\n\nThis is a test project."), 0o644)
-	os.WriteFile("config.yaml", []byte("version: 1.0\nname: test"), 0o644)
+	_ = os.WriteFile("main.go", []byte("package main\n\nfunc main() {\n\t// Main function\n}"), 0o644)
+	_ = os.WriteFile("README.md", []byte("# Test Project\n\nThis is a test project."), 0o644)
+	_ = os.WriteFile("config.yaml", []byte("version: 1.0\nname: test"), 0o644)
 
 	// Create rules file
-	os.WriteFile(filepath.Join(GroveDir, "rules"), []byte("main.go\nREADME.md\nconfig.yaml\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(GroveDir, "rules"), []byte("main.go\nREADME.md\nconfig.yaml\n"), 0o644)
 
 	// Resolve files from rules
 	files, err := mgr.ResolveFilesFromRules()
