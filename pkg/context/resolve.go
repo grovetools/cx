@@ -858,6 +858,45 @@ func (m *Manager) ResolveFilesFromCustomRulesFile(rulesFilePath string) (hotFile
 	return hotFiles, coldFiles, nil
 }
 
+// Intersects checks whether any of the given changedFiles overlap with the
+// file set produced by the rules file at rulesPath. changedFiles may be
+// relative (resolved against workDir) or absolute.
+func (m *Manager) Intersects(rulesPath string, changedFiles []string) (bool, error) {
+	if !filepath.IsAbs(rulesPath) {
+		rulesPath = filepath.Join(m.workDir, rulesPath)
+	}
+	if _, err := os.Stat(rulesPath); os.IsNotExist(err) {
+		return false, fmt.Errorf("rules file not found: %s", rulesPath)
+	}
+
+	hotRules, coldRules, _, _, err := m.expandAllRules(rulesPath, make(map[string]bool), 0)
+	if err != nil {
+		return false, fmt.Errorf("failed to expand rules: %w", err)
+	}
+
+	allRules := append(hotRules, coldRules...)
+	resolved, err := m.resolveFilesViaAST(allRules)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve files: %w", err)
+	}
+
+	fileSet := make(map[string]bool, len(resolved))
+	for _, f := range resolved {
+		fileSet[f] = true
+	}
+
+	for _, cf := range changedFiles {
+		abs := cf
+		if !filepath.IsAbs(cf) {
+			abs = filepath.Join(m.workDir, cf)
+		}
+		if fileSet[abs] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // ResolveColdContextFiles resolves the list of files from the "cold" section of a rules file.
 func (m *Manager) ResolveColdContextFiles() ([]string, error) {
 	defer profiling.Start("context.ResolveColdContextFiles").Stop()
