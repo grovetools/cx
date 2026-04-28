@@ -137,7 +137,7 @@ build-all:
 test-e2e: build
 	@echo "Running E2E tests..."
 	@go build -o $(BIN_DIR)/$(E2E_BINARY_NAME) ./tests/e2e/
-	@tend run $(ARGS)
+	@tend run -p $(ARGS)
 
 # Run all checks including E2E tests
 check-all: check test-e2e
