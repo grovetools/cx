@@ -123,7 +123,7 @@ README.md
 					return err
 				}
 
-				result := command.New(cxBinary, "generate").Dir(projectDir).Run()
+				result := ctx.Command(cxBinary, "generate").Dir(projectDir).Run()
 
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx generate failed: %s\nStderr: %s", result.Stdout, result.Stderr)
@@ -138,7 +138,7 @@ README.md
 					return err
 				}
 
-				result := command.New(cxBinary, "list").Dir(projectDir).Run()
+				result := ctx.Command(cxBinary, "list").Dir(projectDir).Run()
 
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx list failed: %s\nStderr: %s", result.Stdout, result.Stderr)
@@ -195,12 +195,12 @@ README.md
 				}
 
 				// Run cx generate to process the updated rules
-				genResult := command.New(cxBinary, "generate").Dir(projectDir).Run()
+				genResult := ctx.Command(cxBinary, "generate").Dir(projectDir).Run()
 				if genResult.ExitCode != 0 {
 					return fmt.Errorf("cx generate failed: %s\nStderr: %s", genResult.Stdout, genResult.Stderr)
 				}
 
-				result := command.New(cxBinary, "list").Dir(projectDir).Run()
+				result := ctx.Command(cxBinary, "list").Dir(projectDir).Run()
 
 				if result.ExitCode != 0 {
 					return fmt.Errorf("cx list failed: %s\nStderr: %s", result.Stdout, result.Stderr)
