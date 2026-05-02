@@ -613,58 +613,42 @@ If no ruleset name is provided, it defaults to 'default'.`,
 					Field("session", sessionName).
 					Pretty(fmt.Sprintf("Session '%s' already exists, switching to it...", sessionName)).
 					Log(ctx)
-				if tmuxEng, ok := engine.(*mux.TmuxEngine); ok {
-					if err := tmuxEng.Client().SwitchClientToSession(background, sessionName); err != nil {
-						attachCmd := tmux.Command("attach-session", "-t", sessionName)
-						attachCmd.Stdin = os.Stdin
-						attachCmd.Stdout = os.Stdout
-						attachCmd.Stderr = os.Stderr
-						return attachCmd.Run()
-					}
-				}
-				return nil
-			}
-
-			// For tmux, use Launch for complex session setup; for other engines, use CreateSession + SendKeys.
-			if tmuxEng, ok := engine.(*mux.TmuxEngine); ok {
-				launchOpts := tmux.LaunchOptions{
-					SessionName:      sessionName,
-					WorkingDirectory: localPath,
-					WindowName:       "editor",
-					Panes: []tmux.PaneOptions{
-						{
-							Command: fmt.Sprintf("nvim %s", rulesFile),
-						},
-					},
-				}
-				if err := tmuxEng.Client().Launch(background, launchOpts); err != nil {
-					return fmt.Errorf("failed to launch session: %w", err)
-				}
-
-				ulog.Success("Created session").
-					Field("session", sessionName).
-					Pretty(fmt.Sprintf("Created session '%s'", sessionName)).
-					Log(ctx)
-
-				if err := tmuxEng.Client().SwitchClientToSession(background, sessionName); err != nil {
-					ulog.Info("Attaching to session").Log(ctx)
+				if err := engine.SwitchSession(background, sessionName, ""); err != nil {
 					attachCmd := tmux.Command("attach-session", "-t", sessionName)
 					attachCmd.Stdin = os.Stdin
 					attachCmd.Stdout = os.Stdout
 					attachCmd.Stderr = os.Stderr
 					return attachCmd.Run()
 				}
-			} else {
-				if err := engine.CreateSession(background, sessionName, mux.WithWorkDir(localPath)); err != nil {
-					return fmt.Errorf("failed to create session: %w", err)
-				}
-				if err := engine.SendKeys(background, sessionName, fmt.Sprintf("nvim %s", rulesFile), "Enter"); err != nil {
-					return fmt.Errorf("failed to send editor command: %w", err)
-				}
-				ulog.Success("Created session").
-					Field("session", sessionName).
-					Pretty(fmt.Sprintf("Created session '%s'", sessionName)).
-					Log(ctx)
+				return nil
+			}
+
+			launchOpts := mux.LaunchOptions{
+				SessionName:      sessionName,
+				WorkingDirectory: localPath,
+				WindowName:       "editor",
+				Panes: []mux.PaneOptions{
+					{
+						Command: fmt.Sprintf("nvim %s", rulesFile),
+					},
+				},
+			}
+			if err := engine.Launch(background, launchOpts); err != nil {
+				return fmt.Errorf("failed to launch session: %w", err)
+			}
+
+			ulog.Success("Created session").
+				Field("session", sessionName).
+				Pretty(fmt.Sprintf("Created session '%s'", sessionName)).
+				Log(ctx)
+
+			if err := engine.SwitchSession(background, sessionName, ""); err != nil {
+				ulog.Info("Attaching to session").Log(ctx)
+				attachCmd := tmux.Command("attach-session", "-t", sessionName)
+				attachCmd.Stdin = os.Stdin
+				attachCmd.Stdout = os.Stdout
+				attachCmd.Stderr = os.Stderr
+				return attachCmd.Run()
 			}
 
 			return nil
