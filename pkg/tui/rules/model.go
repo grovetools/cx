@@ -19,11 +19,12 @@ type Model = *rulesPickerModel
 // New constructs an embeddable rules picker model. mgr is the shared context
 // Manager used for rules resolution. cfg supplies user-configurable
 // keybindings; pass nil to use defaults.
-func New(mgr *context.Manager, cfg *config.Config) Model {
+func New(mgr *context.Manager, cfg *config.Config, hosted bool) Model {
 	m := newRulesPickerModel()
 	m.manager = mgr
 	m.keys = newPickerKeyMap(cfg)
 	m.help.SetKeys(m.keys)
+	m.hosted = hosted
 	return m
 }
 
@@ -69,6 +70,8 @@ type rulesPickerModel struct {
 	deletingComplete    bool
 	deleteConfirmNeeded bool
 	deleteConfirmIdx    int
+
+	hosted bool
 }
 
 func newRulesPickerModel() *rulesPickerModel {

@@ -17,11 +17,12 @@ type setRulesPage struct {
 	inner       rules.Model
 	width       int
 	height      int
+	hosted      bool
 }
 
 // NewSetRulesPage constructs the set-rules page.
-func NewSetRulesPage(state *sharedState) Page {
-	return &setRulesPage{sharedState: state}
+func NewSetRulesPage(state *sharedState, hosted bool) Page {
+	return &setRulesPage{sharedState: state, hosted: hosted}
 }
 
 func (p *setRulesPage) Name() string  { return "set-rules" }
@@ -73,7 +74,7 @@ func interceptMessages(cmd tea.Cmd) tea.Cmd {
 func (p *setRulesPage) Focus() tea.Cmd {
 	if p.inner == nil {
 		// Lazy-init the picker on first focus.
-		p.inner = rules.New(p.sharedState.manager, nil)
+		p.inner = rules.New(p.sharedState.manager, nil, p.hosted)
 		var cmds []tea.Cmd
 		if p.width > 0 && p.height > 0 {
 			updated, c := p.inner.Update(tea.WindowSizeMsg{Width: p.width, Height: p.height})

@@ -31,14 +31,14 @@ type Model = *pagerModel
 // defaults. rulesFile, when non-empty, overrides the normal rules file
 // discovery and scopes the view to a specific rules file path.
 func New(workDir, rulesFile string, cfg *config.Config) Model {
-	m, _ := NewWithStartPage("tree", workDir, rulesFile, cfg)
+	m, _ := NewWithStartPage("tree", workDir, rulesFile, cfg, false)
 	return m
 }
 
 // NewWithStartPage is like New but allows the caller to select the
 // initial page. It returns an error if startPage is the deprecated
 // "repo" page.
-func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config) (Model, error) {
+func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config, hosted bool) (Model, error) {
 	if startPage == "repo" {
 		return nil, fmt.Errorf("repo view deprecated")
 	}
@@ -56,7 +56,7 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config) 
 	pages := []Page{
 		NewRulesPage(state),
 		NewStatsPage(state),
-		NewSetRulesPage(state),
+		NewSetRulesPage(state, hosted),
 		NewListPage(state),
 		NewTreePage(state),
 		NewSuggestionsPage(state),
@@ -97,6 +97,7 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config) 
 		nvimEmbedEnabled: nvimEmbedEnabled,
 		cfg:              cfg,
 		watcher:          watcher,
+		hosted:           hosted,
 	}, nil
 }
 
@@ -128,6 +129,8 @@ type pagerModel struct {
 
 	// File watcher for the active rules file — triggers refresh on external edits.
 	watcher *RulesWatcher
+
+	hosted bool // True when running inside groveterm; use SplitEditorRequestMsg
 }
 
 // dispatchRefresh increments the sequence counter and returns a
@@ -198,6 +201,12 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rulesTUI = nil
 			return m, m.dispatchRefresh()
 		case embed.EditRequestMsg:
+			if m.hosted {
+				path := msg.Path
+				return m, func() tea.Msg {
+					return embed.SplitEditorRequestMsg{Path: path, Focus: false}
+				}
+			}
 			editor := os.Getenv("EDITOR")
 			if editor == "" {
 				editor = "vi"
@@ -307,6 +316,13 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 
+				if m.hosted {
+					path := rulesPath
+					return m, func() tea.Msg {
+						return embed.SplitEditorRequestMsg{Path: path, Focus: false}
+					}
+				}
+
 				if m.nvimEmbedEnabled {
 					m.editingFilePath = rulesPath
 					editorHeight := m.height - 10
@@ -358,7 +374,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// shelling out to `cx rules`. The picker speaks the
 				// embed contract so we can route messages and editor
 				// requests through this host.
-				m.rulesTUI = rulestui.New(m.state.manager, m.cfg)
+				m.rulesTUI = rulestui.New(m.state.manager, m.cfg, m.hosted)
 				m.showRules = true
 				return m, tea.Batch(
 					m.rulesTUI.Init(),

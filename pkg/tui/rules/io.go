@@ -212,7 +212,7 @@ func performSetCmd(item ruleItem) tea.Cmd {
 // contract. The host (StandaloneHost or a composed host like cx view) is
 // responsible for suspending the TUI, running the editor, and dispatching an
 // embed.EditFinishedMsg back to this model.
-func editRuleCmd(item ruleItem) tea.Cmd {
+func editRuleCmd(item ruleItem, hosted bool) tea.Cmd {
 	// Check if file exists before bothering the host.
 	if _, err := os.Stat(item.path); os.IsNotExist(err) {
 		path := item.path
@@ -220,6 +220,12 @@ func editRuleCmd(item ruleItem) tea.Cmd {
 		return func() tea.Msg {
 			fmt.Fprintf(os.Stderr, "Error: rule set '%s' not found at %s\n", name, path)
 			return embed.CloseRequestMsg{}
+		}
+	}
+	if hosted {
+		path := item.path
+		return func() tea.Msg {
+			return embed.SplitEditorRequestMsg{Path: path, Focus: false}
 		}
 	}
 	return func() tea.Msg {

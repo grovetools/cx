@@ -263,7 +263,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case key.Matches(msg, m.keys.Edit):
 			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
-				return m, editRuleCmd(m.items[m.selectedIndex])
+				return m, editRuleCmd(m.items[m.selectedIndex], m.hosted)
 			}
 		case key.Matches(msg, m.keys.Save):
 			// Enter save mode
