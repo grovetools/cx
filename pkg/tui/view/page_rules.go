@@ -1,16 +1,33 @@
 package view
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/grovetools/core/pkg/workspace"
 	core_theme "github.com/grovetools/core/tui/theme"
 
 	"github.com/grovetools/cx/pkg/context"
 )
+
+// abbreviateRulesPath produces a display-friendly rules path.
+// Uses workspace.FindNotebookRoot to detect notebook paths and abbreviate
+// with $nb/. Falls back to workDir-relative or absolute path.
+func abbreviateRulesPath(absPath, workDir string) string {
+	if nbRoot := workspace.FindNotebookRoot(absPath); nbRoot != "" {
+		if rel, err := filepath.Rel(nbRoot, absPath); err == nil {
+			return "$nb/" + rel
+		}
+	}
+	if workDir != "" {
+		if rel, err := filepath.Rel(workDir, absPath); err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
+	}
+	return absPath
+}
 
 type rulesPage struct {
 	sharedState *sharedState
@@ -44,17 +61,7 @@ func (p *rulesPage) Focus() tea.Cmd {
 	if rulesPath == "" {
 		rulesPath = ".grove/rules" // Fallback if path is not set
 	} else {
-		base := p.sharedState.workDir
-		if base == "" {
-			if cwd, err := os.Getwd(); err == nil {
-				base = cwd
-			}
-		}
-		if base != "" {
-			if relPath, err := filepath.Rel(base, rulesPath); err == nil {
-				rulesPath = relPath
-			}
-		}
+		rulesPath = abbreviateRulesPath(rulesPath, p.sharedState.workDir)
 	}
 
 	// Create a styled header with label and highlighted path using theme styles
