@@ -85,14 +85,21 @@ func (p *suggestionsPage) refreshSuggestionsCmd() tea.Cmd {
 			query = query[:500]
 		}
 
-		results, err := client.SearchMemory(gocontext.Background(), models.MemorySearchRequest{
+		req := models.MemorySearchRequest{
 			Query:     query,
 			Limit:     50,
 			UseFTS:    true,
 			UseVector: true,
-		})
+		}
+		results, err := client.SearchMemory(gocontext.Background(), req)
 		if err != nil {
-			return suggestionsRefreshedMsg{err: err}
+			// Vector search may be unavailable (e.g. no embedder configured
+			// daemon-side); retry once with FTS-only before surfacing the error.
+			req.UseVector = false
+			results, err = client.SearchMemory(gocontext.Background(), req)
+			if err != nil {
+				return suggestionsRefreshedMsg{err: err}
+			}
 		}
 
 		// Get included files map to filter out already-included results.
