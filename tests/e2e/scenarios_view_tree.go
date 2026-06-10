@@ -31,7 +31,8 @@ func launchAndTestInitialCXView(ctx *harness.Context) error {
 	}
 	projectADir := ctx.GetString("project_a_dir")
 
-	session, err := ctx.StartTUI(cxBin, []string{"view", "--page", "tree"},
+	session, err := ctx.StartTUI(
+		cxBin, []string{"view", "--page", "tree"},
 		tui.WithCwd(projectADir),
 		tui.WithEnv("CLICOLOR_FORCE=1"),
 	)

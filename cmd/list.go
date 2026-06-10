@@ -38,6 +38,12 @@ func NewListCmd() *cobra.Command {
 				}
 			}
 
+			if len(files) == 0 && targetRulesFile == "" {
+				if _, rulesPath, _ := mgr.LoadRulesContent(); rulesPath == "" {
+					fmt.Fprintln(cmd.ErrOrStderr(), "hint: no context rules found — create one with 'cx edit' (see 'cx rules where')")
+					return nil
+				}
+			}
 			for _, file := range files {
 				fmt.Println(file)
 			}

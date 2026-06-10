@@ -16,8 +16,8 @@ func NewGenerateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "generate",
-		Short: "Generate .grove/context from .grove/context-files",
-		Long:  `Reads the .grove/context-files list and generates a concatenated .grove/context file with all specified files.`,
+		Short: "Generate the context file from the active rules",
+		Long:  `Resolves the active rules file (run 'cx rules where' to see which one) and generates a concatenated context file with all matched files.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			mgr := context.NewManager(GetWorkDir())
@@ -26,6 +26,13 @@ func NewGenerateCmd() *cobra.Command {
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {
 				return err
+			}
+
+			if targetRulesFile == "" {
+				if _, rulesPath, _ := mgr.LoadRulesContent(); rulesPath == "" {
+					fmt.Fprintln(cmd.ErrOrStderr(), "hint: no context rules found — create one with 'cx edit' (see 'cx rules where')")
+					return nil
+				}
 			}
 
 			if node, err := workspace.GetProjectByPath(mgr.GetWorkDir()); err == nil && node.Kind != workspace.KindNonGroveRepo {

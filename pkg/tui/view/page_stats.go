@@ -73,7 +73,8 @@ func (d languageDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 	var parts []string
 	name := fmt.Sprintf("%-12s", i.Name)
 	percentage := fmt.Sprintf("%5.1f%%", i.Percentage)
-	details := fmt.Sprintf("  (~%s tokens, %d files)",
+	details := fmt.Sprintf(
+		"  (~%s tokens, %d files)",
 		context.FormatTokenCount(i.TotalTokens),
 		i.FileCount,
 	)
@@ -137,7 +138,8 @@ func (d fileDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		tokenStyle = theme.Info
 	}
 
-	details := fmt.Sprintf("%s tokens (%4.1f%%)",
+	details := fmt.Sprintf(
+		"%s tokens (%4.1f%%)",
 		context.FormatTokenCount(i.Tokens),
 		i.Percentage,
 	)

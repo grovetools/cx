@@ -56,7 +56,7 @@ func newRulesSelectCmd() *cobra.Command {
 func newRulesUnsetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "unset",
-		Short: "Unset the active rule set and fall back to .grove/rules",
+		Short: "Unset the active rule set and fall back to the default rules file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
 			if err := state.Delete(context.StateSourceKey); err != nil {

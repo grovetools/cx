@@ -19,7 +19,7 @@ func NewResetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reset",
 		Short: "Reset the rules file to project defaults",
-		Long:  `Resets the .grove/rules file to the default rules defined in grove.yml. If no default is configured, creates a basic rules file with sensible defaults.`,
+		Long:  `Resets the active rules file to the default rules defined in the grove config. If no default is configured, creates a basic rules file with sensible defaults.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
 

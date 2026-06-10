@@ -19,7 +19,7 @@ func NewWriteRulesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "write-rules <destination-path>",
 		Short: "Write the current active rules to a file",
-		Long:  `Copies the current .grove/rules file to the specified destination path.`,
+		Long:  `Copies the active rules file (run 'cx rules where' to see which one) to the specified destination path.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			destPath := args[0]

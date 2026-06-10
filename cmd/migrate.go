@@ -20,8 +20,9 @@ func NewMigrateRulesNbCmd() *cobra.Command {
 	var dryRun bool
 
 	cmd := &cobra.Command{
-		Use:   "migrate-rules-nb",
-		Short: "Migrate legacy .cx presets and stale context files to notebook",
+		Use:    "migrate-rules-nb",
+		Short:  "Migrate legacy .cx presets and stale context files to notebook",
+		Hidden: true,
 		Long: `Migrates local context artifacts to the centralized notebook location:
 
   .cx/*.rules        → notebook context/presets/
