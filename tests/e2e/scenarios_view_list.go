@@ -26,7 +26,8 @@ func TUIViewListScenario() *harness.Scenario {
 				}
 				projectADir := ctx.GetString("project_a_dir")
 
-				session, err := ctx.StartTUI(cxBin, []string{"view", "--page", "list"},
+				session, err := ctx.StartTUI(
+					cxBin, []string{"view", "--page", "list"},
 					tui.WithCwd(projectADir),
 					tui.WithEnv("CLICOLOR_FORCE=1"),
 				)

@@ -38,7 +38,8 @@ func launchCXViewForWatcher(ctx *harness.Context) error {
 	}
 	projectADir := ctx.GetString("project_a_dir")
 
-	session, err := ctx.StartTUI(cxBinary, []string{"view", "--page", "rules"},
+	session, err := ctx.StartTUI(
+		cxBinary, []string{"view", "--page", "rules"},
 		tui.WithCwd(projectADir),
 		tui.WithEnv("CLICOLOR_FORCE=1"),
 	)

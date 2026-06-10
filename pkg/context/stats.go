@@ -260,7 +260,8 @@ func (s *ContextStats) String(title string) string {
 		summaryItems = append(summaryItems, fmt.Sprintf("Rules File:     %s", s.RulesPath))
 		summaryItems = append(summaryItems, "")
 	}
-	summaryItems = append(summaryItems,
+	summaryItems = append(
+		summaryItems,
 		fmt.Sprintf("Total Files:    %d", s.TotalFiles),
 		fmt.Sprintf("Total Tokens:   ~%s", FormatTokenCount(s.TotalTokens)),
 		fmt.Sprintf("Total Size:     %s", FormatBytes(int(s.TotalSize))),
@@ -283,7 +284,8 @@ func (s *ContextStats) String(title string) string {
 	for _, lang := range languages {
 		langName := theme.Info.Render(fmt.Sprintf("%-12s", lang.Name))
 		percentage := theme.Highlight.Render(fmt.Sprintf("%5.1f%%", lang.Percentage))
-		details := theme.Muted.Render(fmt.Sprintf("(%s tokens, %d files)",
+		details := theme.Muted.Render(fmt.Sprintf(
+			"(%s tokens, %d files)",
 			FormatTokenCount(lang.TotalTokens),
 			lang.FileCount,
 		))
@@ -307,7 +309,8 @@ func (s *ContextStats) String(title string) string {
 			tokenStyle = theme.Info
 		}
 
-		line := fmt.Sprintf("  %2d. %-50s %s (%4.1f%%)",
+		line := fmt.Sprintf(
+			"  %2d. %-50s %s (%4.1f%%)",
 			i+1,
 			displayPath,
 			tokenStyle.Render(FormatTokenCount(file.Tokens)+" tokens"),
@@ -321,7 +324,8 @@ func (s *ContextStats) String(title string) string {
 	for _, dist := range s.Distribution {
 		bar := strings.Repeat("█", int(dist.Percentage/5))
 		barStyled := theme.Success.Render(bar)
-		line := fmt.Sprintf("  %-15s %3d files (%5.1f%%) %s",
+		line := fmt.Sprintf(
+			"  %-15s %3d files (%5.1f%%) %s",
 			dist.RangeLabel+":",
 			dist.FileCount,
 			dist.Percentage,

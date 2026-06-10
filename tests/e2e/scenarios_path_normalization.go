@@ -99,7 +99,8 @@ func main() {
 					return err
 				}
 
-				session, err := ctx.StartTUI(cxBinary, []string{"view", "--page", "list"},
+				session, err := ctx.StartTUI(
+					cxBinary, []string{"view", "--page", "list"},
 					tui.WithEnv("CLICOLOR_FORCE=1"),
 				)
 				if err != nil {
@@ -310,7 +311,8 @@ func main() {
 					return fmt.Errorf("failed to change to symlink directory: %w", err)
 				}
 
-				session, err := ctx.StartTUI(cxBinary, []string{"view", "--page", "list"},
+				session, err := ctx.StartTUI(
+					cxBinary, []string{"view", "--page", "list"},
 					tui.WithEnv("CLICOLOR_FORCE=1"),
 				)
 				if err != nil {

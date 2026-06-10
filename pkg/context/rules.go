@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grovetools/core/config"
@@ -18,6 +19,10 @@ import (
 )
 
 var rulesLog = logging.NewLogger("cx.context.rules")
+
+// legacyRulesWarnOnce dedupes the stale-.grove/rules warning, which would
+// otherwise fire on every rules load (several times per command run).
+var legacyRulesWarnOnce sync.Once
 
 // parsedRules holds the fully parsed contents of a single rules file,
 // including all rules, directives, and import statements.
@@ -370,11 +375,14 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 					return nil, "", fmt.Errorf("reading notebook rules file %s: %w", nbRulesFile, err)
 				}
 				// Warn if a stale .grove/rules also exists — it's now ignored.
+				// Rules are loaded several times per run; warn only once.
 				localRulesPath := filepath.Join(m.workDir, ActiveRulesFile)
 				if _, err := os.Stat(localRulesPath); err == nil {
-					rulesLog.WithField("legacy_file", localRulesPath).
-						WithField("active_file", nbRulesFile).
-						Warn("ignoring legacy .grove/rules — notebook rules file is now active; delete .grove/rules to silence this warning")
+					legacyRulesWarnOnce.Do(func() {
+						rulesLog.WithField("legacy_file", localRulesPath).
+							WithField("active_file", nbRulesFile).
+							Warn("ignoring legacy .grove/rules — notebook rules file is now active; delete .grove/rules to silence this warning")
+					})
 				}
 				return content, nbRulesFile, nil
 			}
@@ -1788,7 +1796,8 @@ func (m *Manager) RemoveRuleForPath(path string) error {
 
 	// Also check for relative paths starting with ./ or ../
 	if !filepath.IsAbs(path) {
-		patternsToRemove = append(patternsToRemove,
+		patternsToRemove = append(
+			patternsToRemove,
 			"./"+path,
 			"!./"+path,
 			"./"+path+"/**",

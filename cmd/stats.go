@@ -41,10 +41,10 @@ func NewStatsCmd() *cobra.Command {
 		Long: `Show language breakdown by tokens/files, identify largest token consumers, and display token distribution statistics.
 
 If a rules file path is provided, stats will be computed from that file.
-Otherwise, stats will be computed from the active rules file (.grove/rules).
+Otherwise, stats will be computed from the active rules file (run 'cx rules where' to see which one).
 
 Examples:
-  cx stats                              # Use active .grove/rules
+  cx stats                              # Use the active rules file
   cx stats plans/my-plan/rules/job.rules  # Use custom rules file
   cx stats --job 02-spec.md             # Use job's saved rules`,
 		Args: cobra.MaximumNArgs(1),

@@ -388,7 +388,8 @@ func TestResolveFilesWithAttribution_ExternalFileExclusion(t *testing.T) {
 
 	// Create rules that include the external project directory and have a floating exclusion
 	// Using absolute path pattern to simulate a resolved alias
-	rulesContent := fmt.Sprintf(`%s/**
+	rulesContent := fmt.Sprintf(
+		`%s/**
 !*.json`,
 		filepath.ToSlash(externalProjectDir),
 	)

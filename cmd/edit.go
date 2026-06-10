@@ -16,7 +16,7 @@ func NewEditCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit",
 		Short: "Open the rules file in your editor or print its path",
-		Long:  `Opens .grove/rules in your system's default editor (specified by $EDITOR environment variable), or prints the path if --print-path is used.`,
+		Long:  `Opens the active rules file (run 'cx rules where' to see which one) in your system's default editor (specified by $EDITOR environment variable), or prints the path if --print-path is used.`,
 		Example: `  # Open rules file in $EDITOR
   cx edit
 

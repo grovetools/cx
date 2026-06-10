@@ -33,7 +33,7 @@ func main() {
 
 	rootCmd := cli.NewStandardCommand(
 		"cx",
-		"LLM context management (formerly grove cx)",
+		"LLM context management",
 	)
 
 	// Global flags
@@ -49,7 +49,6 @@ func main() {
 	rootCmd.AddCommand(cmd.NewEditCmd())
 	rootCmd.AddCommand(cmd.NewResetCmd())
 	rootCmd.AddCommand(cmd.NewRulesCmd())
-	rootCmd.AddCommand(cmd.NewSetRulesCmd())
 	rootCmd.AddCommand(cmd.NewWriteRulesCmd())
 	rootCmd.AddCommand(cmd.NewGenerateCmd())
 	rootCmd.AddCommand(cmd.NewShowCmd())
@@ -57,7 +56,6 @@ func main() {
 	rootCmd.AddCommand(cmd.NewListCacheCmd())
 	rootCmd.AddCommand(cmd.NewDiffCmd())
 	rootCmd.AddCommand(cmd.NewValidateCmd())
-	rootCmd.AddCommand(cmd.NewFixCmd())
 	rootCmd.AddCommand(cmd.NewStatsCmd())
 	rootCmd.AddCommand(cmd.NewFromGitCmd())
 	rootCmd.AddCommand(cmd.NewFromCmdCmd())

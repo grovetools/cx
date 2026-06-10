@@ -453,7 +453,8 @@ func TreeRootDiscoveryRelativeScenario() *harness.Scenario {
 					return err
 				}
 
-				session, err := ctx.StartTUI(cx, []string{"view", "--page", "tree"},
+				session, err := ctx.StartTUI(
+					cx, []string{"view", "--page", "tree"},
 					tui.WithCwd(ctx.RootDir),
 					tui.WithEnv("CLICOLOR_FORCE=1"),
 				)

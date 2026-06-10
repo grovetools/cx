@@ -23,7 +23,7 @@ func NewFromGitCmd() *cobra.Command {
 If a rules file already exists and neither --append nor --force is specified,
 you will be prompted to overwrite, append, or cancel.
 
-For dynamic git-aware rules that re-evaluate each time, use directives in .grove/rules instead:
+For dynamic git-aware rules that re-evaluate each time, use directives in your rules file instead:
   @changed: HEAD       — files with uncommitted changes
   @changed: staged     — only staged files
   @changed: main       — files changed vs main branch
