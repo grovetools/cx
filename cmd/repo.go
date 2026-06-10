@@ -409,7 +409,7 @@ type LLMConfig struct {
 // runLLMAnalysis generates the context and uses grove-gemini for analysis.
 func runLLMAnalysis() (string, error) {
 	// Load the model from grove.yml configuration
-	model := "gemini-2.0-flash" // default model
+	model := "gemini-2.5-flash" // default model
 
 	ctx := stdctx.Background()
 	coreCfg, err := config.LoadFrom(".")
