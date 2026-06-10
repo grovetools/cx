@@ -81,7 +81,8 @@ type Manager struct {
 	skippedMutex      sync.Mutex    // Protects skippedRules
 	log               *logrus.Entry
 	ulog              *grovelogging.UnifiedLogger
-	daemonClient      daemon.Client // Daemon client for cached workspace/git data
+	daemonClient      daemon.Client // Lazily initialized connect-only client; see getDaemonClient
+	daemonClientOnce  sync.Once     // Guards daemonClient initialization
 	ctxMu             sync.RWMutex
 	ctx               gocontext.Context
 }
@@ -199,13 +200,27 @@ func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 		aliasResolver:     nil, // Lazily initialized
 		log:               grovelogging.NewLogger("grove-context"),
 		ulog:              grovelogging.NewUnifiedLogger("cx.context"),
-		daemonClient:      daemon.NewWithAutoStart(),
 	}
 	// LoadOrStore resolves the rare race where two goroutines miss the
 	// cache simultaneously — the first to store wins, and every caller
 	// returns the same Manager instance.
 	actual, _ := managerCache.LoadOrStore(cacheKey, mgr)
 	return actual.(*Manager)
+}
+
+// getDaemonClient lazily constructs a connect-only daemon client.
+//
+// daemon.New() connects to an already-running daemon if one exists and
+// otherwise returns a LocalClient — it NEVER spawns groved. Manager must
+// not use daemon.NewWithAutoStart() here: the client only backs optional
+// workspace-cache lookups (ListPlanRules, getAliasResolver), and eagerly
+// auto-starting a daemon from the constructor caused every cx command —
+// including pure reads like `cx list` — to spawn a global groved.
+func (m *Manager) getDaemonClient() daemon.Client {
+	m.daemonClientOnce.Do(func() {
+		m.daemonClient = daemon.New()
+	})
+	return m.daemonClient
 }
 
 // GetWorkDir returns the current working directory
@@ -486,7 +501,7 @@ func (m *Manager) ListPlanRules() ([]PlanRule, error) {
 	}
 
 	// 2. Use daemon's cached workspace graph (falls back to local discovery via LocalClient).
-	workspaces, err := m.daemonClient.GetWorkspaces(gocontext.Background())
+	workspaces, err := m.getDaemonClient().GetWorkspaces(gocontext.Background())
 	if err != nil {
 		// If discovery fails, we can't find workspaces, so return empty
 		return nil, nil
@@ -529,10 +544,14 @@ func (m *Manager) ListPlanRules() ([]PlanRule, error) {
 func (m *Manager) getAliasResolver() *alias.AliasResolver {
 	if m.aliasResolver == nil {
 		m.aliasResolver = alias.NewAliasResolverWithWorkDir(m.workDir)
-		// Try daemon's cached workspace graph first to avoid expensive disk scan
-		if workspaces, err := m.daemonClient.GetWorkspaces(gocontext.Background()); err == nil {
-			m.aliasResolver.InitProviderFromNodes(workspaces)
-			return m.aliasResolver
+		// Try daemon's cached workspace graph first to avoid expensive disk
+		// scan — but only when a daemon is actually running. When it isn't,
+		// fall through to InitProvider's own disk scan below.
+		if client := m.getDaemonClient(); client.IsRunning() {
+			if workspaces, err := client.GetWorkspaces(gocontext.Background()); err == nil {
+				m.aliasResolver.InitProviderFromNodes(workspaces)
+				return m.aliasResolver
+			}
 		}
 	}
 	m.aliasResolver.InitProvider() // Fallback to disk scan (idempotent via sync.Once)
