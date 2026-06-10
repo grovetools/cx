@@ -10,6 +10,7 @@ import (
 	"github.com/grovetools/core/cli"
 	"github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/profiling"
+	"github.com/grovetools/core/version"
 
 	// "github.com/grovetools/core/tui"
 	"github.com/sirupsen/logrus"
@@ -35,6 +36,17 @@ func main() {
 		"cx",
 		"LLM context management",
 	)
+
+	// Enable --version on the root command, reusing the build-time
+	// version info that the `version` subcommand prints.
+	vInfo := version.GetInfo()
+	rootCmd.Version = vInfo.Version
+	cli.SetVersionTemplate(rootCmd, cli.VersionInfo{
+		Version:   vInfo.Version,
+		Commit:    vInfo.Commit,
+		BuildDate: vInfo.BuildDate,
+		BuildArch: vInfo.Platform,
+	})
 
 	// Global flags
 	rootCmd.PersistentFlags().StringVarP(&cmd.GlobalWorkDir, "dir", "C", "", "Set working directory for context resolution")
