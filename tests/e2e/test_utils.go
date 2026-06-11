@@ -11,6 +11,7 @@ import (
 
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/tend/pkg/fs"
 	"github.com/grovetools/tend/pkg/git"
 	"github.com/grovetools/tend/pkg/harness"
@@ -301,4 +302,118 @@ func looksLikeTestRepo(url, rootDir string) bool {
 		strings.Contains(url, "source-repo") ||
 		strings.Contains(url, "/var/folders/") ||
 		strings.Contains(url, "10.255.255.1")
+}
+
+// XDGEcosystemWorktreeFixture holds the paths produced by
+// setupXDGEcosystemWorktreeFixture so scenarios can drive cx from the XDG
+// worktree and assert against the original checkouts.
+type XDGEcosystemWorktreeFixture struct {
+	EcoDir           string // original ecosystem checkout
+	WorktreeDir      string // XDG ecosystem worktree (WorktreesDir()/<id>/feature-x)
+	RepoAWorktreeDir string // repo-a inside the XDG worktree
+	RepoBWorktreeDir string // repo-b inside the XDG worktree
+}
+
+// setupXDGEcosystemWorktreeFixture builds the XDG-layout sibling of the legacy
+// AliasSiblingResolutionScenario fixture: an ecosystem with two main repos and
+// an ecosystem worktree that lives under the sandboxed XDG data dir
+// (paths.WorktreesDir()/<DirIdentifier(eco)>/feature-x) instead of
+// <eco>/.grove-worktrees/feature-x. The worktree's .git pointer names the
+// original ecosystem checkout as owner so cx resolves identity and siblings
+// against the original repos. Only repo-b's worktree carries worktree_only.go,
+// the marker the sibling-resolution assertions key on.
+func setupXDGEcosystemWorktreeFixture(ctx *harness.Context) (*XDGEcosystemWorktreeFixture, error) {
+	grovesDir := filepath.Join(ctx.RootDir, "mock-groves")
+	groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
+
+	groveConfig := fmt.Sprintf("groves:\n  test:\n    path: %s\n    enabled: true\ncontext:\n  repos_dir: \"\"\n", grovesDir)
+	if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveConfig); err != nil {
+		return nil, err
+	}
+
+	gitInit := func(dir string) error {
+		cmd := exec.Command("git", "init")
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git init %s: %w (%s)", dir, err, out)
+		}
+		return nil
+	}
+
+	ecoConfig := "name: my-ecosystem\nworkspaces:\n  - \"*\"\n"
+
+	// Original ecosystem checkout + two main repos.
+	ecoDir := filepath.Join(grovesDir, "my-ecosystem")
+	if err := fs.WriteString(filepath.Join(ecoDir, ".gitmodules"), "# ecosystem"); err != nil {
+		return nil, err
+	}
+	if err := fs.WriteString(filepath.Join(ecoDir, "grove.yml"), ecoConfig); err != nil {
+		return nil, err
+	}
+	if err := gitInit(ecoDir); err != nil {
+		return nil, err
+	}
+	for _, r := range []string{"repo-a", "repo-b"} {
+		d := filepath.Join(ecoDir, r)
+		if err := fs.WriteString(filepath.Join(d, "grove.yml"), "name: "+r); err != nil {
+			return nil, err
+		}
+		if err := fs.WriteString(filepath.Join(d, "main.go"), "package main // main version"); err != nil {
+			return nil, err
+		}
+		if err := gitInit(d); err != nil {
+			return nil, err
+		}
+	}
+
+	// XDG ecosystem worktree under the sandboxed data dir. The identifier
+	// matches what cx computes for ecoDir, so discovery scans the same base.
+	id := workspace.DirIdentifier(ecoDir)
+	worktreeDir := filepath.Join(ctx.DataDir(), "grove", "worktrees", id, "feature-x")
+	if err := fs.WriteString(filepath.Join(worktreeDir, ".gitmodules"), "# ecosystem worktree"); err != nil {
+		return nil, err
+	}
+	if err := fs.WriteString(filepath.Join(worktreeDir, "grove.yml"), ecoConfig); err != nil {
+		return nil, err
+	}
+	// .git FILE naming the original checkout as owner (absolute gitdir, since
+	// the legacy relative ../../ pointer is meaningless from the XDG base).
+	if err := fs.WriteString(filepath.Join(worktreeDir, ".git"),
+		"gitdir: "+filepath.Join(ecoDir, ".git", "worktrees", "feature-x")); err != nil {
+		return nil, err
+	}
+
+	repoAWorktreeDir := filepath.Join(worktreeDir, "repo-a")
+	if err := fs.WriteString(filepath.Join(repoAWorktreeDir, "grove.yml"), "name: repo-a"); err != nil {
+		return nil, err
+	}
+	if err := fs.WriteString(filepath.Join(repoAWorktreeDir, "main.go"), "package main // worktree version"); err != nil {
+		return nil, err
+	}
+	if err := gitInit(repoAWorktreeDir); err != nil {
+		return nil, err
+	}
+
+	repoBWorktreeDir := filepath.Join(worktreeDir, "repo-b")
+	if err := fs.WriteString(filepath.Join(repoBWorktreeDir, "grove.yml"), "name: repo-b"); err != nil {
+		return nil, err
+	}
+	if err := fs.WriteString(filepath.Join(repoBWorktreeDir, "main.go"), "package main // worktree version"); err != nil {
+		return nil, err
+	}
+	if err := fs.WriteString(filepath.Join(repoBWorktreeDir, "worktree_only.go"), "package main // ONLY in worktree"); err != nil {
+		return nil, err
+	}
+	if err := gitInit(repoBWorktreeDir); err != nil {
+		return nil, err
+	}
+
+	f := &XDGEcosystemWorktreeFixture{
+		EcoDir:           ecoDir,
+		WorktreeDir:      worktreeDir,
+		RepoAWorktreeDir: repoAWorktreeDir,
+		RepoBWorktreeDir: repoBWorktreeDir,
+	}
+	ctx.Set("xdgFixture", f)
+	return f, nil
 }
