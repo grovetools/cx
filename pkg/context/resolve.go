@@ -15,6 +15,7 @@ import (
 	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/profiling"
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/pathutil"
 )
 
@@ -67,6 +68,31 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	localView := parsed.viewPaths
 	localTree := parsed.treePaths
 	rulesDir := filepath.Dir(absRulesPath)
+
+	// When a rules file is a recognized preset (lives under a notebook's
+	// workspaces/<ws>/context/presets/ or a project's .cx/.cx.work dir),
+	// re-root its bare relative patterns against the preset's HOME repo.
+	// This mirrors the re-rooting that @a:proj::preset ruleset imports
+	// already perform, closing the asymmetry where --rules-file / cx rules
+	// load would silently resolve bare paths against the caller's cwd.
+	if importLineNum == 0 {
+		homeRepo := inferPresetHomeRepo(absRulesPath)
+		if homeRepo != "" && homeRepo != m.rulesBaseDir {
+			reRootRules(localHot, homeRepo)
+			reRootRules(localCold, homeRepo)
+			// Re-root view/tree paths the same way
+			for i := range localView {
+				if !filepath.IsAbs(localView[i]) {
+					localView[i] = filepath.Join(homeRepo, localView[i])
+				}
+			}
+			for i := range localTree {
+				if !filepath.IsAbs(localTree[i]) {
+					localTree[i] = filepath.Join(homeRepo, localTree[i])
+				}
+			}
+		}
+	}
 
 	// Process @include: directives before local rules so local rules can override them
 	for _, includeInfo := range parsed.mainIncludes {
@@ -1274,4 +1300,49 @@ func isBinaryFile(path string) bool {
 	}
 
 	return false
+}
+
+// inferPresetHomeRepo determines the home repository for a preset rules file.
+// It returns the absolute path to the home repo, or "" if the file is not a
+// recognized preset (i.e., it's an ad-hoc rules file that should resolve
+// relative to the caller's cwd).
+//
+// Detection strategy:
+//  1. Notebook presets: use workspace.GetProjectFromNotebookPath to match
+//     paths under .../workspaces/<ws>/context/presets/.
+//  2. Project-local presets: if the path contains /.cx/ or /.cx.work/,
+//     walk up to find the project root via workspace.GetProjectByPath.
+func inferPresetHomeRepo(absRulesPath string) string {
+	// 1. Notebook preset — the most common case for concept presets.
+	if proj, _, _ := workspace.GetProjectFromNotebookPath(absRulesPath); proj != nil {
+		return proj.Path
+	}
+
+	// 2. Project-level .cx / .cx.work preset.
+	slashed := filepath.ToSlash(absRulesPath)
+	if strings.Contains(slashed, "/.cx/") || strings.Contains(slashed, "/.cx.work/") {
+		if proj, err := workspace.GetProjectByPath(absRulesPath); err == nil && proj != nil {
+			return proj.Path
+		}
+	}
+
+	return ""
+}
+
+// reRootRules prefixes bare relative patterns in rules with homeRepo,
+// using the same logic as the @a:proj::preset ruleset import path.
+func reRootRules(rules []RuleInfo, homeRepo string) {
+	for i := range rules {
+		pattern := rules[i].Pattern
+		// Skip absolute paths, alias lines, and URL-based imports.
+		if filepath.IsAbs(pattern) || strings.HasPrefix(pattern, "@") || strings.HasPrefix(pattern, "http") {
+			continue
+		}
+		if strings.Contains(pattern, "/") {
+			rules[i].Pattern = filepath.Join(homeRepo, pattern)
+		} else {
+			// Floating pattern (e.g. "*.go") — make recursive within the project.
+			rules[i].Pattern = filepath.Join(homeRepo, "**", pattern)
+		}
+	}
 }

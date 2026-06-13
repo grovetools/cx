@@ -323,6 +323,7 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 
 	if !hasExclusion {
 		attr, _, _, _ := ResolveAST(nodes, ctx)
+		warnZeroMatchRules(rules, attr)
 		return m.flattenAttrResult(attr), nil
 	}
 
@@ -343,6 +344,7 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 	// exclusions see files from every walk root.
 	primedCtx := newProdResolutionContext(m).withFileSet(discovered)
 	attr, _, _, _ := ResolveAST(nodes, primedCtx)
+	warnZeroMatchRules(rules, attr)
 	return m.flattenAttrResult(attr), nil
 }
 
@@ -362,6 +364,38 @@ func (m *Manager) flattenAttrResult(attr AttributionResult) []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// warnZeroMatchRules emits a stderr warning for each non-glob, non-directive,
+// non-exclude inclusion rule whose EffectiveLineNum produced zero files in the
+// attribution result. This catches silently-dead path lines regardless of
+// whether they arose from re-rooting, import expansion, or typos.
+func warnZeroMatchRules(rules []RuleInfo, attr AttributionResult) {
+	// Collect EffectiveLineNums that are inclusion literals without directives.
+	// We check by EffectiveLineNum so imported/re-rooted lines attribute correctly.
+	type lineInfo struct {
+		pattern string
+		lineNum int // original LineNum for human-readable output
+	}
+	candidateLines := map[int]lineInfo{}
+	for _, r := range rules {
+		if r.IsExclude || hasGlobMeta(r.Pattern) || len(r.Directives) > 0 {
+			continue
+		}
+		// Only warn once per EffectiveLineNum (first occurrence wins).
+		if _, seen := candidateLines[r.EffectiveLineNum]; !seen {
+			candidateLines[r.EffectiveLineNum] = lineInfo{
+				pattern: r.Pattern,
+				lineNum: r.LineNum,
+			}
+		}
+	}
+
+	for eln, info := range candidateLines {
+		if len(attr[eln]) == 0 {
+			fmt.Fprintf(os.Stderr, "Warning: path '%s' (line %d) matched 0 files\n", info.pattern, info.lineNum)
+		}
+	}
 }
 
 func absUnderBase(p, base string) string {

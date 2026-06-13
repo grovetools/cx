@@ -1,7 +1,9 @@
 package context
 
 import (
+	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -189,6 +191,193 @@ func TestResolveAST_ImportedAtLineZeroBug(t *testing.T) {
 	}
 }
 
+// --- reRootRules tests ---
+
+func TestReRootRules_BareRelativePaths(t *testing.T) {
+	rules := []RuleInfo{
+		{Pattern: "pkg/target.go", LineNum: 1},
+		{Pattern: "cmd/main.go", LineNum: 2},
+		{Pattern: "*.go", LineNum: 3},                  // floating, no /
+		{Pattern: "/abs/path/file.go", LineNum: 4},     // absolute, skip
+		{Pattern: "@a:core/pkg/alias/", LineNum: 5},    // alias, skip
+		{Pattern: "http://example.com", LineNum: 6},    // URL, skip
+		{Pattern: "pkg/sub/deep/file.go", LineNum: 7},  // path-like
+	}
+
+	reRootRules(rules, "/code/eco/flow")
+
+	expected := map[int]string{
+		1: "/code/eco/flow/pkg/target.go",
+		2: "/code/eco/flow/cmd/main.go",
+		3: "/code/eco/flow/**/*.go",                  // floating → recursive
+		4: "/abs/path/file.go",                       // unchanged
+		5: "@a:core/pkg/alias/",                      // unchanged
+		6: "http://example.com",                      // unchanged
+		7: "/code/eco/flow/pkg/sub/deep/file.go",
+	}
+
+	for _, r := range rules {
+		want, ok := expected[r.LineNum]
+		if !ok {
+			continue
+		}
+		if r.Pattern != want {
+			t.Errorf("line %d: got %q, want %q", r.LineNum, r.Pattern, want)
+		}
+	}
+}
+
+func TestReRootRules_ExclusionPatternsAlsoReRooted(t *testing.T) {
+	rules := []RuleInfo{
+		{Pattern: "pkg/foo_test.go", IsExclude: true, LineNum: 1},
+		{Pattern: "*_test.go", IsExclude: true, LineNum: 2},
+	}
+
+	reRootRules(rules, "/code/eco/flow")
+
+	if rules[0].Pattern != "/code/eco/flow/pkg/foo_test.go" {
+		t.Errorf("path exclusion not re-rooted: %s", rules[0].Pattern)
+	}
+	if rules[1].Pattern != "/code/eco/flow/**/*_test.go" {
+		t.Errorf("floating exclusion not re-rooted: %s", rules[1].Pattern)
+	}
+}
+
+// --- warnZeroMatchRules tests ---
+
+func TestWarnZeroMatchRules_WarnsOnLiteralMiss(t *testing.T) {
+	// Build rules with a literal path that matched 0 files.
+	rules := []RuleInfo{
+		{Pattern: "/code/flow/pkg/target.go", LineNum: 3, EffectiveLineNum: 3},
+	}
+	attr := AttributionResult{} // empty — line 3 matched nothing
+
+	// Capture stderr output.
+	old := captureStderr(func() {
+		warnZeroMatchRules(rules, attr)
+	})
+
+	if !strings.Contains(old, "matched 0 files") {
+		t.Fatalf("expected zero-match warning, got: %q", old)
+	}
+	if !strings.Contains(old, "line 3") {
+		t.Fatalf("expected line number 3 in warning, got: %q", old)
+	}
+}
+
+func TestWarnZeroMatchRules_NoWarnOnGlob(t *testing.T) {
+	rules := []RuleInfo{
+		{Pattern: "pkg/**/*.go", LineNum: 1, EffectiveLineNum: 1},
+	}
+	attr := AttributionResult{} // empty but it's a glob — no warning
+
+	output := captureStderr(func() {
+		warnZeroMatchRules(rules, attr)
+	})
+
+	if strings.Contains(output, "matched 0 files") {
+		t.Fatalf("should not warn on glob patterns, got: %q", output)
+	}
+}
+
+func TestWarnZeroMatchRules_NoWarnOnExclusion(t *testing.T) {
+	rules := []RuleInfo{
+		{Pattern: "pkg/missing.go", IsExclude: true, LineNum: 1, EffectiveLineNum: 1},
+	}
+	attr := AttributionResult{}
+
+	output := captureStderr(func() {
+		warnZeroMatchRules(rules, attr)
+	})
+
+	if strings.Contains(output, "matched 0 files") {
+		t.Fatalf("should not warn on exclusion patterns, got: %q", output)
+	}
+}
+
+func TestWarnZeroMatchRules_NoWarnWhenMatchExists(t *testing.T) {
+	rules := []RuleInfo{
+		{Pattern: "/code/flow/pkg/target.go", LineNum: 3, EffectiveLineNum: 3},
+	}
+	attr := AttributionResult{
+		3: []string{"/code/flow/pkg/target.go"},
+	}
+
+	output := captureStderr(func() {
+		warnZeroMatchRules(rules, attr)
+	})
+
+	if strings.Contains(output, "matched 0 files") {
+		t.Fatalf("should not warn when files are matched, got: %q", output)
+	}
+}
+
+func TestWarnZeroMatchRules_NoWarnOnDirectiveRules(t *testing.T) {
+	rules := []RuleInfo{
+		{
+			Pattern:          "pkg/target.go",
+			LineNum:          1,
+			EffectiveLineNum: 1,
+			Directives:       []SearchDirective{{Name: "grep", Query: "Foo"}},
+		},
+	}
+	attr := AttributionResult{}
+
+	output := captureStderr(func() {
+		warnZeroMatchRules(rules, attr)
+	})
+
+	if strings.Contains(output, "matched 0 files") {
+		t.Fatalf("should not warn on rules with directives, got: %q", output)
+	}
+}
+
+// --- ResolveAST integration: re-rooted literal resolves under home repo ---
+
+func TestResolveAST_ReRootedLiteralResolvesUnderHomeRepo(t *testing.T) {
+	// Simulate a preset whose bare path "pkg/target.go" was re-rooted to
+	// "/code/eco/flow/pkg/target.go" by reRootRules. The file lives under
+	// the flow project at that absolute path.
+	ctx := newMockCtx(map[string]string{
+		"code/eco/flow/pkg/target.go":    "package target",
+		"code/eco/flow/pkg/other.go":     "package other",
+		"code/eco/flow/cmd/main.go":      "package main",
+	})
+
+	// After re-rooting, the rules look like absolute paths:
+	node1 := &LiteralNode{ExpectedPath: "/code/eco/flow/pkg/target.go", LineNum: 1, RawText: "pkg/target.go"}
+	node2 := &LiteralNode{ExpectedPath: "/code/eco/flow/cmd/main.go", LineNum: 2, RawText: "cmd/main.go"}
+
+	attrs, _, _, _ := ResolveAST([]RuleNode{node1, node2}, ctx)
+
+	if len(attrs[1]) != 1 || !strings.HasSuffix(attrs[1][0], "target.go") {
+		t.Fatalf("expected target.go at line 1, got: %v", attrs[1])
+	}
+	if len(attrs[2]) != 1 || !strings.HasSuffix(attrs[2][0], "main.go") {
+		t.Fatalf("expected main.go at line 2, got: %v", attrs[2])
+	}
+}
+
+func TestResolveAST_ReRootedWithExclusionStillWorks(t *testing.T) {
+	// After re-rooting, exclusions should still apply correctly
+	ctx := newMockCtx(map[string]string{
+		"code/eco/flow/pkg/target.go":      "package target",
+		"code/eco/flow/pkg/target_test.go": "package target",
+	})
+
+	include := &GlobNode{Pattern: "/code/eco/flow/pkg/**/*.go", LineNum: 1, RawText: "pkg/**/*.go"}
+	exclude := &GlobNode{Pattern: "/code/eco/flow/pkg/**/*_test.go", LineNum: 2, RawText: "!*_test.go", Excluded: true}
+
+	attrs, excl, _, _ := ResolveAST([]RuleNode{include, exclude}, ctx)
+
+	if len(attrs[1]) != 1 || !strings.HasSuffix(attrs[1][0], "target.go") {
+		t.Fatalf("expected only target.go at line 1, got: %v", attrs[1])
+	}
+	if len(excl[2]) != 1 || !strings.HasSuffix(excl[2][0], "target_test.go") {
+		t.Fatalf("expected target_test.go excluded at line 2, got: %v", excl[2])
+	}
+}
+
 func TestResolveAST_LastWriteWinsExclusion(t *testing.T) {
 	ctx := newMockCtx(map[string]string{
 		"a.go":      "package a",
@@ -205,4 +394,17 @@ func TestResolveAST_LastWriteWinsExclusion(t *testing.T) {
 	if len(excl[2]) != 1 || !strings.HasSuffix(excl[2][0], "a_test.go") {
 		t.Fatalf("expected a_test.go on exclusion line 2, got: %v", excl[2])
 	}
+}
+
+// captureStderr redirects os.Stderr for the duration of fn and returns
+// whatever was written. Used to verify warning output.
+func captureStderr(fn func()) string {
+	r, w, _ := os.Pipe()
+	old := os.Stderr
+	os.Stderr = w
+	fn()
+	w.Close()
+	os.Stderr = old
+	out, _ := io.ReadAll(r)
+	return string(out)
 }
