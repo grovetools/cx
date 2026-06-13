@@ -86,7 +86,7 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 	// Mirror GenerateContext: persist the resolved hot files list so callers
 	// (e.g. flow's oneshot executor) can call GetStats to surface a context
 	// summary in job.log.
-	if err := m.WriteFilesList(filepath.Join(m.workDir, FilesListFile), finalHotFiles); err != nil {
+	if err := m.WriteFilesList(m.ResolveContextFilesListWritePath(), finalHotFiles); err != nil {
 		m.log.WithError(err).Warn("failed to write context files list")
 	}
 

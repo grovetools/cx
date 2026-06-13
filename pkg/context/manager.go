@@ -85,6 +85,35 @@ type Manager struct {
 	daemonClientOnce  sync.Once     // Guards daemonClient initialization
 	ctxMu             sync.RWMutex
 	ctx               gocontext.Context
+
+	// Job-scoped output path overrides. When non-empty, the corresponding
+	// Resolve*Path / Resolve*WritePath methods return these absolute paths
+	// instead of the default plan/notebook/local resolution. grove-flow sets
+	// these (via NewManagerWithPathsOverride) so that concurrently dispatched
+	// jobs in one plan each write + read their OWN generated context under
+	// <plan>/.artifacts/<job-id>/context/, eliminating the plan-scoped
+	// last-writer-wins race. Direct `cx` CLI users never set these, so the
+	// default plan-scoped behavior is unchanged.
+	hotPathOverride      string // generated hot context file
+	coldPathOverride     string // generated cold (cached) context file
+	hotListPathOverride  string // hot context files list (.grove/context-files)
+	coldListPathOverride string // cold context files list (.grove/cached-context-files)
+}
+
+// SetPathsOverride forces the generated/cached context output (and the
+// corresponding file lists) to job-scoped absolute paths instead of the
+// default resolution. Empty arguments leave that file's default resolution
+// intact.
+//
+// IMPORTANT: a Manager carrying overrides MUST NOT be shared across
+// concurrent jobs — the override fields are plain (unguarded) state. Obtain
+// an isolated, non-cached instance via NewManagerWithPathsOverride rather
+// than mutating a cached Manager returned by NewManager.
+func (m *Manager) SetPathsOverride(hot, cold, hotList, coldList string) {
+	m.hotPathOverride = hot
+	m.coldPathOverride = cold
+	m.hotListPathOverride = hotList
+	m.coldListPathOverride = coldList
 }
 
 // SetContext binds a cancellation context to the manager. Long-running
@@ -142,21 +171,7 @@ func NewManager(workDir string) *Manager {
 // legacy fallback. Instances are memoized by workDir + override to
 // prevent different overrides from sharing a cached Manager.
 func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
-	if workDir == "" {
-		workDir, _ = os.Getwd()
-	}
-	// Always ensure workDir is an absolute path
-	absWorkDir, err := filepath.Abs(workDir)
-	if err == nil {
-		workDir = absWorkDir
-	}
-
-	// Make override absolute for consistent cache keys and path operations
-	if rulesFileOverride != "" {
-		if absRules, err := filepath.Abs(rulesFileOverride); err == nil {
-			rulesFileOverride = absRules
-		}
-	}
+	workDir, rulesFileOverride = normalizeManagerInputs(workDir, rulesFileOverride)
 
 	// Cache by workDir + override to prevent instances from stepping on each other
 	cacheKey := workDir
@@ -167,6 +182,52 @@ func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 	if cached, ok := managerCache.Load(cacheKey); ok {
 		return cached.(*Manager)
 	}
+
+	mgr := newManagerInstance(workDir, rulesFileOverride)
+	// LoadOrStore resolves the rare race where two goroutines miss the
+	// cache simultaneously — the first to store wins, and every caller
+	// returns the same Manager instance.
+	actual, _ := managerCache.LoadOrStore(cacheKey, mgr)
+	return actual.(*Manager)
+}
+
+// NewManagerWithPathsOverride returns a fresh, UNCACHED Manager whose
+// generated/cached context output paths are pinned to the given job-scoped
+// absolute paths. Each call returns a distinct instance, so concurrent jobs
+// never share override state (unlike the cached NewManager family). The
+// shared per-workDir cache is intentionally bypassed; the runners that read
+// context back (grove-gemini / grove-anthropic) still use the cached,
+// override-free Manager, so they are unaffected by this instance.
+//
+// Pass empty strings for any path whose default resolution should be kept.
+func NewManagerWithPathsOverride(workDir, hot, cold, hotList, coldList string) *Manager {
+	workDir, _ = normalizeManagerInputs(workDir, "")
+	mgr := newManagerInstance(workDir, "")
+	mgr.SetPathsOverride(hot, cold, hotList, coldList)
+	return mgr
+}
+
+// normalizeManagerInputs resolves workDir (defaulting to the process CWD) and
+// the optional rules-file override to absolute paths for consistent cache
+// keys and path operations.
+func normalizeManagerInputs(workDir, rulesFileOverride string) (string, string) {
+	if workDir == "" {
+		workDir, _ = os.Getwd()
+	}
+	if absWorkDir, err := filepath.Abs(workDir); err == nil {
+		workDir = absWorkDir
+	}
+	if rulesFileOverride != "" {
+		if absRules, err := filepath.Abs(rulesFileOverride); err == nil {
+			rulesFileOverride = absRules
+		}
+	}
+	return workDir, rulesFileOverride
+}
+
+// newManagerInstance builds an (uncached) Manager for the given already-
+// absolute workDir and optional rules-file override.
+func newManagerInstance(workDir, rulesFileOverride string) *Manager {
 	cfg, err := config.LoadFrom(workDir)
 	if err != nil {
 		cfg, _ = config.LoadDefault()
@@ -190,7 +251,7 @@ func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 		// else: external rules file — keep workDir as base
 	}
 
-	mgr := &Manager{
+	return &Manager{
 		workDir:           workDir,
 		rulesBaseDir:      rulesBaseDir,
 		rulesFileOverride: rulesFileOverride,
@@ -201,11 +262,6 @@ func NewManagerWithOverride(workDir, rulesFileOverride string) *Manager {
 		log:               grovelogging.NewLogger("grove-context"),
 		ulog:              grovelogging.NewUnifiedLogger("cx.context"),
 	}
-	// LoadOrStore resolves the rare race where two goroutines miss the
-	// cache simultaneously — the first to store wins, and every caller
-	// returns the same Manager instance.
-	actual, _ := managerCache.LoadOrStore(cacheKey, mgr)
-	return actual.(*Manager)
 }
 
 // getDaemonClient lazily constructs a connect-only daemon client.
@@ -370,6 +426,9 @@ func (m *Manager) GetRulesFileFromJob(jobFilePath string) (string, error) {
 // It checks for an existing file in order: plan-scoped, notebook, .grove/context.
 // If no file exists, returns the plan-scoped path (if plan active) or notebook path.
 func (m *Manager) ResolveContextPath() string {
+	if m.hotPathOverride != "" {
+		return m.hotPathOverride
+	}
 	// Check plan-scoped context first
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.ContextPath(m.workDir, planName); p != "" {
@@ -390,6 +449,10 @@ func (m *Manager) ResolveContextPath() string {
 // ResolveContextWritePath returns the preferred path for writing the generated context file.
 // If a plan is active, returns the plan-scoped path (creating dirs as needed).
 func (m *Manager) ResolveContextWritePath() string {
+	if m.hotPathOverride != "" {
+		_ = os.MkdirAll(filepath.Dir(m.hotPathOverride), 0o755)
+		return m.hotPathOverride
+	}
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.ContextPath(m.workDir, planName); p != "" {
 			_ = os.MkdirAll(filepath.Dir(p), 0o755)
@@ -409,6 +472,9 @@ func (m *Manager) ResolveContextWritePath() string {
 // ResolveCachedContextPath returns the path to the cached context file.
 // It checks for an existing file in order: plan-scoped, notebook, .grove/cached-context.
 func (m *Manager) ResolveCachedContextPath() string {
+	if m.coldPathOverride != "" {
+		return m.coldPathOverride
+	}
 	// Check plan-scoped context first
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.CachedContextPath(m.workDir, planName); p != "" {
@@ -429,6 +495,10 @@ func (m *Manager) ResolveCachedContextPath() string {
 // ResolveCachedContextWritePath returns the preferred path for writing the cached context file.
 // If a plan is active, returns the plan-scoped path (creating dirs as needed).
 func (m *Manager) ResolveCachedContextWritePath() string {
+	if m.coldPathOverride != "" {
+		_ = os.MkdirAll(filepath.Dir(m.coldPathOverride), 0o755)
+		return m.coldPathOverride
+	}
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.CachedContextPath(m.workDir, planName); p != "" {
 			_ = os.MkdirAll(filepath.Dir(p), 0o755)
@@ -448,6 +518,9 @@ func (m *Manager) ResolveCachedContextWritePath() string {
 // ResolveCachedContextFilesListPath returns the path to the cached context files list.
 // It checks for an existing file in order: plan-scoped, notebook, .grove/cached-context-files.
 func (m *Manager) ResolveCachedContextFilesListPath() string {
+	if m.coldListPathOverride != "" {
+		return m.coldListPathOverride
+	}
 	// Check plan-scoped context first
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.CachedContextFilesListPath(m.workDir, planName); p != "" {
@@ -468,6 +541,10 @@ func (m *Manager) ResolveCachedContextFilesListPath() string {
 // ResolveCachedContextFilesListWritePath returns the preferred path for writing the cached context files list.
 // If a plan is active, returns the plan-scoped path (creating dirs as needed).
 func (m *Manager) ResolveCachedContextFilesListWritePath() string {
+	if m.coldListPathOverride != "" {
+		_ = os.MkdirAll(filepath.Dir(m.coldListPathOverride), 0o755)
+		return m.coldListPathOverride
+	}
 	if planName := m.GetActivePlanName(); planName != "" {
 		if p := plan.CachedContextFilesListPath(m.workDir, planName); p != "" {
 			_ = os.MkdirAll(filepath.Dir(p), 0o755)
@@ -482,6 +559,26 @@ func (m *Manager) ResolveCachedContextFilesListWritePath() string {
 		}
 	}
 	return filepath.Join(m.workDir, CachedContextFilesListFile)
+}
+
+// ResolveContextFilesListPath returns the path to the hot context files list
+// (.grove/context-files). Unlike the generated/cached context, this list has
+// historically been workDir-local; it honors a job-scoped override when set.
+func (m *Manager) ResolveContextFilesListPath() string {
+	if m.hotListPathOverride != "" {
+		return m.hotListPathOverride
+	}
+	return filepath.Join(m.workDir, FilesListFile)
+}
+
+// ResolveContextFilesListWritePath returns the preferred write path for the hot
+// context files list, creating the parent directory when an override is set.
+func (m *Manager) ResolveContextFilesListWritePath() string {
+	if m.hotListPathOverride != "" {
+		_ = os.MkdirAll(filepath.Dir(m.hotListPathOverride), 0o755)
+		return m.hotListPathOverride
+	}
+	return filepath.Join(m.workDir, FilesListFile)
 }
 
 // ListPlanRules discovers and returns all rules files from grove-flow plans across all workspaces.
@@ -1115,8 +1212,8 @@ func (m *Manager) UpdateFromRules() error {
 		return fmt.Errorf("error creating %s directory: %w", groveDir, err)
 	}
 
-	// Write the filtered file list to context-files
-	filesPath := filepath.Join(m.workDir, FilesListFile)
+	// Write the filtered file list to context-files (job-scoped when overridden)
+	filesPath := m.ResolveContextFilesListWritePath()
 	return m.WriteFilesList(filesPath, filesToInclude)
 }
 
