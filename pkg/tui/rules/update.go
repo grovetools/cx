@@ -238,7 +238,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
 				m.settingIdx = m.selectedIndex
 				m.settingActive = true
-				return m, performSetCmd(m.items[m.selectedIndex])
+				return m, performSetCmd(m.manager.GetWorkDir(), m.items[m.selectedIndex])
 			}
 		case key.Matches(msg, m.keys.Load):
 			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
@@ -288,7 +288,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.deleteConfirmNeeded = false
 					m.deletingIdx = m.selectedIndex
 					m.deletingActive = true
-					return m, performDeleteCmd(m.items[m.selectedIndex], true) // force=true
+					return m, performDeleteCmd(m.manager.GetWorkDir(), m.items[m.selectedIndex], true) // force=true
 				}
 
 				// If version-controlled, require confirmation
@@ -302,7 +302,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Not version-controlled, delete immediately
 				m.deletingIdx = m.selectedIndex
 				m.deletingActive = true
-				return m, performDeleteCmd(m.items[m.selectedIndex], false)
+				return m, performDeleteCmd(m.manager.GetWorkDir(), m.items[m.selectedIndex], false)
 			}
 		case key.Matches(msg, m.keys.Up):
 			if m.selectedIndex > 0 {

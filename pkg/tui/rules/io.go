@@ -177,19 +177,19 @@ func (m *rulesPickerModel) performLoadCmd(item ruleItem) tea.Cmd {
 		}
 
 		// Unset any active rule set state so the resolved path becomes active
-		_ = state.Delete(context.StateSourceKey)
+		_ = state.Delete(m.manager.GetWorkDir(), context.StateSourceKey)
 
 		return loadCompleteMsg{err: nil}
 	}
 }
 
-func performSetCmd(item ruleItem) tea.Cmd {
+func performSetCmd(workDir string, item ruleItem) tea.Cmd {
 	return func() tea.Msg {
 		sourcePath := item.path
 
 		// If selecting .grove/rules, unset the state (fall back to default)
 		if sourcePath == context.ActiveRulesFile {
-			if err := state.Delete(context.StateSourceKey); err != nil {
+			if err := state.Delete(workDir, context.StateSourceKey); err != nil {
 				return setCompleteMsg{err: err}
 			}
 			return setCompleteMsg{err: nil}
@@ -200,7 +200,7 @@ func performSetCmd(item ruleItem) tea.Cmd {
 			return setCompleteMsg{err: fmt.Errorf("rule set not found at %s", sourcePath)}
 		}
 
-		if err := state.Set(context.StateSourceKey, sourcePath); err != nil {
+		if err := state.Set(workDir, context.StateSourceKey, sourcePath); err != nil {
 			return setCompleteMsg{err: err}
 		}
 
@@ -274,7 +274,7 @@ func (m *rulesPickerModel) performSaveCmd(name string, toWork bool) tea.Cmd {
 	}
 }
 
-func performDeleteCmd(item ruleItem, force bool) tea.Cmd {
+func performDeleteCmd(workDir string, item ruleItem, force bool) tea.Cmd {
 	return func() tea.Msg {
 		// Check if it's in the version-controlled directory
 		isVersionControlled := filepath.Dir(item.path) == context.RulesDir
@@ -284,10 +284,10 @@ func performDeleteCmd(item ruleItem, force bool) tea.Cmd {
 		}
 
 		// Check if this is the currently active rule set
-		activeSource, _ := state.GetString(context.StateSourceKey)
+		activeSource, _ := state.GetString(workDir, context.StateSourceKey)
 		if activeSource == item.path {
 			// Unset it first before deleting
-			_ = state.Delete(context.StateSourceKey)
+			_ = state.Delete(workDir, context.StateSourceKey)
 		}
 
 		if err := os.Remove(item.path); err != nil {

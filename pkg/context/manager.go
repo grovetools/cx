@@ -1708,7 +1708,7 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 	// If LoadRulesContent didn't return a path, determine where to create the file
 	if rulesPath == "" {
 		// Check if there's an active rule set in state
-		activeSource, _ := state.GetString(StateSourceKey)
+		activeSource, _ := state.GetString(m.workDir, StateSourceKey)
 		if activeSource != "" {
 			// Use the active source path from state
 			rulesPath = filepath.Join(m.workDir, activeSource)
