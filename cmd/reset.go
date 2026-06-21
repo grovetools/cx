@@ -115,7 +115,7 @@ func NewResetCmd() *cobra.Command {
 			}
 
 			// Unset any active rule set to ensure the reset rules are now active.
-			if err := state.Delete(context.StateSourceKey); err != nil {
+			if err := state.Delete(GetWorkDir(), context.StateSourceKey); err != nil {
 				ulog.Warn("Could not unset active rule set in state").
 					Err(err).
 					Log(ctx)

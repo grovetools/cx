@@ -59,7 +59,7 @@ func newRulesUnsetCmd() *cobra.Command {
 		Short: "Unset the active rule set and fall back to the default rules file",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := stdctx.Background()
-			if err := state.Delete(context.StateSourceKey); err != nil {
+			if err := state.Delete(GetWorkDir(), context.StateSourceKey); err != nil {
 				return fmt.Errorf("failed to update state: %w", err)
 			}
 			ulog.Success("Active rule set unset").Log(ctx)
@@ -124,7 +124,7 @@ Examples:
 			}
 
 			// Unset any active rule set state so the resolved path becomes active
-			if err := state.Delete(context.StateSourceKey); err != nil {
+			if err := state.Delete(GetWorkDir(), context.StateSourceKey); err != nil {
 				// Non-fatal, just warn
 				ulog.Warn("Could not unset active rule set in state").
 					Err(err).
@@ -212,7 +212,7 @@ func newRulesListCmd() *cobra.Command {
 			}
 
 			// Original behavior: list rules for current project
-			activeSource, _ := state.GetString(context.StateSourceKey)
+			activeSource, _ := state.GetString(GetWorkDir(), context.StateSourceKey)
 			if activeSource == "" {
 				activeSource = "(default)"
 			}
@@ -372,7 +372,7 @@ You can also provide a direct file path to a rules file (including plan-specific
 				}
 			}
 
-			if err := state.Set(context.StateSourceKey, sourcePath); err != nil {
+			if err := state.Set(GetWorkDir(), context.StateSourceKey, sourcePath); err != nil {
 				return fmt.Errorf("failed to update state: %w", err)
 			}
 
@@ -486,10 +486,10 @@ Rule sets in .cx.work/ can be deleted without force.`,
 			}
 
 			// Check if this is the currently active rule set
-			activeSource, _ := state.GetString(context.StateSourceKey)
+			activeSource, _ := state.GetString(GetWorkDir(), context.StateSourceKey)
 			if activeSource == rulesPath {
 				// Unset it first before deleting
-				if err := state.Delete(context.StateSourceKey); err != nil {
+				if err := state.Delete(GetWorkDir(), context.StateSourceKey); err != nil {
 					ulog.Warn("Could not unset active state before deleting").
 						Field("name", name).
 						Err(err).

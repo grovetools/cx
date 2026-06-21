@@ -330,7 +330,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 	}
 
 	// 1. Check state for an active rule set from .cx/
-	activeSource, _ := state.GetString(StateSourceKey)
+	activeSource, _ := state.GetString(m.workDir, StateSourceKey)
 	if activeSource != "" {
 		// The path in state is relative to the project root (m.workDir)
 		rulesPath := filepath.Join(m.workDir, activeSource)
