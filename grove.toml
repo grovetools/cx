@@ -9,6 +9,11 @@ path = "./bin/cx"
 [context]
 default_rules = "dev-no-tests"
 
+[[test_scopes]]
+name = "strip-comments"
+rules = ".cx/strip-comments.rules"
+scenarios = ["cx-strip-comments"]
+
 [[hooks.on_stop]]
 name = "Auto-format"
 command = "make fmt; CODE=$?; grove internal task-report . fmt $CODE; exit $CODE"

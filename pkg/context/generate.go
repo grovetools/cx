@@ -197,6 +197,10 @@ func (m *Manager) generateContextFromFilesAndTrees(files, treePaths []string, us
 				continue
 			}
 
+			if m.stripComments {
+				content = StripComments(file, content)
+			}
+
 			_, _ = ctxFile.Write(content)
 
 			// Write end marker
@@ -312,6 +316,10 @@ func (m *Manager) writeFileToXML(w io.Writer, file, indent string) error {
 		fmt.Fprintf(w, "%s  <error>%v</error>\n", indent, err)
 		fmt.Fprintf(w, "%s</file>\n", indent)
 		return err
+	}
+
+	if m.stripComments {
+		content = StripComments(file, content)
 	}
 
 	// Write content directly without extra indentation (content already has its own)

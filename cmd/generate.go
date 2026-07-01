@@ -13,6 +13,7 @@ var useXMLFormat bool = true
 
 func NewGenerateCmd() *cobra.Command {
 	var jobFile, rulesFile string
+	var stripComments bool
 
 	cmd := &cobra.Command{
 		Use:   "generate",
@@ -22,6 +23,7 @@ func NewGenerateCmd() *cobra.Command {
 			ctx := cmd.Context()
 			mgr := context.NewManager(GetWorkDir())
 			mgr.SetContext(ctx)
+			mgr.SetStripComments(stripComments)
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {
@@ -76,6 +78,7 @@ func NewGenerateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&useXMLFormat, "xml", true, "Use XML-style delimiters (default: true)")
+	cmd.Flags().BoolVar(&stripComments, "strip-comments", false, "Strip code comments from included files (go/rust/ts/js/html/css)")
 	AddRulesFileFlags(cmd, &jobFile, &rulesFile)
 
 	return cmd

@@ -1,0 +1,14 @@
+# Comment stripping rules
+# Scopes the source behind `cx generate --strip-comments` and the Manager
+# stripComments option: the per-language comment stripper, the generate.go
+# call sites that apply it (hot + cold XML and the classic branch), the
+# Manager field/setter, and the CLI flag. Changes to any of these should
+# trigger the cx-strip-comments E2E scenario, which runs `cx generate` with and
+# without --strip-comments and asserts the generated context content.
+# Paths are relative to the cx repo root.
+
+pkg/context/strip.go
+pkg/context/generate.go
+pkg/context/manager.go
+cmd/generate.go
+tests/e2e/scenarios_strip_comments.go

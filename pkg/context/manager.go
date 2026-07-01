@@ -98,6 +98,16 @@ type Manager struct {
 	coldPathOverride     string // generated cold (cached) context file
 	hotListPathOverride  string // hot context files list (.grove/context-files)
 	coldListPathOverride string // cold context files list (.grove/cached-context-files)
+
+	// stripComments, when true, removes code comments from each file's
+	// content as it is written into the generated context (see
+	// pkg/context/strip.go). It is off by default so direct `cx` CLI users
+	// and other library consumers are unaffected; grove-flow opts in per job
+	// from the `strip_comments` frontmatter setting. Like the path overrides,
+	// this is plain (unguarded) state — set it only on an instance you own
+	// exclusively (a fresh NewManagerWithPathsOverride), never on a shared
+	// cached Manager.
+	stripComments bool
 }
 
 // SetPathsOverride forces the generated/cached context output (and the
@@ -114,6 +124,19 @@ func (m *Manager) SetPathsOverride(hot, cold, hotList, coldList string) {
 	m.coldPathOverride = cold
 	m.hotListPathOverride = hotList
 	m.coldListPathOverride = coldList
+}
+
+// SetStripComments toggles code-comment stripping for generated context
+// output. See the stripComments field for the concurrency caveat: set this
+// only on an instance you own exclusively (e.g. one from
+// NewManagerWithPathsOverride), never on a shared cached Manager.
+func (m *Manager) SetStripComments(v bool) {
+	m.stripComments = v
+}
+
+// StripCommentsEnabled reports whether comment stripping is enabled.
+func (m *Manager) StripCommentsEnabled() bool {
+	return m.stripComments
 }
 
 // SetContext binds a cancellation context to the manager. Long-running
