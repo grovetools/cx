@@ -284,25 +284,21 @@ func (p *treePage) getAliasForRule(node *tree.FileNode) (string, bool) {
 
 	// If adding the entire workspace (relPath == "."), try to use the default ruleset
 	if relPath == "." && node.IsDir {
-		// Try to load the workspace's grove.yml to get the default ruleset
-		if cfg, err := config.LoadFrom(wsNode.Path); err == nil && cfg != nil {
-			var contextConfig struct {
-				DefaultRules     string `yaml:"default_rules"`
-				DefaultRulesPath string `yaml:"default_rules_path"`
+		// Try to load the workspace's grove.yml to get the default ruleset.
+		// "context" is a typed field on the core Config (cfg.Context), not an
+		// extension, so read it directly rather than via UnmarshalExtension.
+		if cfg, err := config.LoadFrom(wsNode.Path); err == nil && cfg != nil && cfg.Context != nil {
+			var rulesetName string
+			if cfg.Context.DefaultRules != "" {
+				rulesetName = cfg.Context.DefaultRules
+			} else if cfg.Context.DefaultRulesPath != "" {
+				base := filepath.Base(cfg.Context.DefaultRulesPath)
+				rulesetName = strings.TrimSuffix(base, ".rules")
 			}
-			if err := cfg.UnmarshalExtension("context", &contextConfig); err == nil {
-				var rulesetName string
-				if contextConfig.DefaultRules != "" {
-					rulesetName = contextConfig.DefaultRules
-				} else if contextConfig.DefaultRulesPath != "" {
-					base := filepath.Base(contextConfig.DefaultRulesPath)
-					rulesetName = strings.TrimSuffix(base, ".rules")
-				}
-				if rulesetName != "" {
-					fullRule.WriteString("::")
-					fullRule.WriteString(rulesetName)
-					return fullRule.String(), true
-				}
+			if rulesetName != "" {
+				fullRule.WriteString("::")
+				fullRule.WriteString(rulesetName)
+				return fullRule.String(), true
 			}
 		}
 		// Fallback to /** if no default ruleset found

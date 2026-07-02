@@ -43,7 +43,10 @@ const (
 )
 
 // ContextConfig defines configuration specific to grove-context.
-// This is intended to be nested under the "context" key in grove.yml Extensions.
+// It mirrors the workspace-filtering fields of the core config's typed
+// Context field (the "context" key in grove.yml/grove.toml). Note that
+// "context" is a known core config key, not an extension, so it must be
+// read from cfg.Context rather than via UnmarshalExtension("context").
 type ContextConfig struct {
 	// IncludedWorkspaces is a strict allowlist: if set, only these workspaces are scanned for context.
 	IncludedWorkspaces []string `yaml:"included_workspaces,omitempty"`
@@ -1605,9 +1608,9 @@ func (m *Manager) initAllowedRoots() {
 			fmt.Fprintf(os.Stderr, "Warning: could not load grove configuration to apply workspace filters: %v\n", err)
 		}
 
-		// Read context-specific configuration from the config's Context field.
-		// The core config now has an explicit Context field (yaml:"context"),
-		// so UnmarshalExtension("context") no longer works.
+		// Read context-specific configuration from the config's typed Context
+		// field. "context" is a known core config key (it never lands in
+		// Extensions), so UnmarshalExtension("context") would return nothing.
 		var ctxCfg ContextConfig
 		if mergedCfg != nil && mergedCfg.Context != nil {
 			ctxCfg.IncludedWorkspaces = mergedCfg.Context.IncludedWorkspaces
