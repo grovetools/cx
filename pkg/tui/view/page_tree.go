@@ -1342,7 +1342,7 @@ func (p *treePage) renderRulesetSelector(content string) string {
 	popupContent := popup.String()
 	popupStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(theme.Colors.Border).
 		Padding(1, 2).
 		Width(45).
 		Height(p.height - 4) // Match the tree height
