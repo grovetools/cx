@@ -37,6 +37,7 @@ func main() {
 		AliasNamespacingScenario(),
 		AliasSiblingResolutionScenario(),
 		AliasSiblingResolutionXDGScenario(),
+		AliasRootingScenario(),
 		AliasWithStatsPerLineScenario(),
 		AliasRulesetImportScenario(),
 		AliasEcosystemWorktreeScenario(),

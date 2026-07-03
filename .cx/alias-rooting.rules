@@ -1,0 +1,19 @@
+# Alias @a: rooting rules
+# Scopes the source behind deterministic, current-worktree-first @a: alias
+# resolution and its output: the alias resolver seam + seed guard + --job
+# worktree rerooting (manager.go), the rule-line resolution seams (resolve.go,
+# resolver_context.go), the AST attribution + zero-match warning + relativize
+# (resolver.go), the concept @concept: line-number threading (rules.go), and the
+# `cx list` absolute-path command layer (cmd/list.go). Changes to any of these
+# should trigger the cx-alias-rooting E2E scenario, which drives `cx list` from
+# an XDG multi-worktree fixture and asserts current-worktree preference,
+# absolute output, --job worktree rooting, and no spurious zero-match warning.
+# Paths are relative to the cx repo root.
+
+pkg/context/manager.go
+pkg/context/resolve.go
+pkg/context/resolver.go
+pkg/context/resolver_context.go
+pkg/context/rules.go
+cmd/list.go
+tests/e2e/scenarios_alias_rooting.go

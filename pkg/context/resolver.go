@@ -322,8 +322,8 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 	ctx := newProdResolutionContext(m)
 
 	if !hasExclusion {
-		attr, _, _, _ := ResolveAST(nodes, ctx)
-		warnZeroMatchRules(rules, attr)
+		attr, _, filt, eby := ResolveAST(nodes, ctx)
+		warnZeroMatchRules(rules, attr, filt, eby)
 		return m.flattenAttrResult(attr), nil
 	}
 
@@ -343,8 +343,8 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 	// Phase 2: re-evaluate all rules against the discovered set so
 	// exclusions see files from every walk root.
 	primedCtx := newProdResolutionContext(m).withFileSet(discovered)
-	attr, _, _, _ := ResolveAST(nodes, primedCtx)
-	warnZeroMatchRules(rules, attr)
+	attr, _, filt, eby := ResolveAST(nodes, primedCtx)
+	warnZeroMatchRules(rules, attr, filt, eby)
 	return m.flattenAttrResult(attr), nil
 }
 
@@ -367,10 +367,14 @@ func (m *Manager) flattenAttrResult(attr AttributionResult) []string {
 }
 
 // warnZeroMatchRules emits a stderr warning for each non-glob, non-directive,
-// non-exclude inclusion rule whose EffectiveLineNum produced zero files in the
-// attribution result. This catches silently-dead path lines regardless of
+// non-exclude inclusion rule whose EffectiveLineNum matched no files at all.
+// A line counts as "matched" if it appears in the attribution result OR it lost
+// last-match-wins attribution to another line (FilteredResult) OR its file was
+// removed by a later exclusion (ExcludedByResult). Without the latter two, a
+// line that legitimately matched a file another rule also claimed would be
+// falsely reported as dead. This catches silently-dead path lines regardless of
 // whether they arose from re-rooting, import expansion, or typos.
-func warnZeroMatchRules(rules []RuleInfo, attr AttributionResult) {
+func warnZeroMatchRules(rules []RuleInfo, attr AttributionResult, filt FilteredResult, eby ExcludedByResult) {
 	// Collect EffectiveLineNums that are inclusion literals without directives.
 	// We check by EffectiveLineNum so imported/re-rooted lines attribute correctly.
 	type lineInfo struct {
@@ -392,9 +396,10 @@ func warnZeroMatchRules(rules []RuleInfo, attr AttributionResult) {
 	}
 
 	for eln, info := range candidateLines {
-		if len(attr[eln]) == 0 {
-			fmt.Fprintf(os.Stderr, "Warning: path '%s' (line %d) matched 0 files\n", info.pattern, info.lineNum)
+		if len(attr[eln]) > 0 || len(filt[eln]) > 0 || len(eby[eln]) > 0 {
+			continue
 		}
+		fmt.Fprintf(os.Stderr, "Warning: path '%s' (line %d) matched 0 files\n", info.pattern, info.lineNum)
 	}
 }
 

@@ -138,15 +138,19 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	treePaths = append(treePaths, localTree...)
 
 	// Process concept directives
-	for _, conceptID := range parsed.conceptIDs {
-		resolvedFiles, err := m.resolveConcept(conceptID, visited)
+	for _, concept := range parsed.conceptIDs {
+		resolvedFiles, err := m.resolveConcept(concept.ID, visited)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not resolve concept '%s': %v\n", conceptID, err)
+			fmt.Fprintf(os.Stderr, "Warning: could not resolve concept '%s': %v\n", concept.ID, err)
 			continue
 		}
+		// Attribute the synthesized rules to the @concept: line that produced
+		// them so warnZeroMatchRules and cross-worktree notices point at a real
+		// source line instead of line 0. When this file is a nested import, the
+		// tail loop below re-attributes EffectiveLineNum to the importer's line.
 		for _, file := range resolvedFiles {
 			// Add each resolved file as a new rule to be processed
-			hotRules = append(hotRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: 0, EffectiveLineNum: 0})
+			hotRules = append(hotRules, RuleInfo{Pattern: file, IsExclude: false, LineNum: concept.LineNum, EffectiveLineNum: concept.LineNum})
 		}
 	}
 

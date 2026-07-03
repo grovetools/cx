@@ -197,11 +197,11 @@ func TestReRootRules_BareRelativePaths(t *testing.T) {
 	rules := []RuleInfo{
 		{Pattern: "pkg/target.go", LineNum: 1},
 		{Pattern: "cmd/main.go", LineNum: 2},
-		{Pattern: "*.go", LineNum: 3},                  // floating, no /
-		{Pattern: "/abs/path/file.go", LineNum: 4},     // absolute, skip
-		{Pattern: "@a:core/pkg/alias/", LineNum: 5},    // alias, skip
-		{Pattern: "http://example.com", LineNum: 6},    // URL, skip
-		{Pattern: "pkg/sub/deep/file.go", LineNum: 7},  // path-like
+		{Pattern: "*.go", LineNum: 3},                 // floating, no /
+		{Pattern: "/abs/path/file.go", LineNum: 4},    // absolute, skip
+		{Pattern: "@a:core/pkg/alias/", LineNum: 5},   // alias, skip
+		{Pattern: "http://example.com", LineNum: 6},   // URL, skip
+		{Pattern: "pkg/sub/deep/file.go", LineNum: 7}, // path-like
 	}
 
 	reRootRules(rules, "/code/eco/flow")
@@ -209,10 +209,10 @@ func TestReRootRules_BareRelativePaths(t *testing.T) {
 	expected := map[int]string{
 		1: "/code/eco/flow/pkg/target.go",
 		2: "/code/eco/flow/cmd/main.go",
-		3: "/code/eco/flow/**/*.go",                  // floating → recursive
-		4: "/abs/path/file.go",                       // unchanged
-		5: "@a:core/pkg/alias/",                      // unchanged
-		6: "http://example.com",                      // unchanged
+		3: "/code/eco/flow/**/*.go", // floating → recursive
+		4: "/abs/path/file.go",      // unchanged
+		5: "@a:core/pkg/alias/",     // unchanged
+		6: "http://example.com",     // unchanged
 		7: "/code/eco/flow/pkg/sub/deep/file.go",
 	}
 
@@ -254,7 +254,7 @@ func TestWarnZeroMatchRules_WarnsOnLiteralMiss(t *testing.T) {
 
 	// Capture stderr output.
 	old := captureStderr(func() {
-		warnZeroMatchRules(rules, attr)
+		warnZeroMatchRules(rules, attr, nil, nil)
 	})
 
 	if !strings.Contains(old, "matched 0 files") {
@@ -272,7 +272,7 @@ func TestWarnZeroMatchRules_NoWarnOnGlob(t *testing.T) {
 	attr := AttributionResult{} // empty but it's a glob — no warning
 
 	output := captureStderr(func() {
-		warnZeroMatchRules(rules, attr)
+		warnZeroMatchRules(rules, attr, nil, nil)
 	})
 
 	if strings.Contains(output, "matched 0 files") {
@@ -287,7 +287,7 @@ func TestWarnZeroMatchRules_NoWarnOnExclusion(t *testing.T) {
 	attr := AttributionResult{}
 
 	output := captureStderr(func() {
-		warnZeroMatchRules(rules, attr)
+		warnZeroMatchRules(rules, attr, nil, nil)
 	})
 
 	if strings.Contains(output, "matched 0 files") {
@@ -304,7 +304,7 @@ func TestWarnZeroMatchRules_NoWarnWhenMatchExists(t *testing.T) {
 	}
 
 	output := captureStderr(func() {
-		warnZeroMatchRules(rules, attr)
+		warnZeroMatchRules(rules, attr, nil, nil)
 	})
 
 	if strings.Contains(output, "matched 0 files") {
@@ -324,11 +324,56 @@ func TestWarnZeroMatchRules_NoWarnOnDirectiveRules(t *testing.T) {
 	attr := AttributionResult{}
 
 	output := captureStderr(func() {
-		warnZeroMatchRules(rules, attr)
+		warnZeroMatchRules(rules, attr, nil, nil)
 	})
 
 	if strings.Contains(output, "matched 0 files") {
 		t.Fatalf("should not warn on rules with directives, got: %q", output)
+	}
+}
+
+func TestWarnZeroMatchRules_NoWarnWhenFilteredMatch(t *testing.T) {
+	// Line 9's literal matched a file, but a later import line won
+	// last-match-wins attribution, so line 9 lives in FilteredResult, not
+	// AttributionResult. It matched — must not be reported as dead.
+	rules := []RuleInfo{
+		{Pattern: "/code/eco/grove-anthropic/pkg/logging/query_log.go", LineNum: 9, EffectiveLineNum: 9},
+		{Pattern: "/code/eco/grove-anthropic/pkg/logging/query_log.go", LineNum: 12, EffectiveLineNum: 12},
+	}
+	attr := AttributionResult{
+		12: []string{"/code/eco/grove-anthropic/pkg/logging/query_log.go"},
+	}
+	filt := FilteredResult{
+		9: []FilteredFileInfo{{File: "/code/eco/grove-anthropic/pkg/logging/query_log.go", WinningLineNum: 12}},
+	}
+
+	output := captureStderr(func() {
+		warnZeroMatchRules(rules, attr, filt, nil)
+	})
+
+	if strings.Contains(output, "matched 0 files") {
+		t.Fatalf("should not warn when the line matched but lost attribution, got: %q", output)
+	}
+}
+
+func TestWarnZeroMatchRules_NoWarnWhenExcludedByMatch(t *testing.T) {
+	// A literal that matched a file later removed by an exclusion appears only
+	// in ExcludedByResult. It matched — the file just got excluded — so no
+	// zero-match warning.
+	rules := []RuleInfo{
+		{Pattern: "/code/eco/flow/pkg/secret.go", LineNum: 4, EffectiveLineNum: 4},
+	}
+	attr := AttributionResult{}
+	eby := ExcludedByResult{
+		4: []ExcludedByInfo{{File: "/code/eco/flow/pkg/secret.go", ExcludingLineNum: 5}},
+	}
+
+	output := captureStderr(func() {
+		warnZeroMatchRules(rules, attr, nil, eby)
+	})
+
+	if strings.Contains(output, "matched 0 files") {
+		t.Fatalf("should not warn when the line matched but was excluded, got: %q", output)
 	}
 }
 
@@ -339,9 +384,9 @@ func TestResolveAST_ReRootedLiteralResolvesUnderHomeRepo(t *testing.T) {
 	// "/code/eco/flow/pkg/target.go" by reRootRules. The file lives under
 	// the flow project at that absolute path.
 	ctx := newMockCtx(map[string]string{
-		"code/eco/flow/pkg/target.go":    "package target",
-		"code/eco/flow/pkg/other.go":     "package other",
-		"code/eco/flow/cmd/main.go":      "package main",
+		"code/eco/flow/pkg/target.go": "package target",
+		"code/eco/flow/pkg/other.go":  "package other",
+		"code/eco/flow/cmd/main.go":   "package main",
 	})
 
 	// After re-rooting, the rules look like absolute paths:
@@ -393,6 +438,43 @@ func TestResolveAST_LastWriteWinsExclusion(t *testing.T) {
 	}
 	if len(excl[2]) != 1 || !strings.HasSuffix(excl[2][0], "a_test.go") {
 		t.Fatalf("expected a_test.go on exclusion line 2, got: %v", excl[2])
+	}
+}
+
+// TestWarnZeroMatchRules_LiteralAndImportSameFile is the job-31 repro in
+// miniature: a bare literal line and a later import/concept line both resolve
+// the SAME file. Last-match-wins gives the import the attribution; the literal
+// lands in FilteredResult. Feeding ResolveAST's real FilteredResult into
+// warnZeroMatchRules must suppress the false "matched 0 files" warning.
+func TestWarnZeroMatchRules_LiteralAndImportSameFile(t *testing.T) {
+	ctx := newMockCtx(map[string]string{
+		"code/eco/grove-anthropic/pkg/logging/query_log.go": "package logging",
+	})
+
+	// Line 9: the bare @a: literal. Line 12: the concept import that also
+	// pulls in query_log.go (both re-rooted to the same absolute path).
+	literal := &LiteralNode{ExpectedPath: "/code/eco/grove-anthropic/pkg/logging/query_log.go", LineNum: 9, RawText: "@a:grove-anthropic/pkg/logging/query_log.go"}
+	imported := &LiteralNode{ExpectedPath: "/code/eco/grove-anthropic/pkg/logging/query_log.go", LineNum: 12, RawText: "@a:grove-anthropic::concept-query-ledger"}
+
+	attr, _, filt, eby := ResolveAST([]RuleNode{literal, imported}, ctx)
+
+	// Line 12 wins attribution; line 9 is filtered, not dead.
+	if len(attr[12]) != 1 {
+		t.Fatalf("expected line 12 to win attribution, got: %v", attr)
+	}
+	if len(filt[9]) != 1 {
+		t.Fatalf("expected line 9 in FilteredResult, got: %v", filt)
+	}
+
+	rules := []RuleInfo{
+		{Pattern: "/code/eco/grove-anthropic/pkg/logging/query_log.go", LineNum: 9, EffectiveLineNum: 9},
+		{Pattern: "/code/eco/grove-anthropic/pkg/logging/query_log.go", LineNum: 12, EffectiveLineNum: 12},
+	}
+	output := captureStderr(func() {
+		warnZeroMatchRules(rules, attr, filt, eby)
+	})
+	if strings.Contains(output, "matched 0 files") {
+		t.Fatalf("no zero-match warning expected for a literal that lost attribution, got: %q", output)
 	}
 }
 

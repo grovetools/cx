@@ -24,6 +24,14 @@ var rulesLog = logging.NewLogger("cx.context.rules")
 // otherwise fire on every rules load (several times per command run).
 var legacyRulesWarnOnce sync.Once
 
+// conceptDirective records a single @concept: line together with the source
+// line number it appeared on, so rules synthesized from the concept can carry
+// real attribution instead of line 0.
+type conceptDirective struct {
+	ID      string
+	LineNum int
+}
+
 // parsedRules holds the fully parsed contents of a single rules file,
 // including all rules, directives, and import statements.
 type parsedRules struct {
@@ -37,7 +45,7 @@ type parsedRules struct {
 	coldIncludes         []ImportInfo
 	viewPaths            []string
 	treePaths            []string
-	conceptIDs           []string // Concept IDs to resolve via @concept: directive
+	conceptIDs           []conceptDirective // Concepts to resolve via @concept: directive, with source line numbers
 	freezeCache          bool
 	disableExpiration    bool
 	disableCache         bool
@@ -808,7 +816,7 @@ func (m *Manager) parseRulesFileContent(rulesContent []byte) (*parsedRules, erro
 		if strings.HasPrefix(line, "@concept:") {
 			conceptID := strings.TrimSpace(strings.TrimPrefix(line, "@concept:"))
 			if conceptID != "" {
-				results.conceptIDs = append(results.conceptIDs, conceptID)
+				results.conceptIDs = append(results.conceptIDs, conceptDirective{ID: conceptID, LineNum: lineNum})
 			}
 			continue
 		}
