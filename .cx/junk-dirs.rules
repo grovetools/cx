@@ -1,0 +1,14 @@
+# Junk-directory guard rules
+# Scopes the source behind default-excluding well-known junk directories
+# (.terraform, node_modules, .zig-cache, zig-out, .venv, __pycache__, target,
+# dist) from implicit directory-glob expansion, plus the loud per-rule oversize
+# warning: the junk-dir set + explicit-reinclude helper + oversize thresholds
+# (junk.go), and the walkAndEmit skip + the two warn call sites (resolver.go).
+# Changes to any of these should trigger the cx-junk-dirs E2E scenario, which
+# runs `cx generate` over a project with a .terraform/ blob and asserts the junk
+# is skipped implicitly but re-included by an explicit rule.
+# Paths are relative to the cx repo root.
+
+pkg/context/junk.go
+pkg/context/resolver.go
+tests/e2e/scenarios_junk_dirs.go

@@ -19,6 +19,11 @@ name = "alias-rooting"
 rules = ".cx/alias-rooting.rules"
 scenarios = ["cx-alias-rooting"]
 
+[[test_scopes]]
+name = "junk-dirs"
+rules = ".cx/junk-dirs.rules"
+scenarios = ["cx-junk-dirs"]
+
 [[hooks.on_stop]]
 name = "Auto-format"
 command = "make fmt; CODE=$?; grove internal task-report . fmt $CODE; exit $CODE"
