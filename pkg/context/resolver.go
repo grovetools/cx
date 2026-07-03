@@ -111,7 +111,16 @@ func walkAndEmit(ctx ResolutionContext, pattern string, line int, excluded bool)
 
 	var attrs []FileAttribution
 	_ = ctx.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d == nil || d.IsDir() {
+		if err != nil || d == nil {
+			return nil
+		}
+		if d.IsDir() {
+			// Skip well-known junk directories reached via implicit
+			// directory-glob expansion, unless this pattern names the
+			// directory explicitly (an intentional re-include).
+			if isJunkDir(d.Name()) && !patternReferencesDir(pattern, d.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		matchPath := relForMatch(path, ctx.BaseDir())
@@ -324,6 +333,7 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 	if !hasExclusion {
 		attr, _, filt, eby := ResolveAST(nodes, ctx)
 		warnZeroMatchRules(rules, attr, filt, eby)
+		warnOversizedRules(rules, attr)
 		return m.flattenAttrResult(attr), nil
 	}
 
@@ -345,6 +355,7 @@ func (m *Manager) resolveFilesViaAST(rules []RuleInfo) ([]string, error) {
 	primedCtx := newProdResolutionContext(m).withFileSet(discovered)
 	attr, _, filt, eby := ResolveAST(nodes, primedCtx)
 	warnZeroMatchRules(rules, attr, filt, eby)
+	warnOversizedRules(rules, attr)
 	return m.flattenAttrResult(attr), nil
 }
 

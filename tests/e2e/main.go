@@ -19,6 +19,7 @@ func main() {
 		BasicContextGenerationScenario(),
 		MissingRulesScenario(),
 		StripCommentsScenario(),
+		JunkDirExclusionScenario(),
 
 		// Rules Management Scenarios
 		EnhancedRulesWorkflowScenario(),
