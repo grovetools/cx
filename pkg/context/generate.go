@@ -12,6 +12,32 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// IsJobFile reports whether path/content is a job markdown file (YAML
+// frontmatter fenced by '---') rather than a rules file. A job .md has two '---'
+// fences, which the rules parser rejects with "multiple '---' separators found"
+// (rules_parser.go). Callers use this to return an actionable hint pointing at
+// --job instead of that cryptic parse error. Explicit .rules files are never
+// treated as job files (a .rules file may legitimately open with a '---'
+// hot/cold separator). content may be nil, in which case only the extension is
+// consulted.
+func IsJobFile(path string, content []byte) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".rules":
+		return false
+	case ".md", ".markdown":
+		return true
+	}
+	// Unknown extension: a leading bare '---' line indicates YAML frontmatter.
+	for _, line := range strings.Split(string(content), "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		return t == "---"
+	}
+	return false
+}
+
 // GenerateContextFromRulesFile generates context from an explicit rules file path.
 func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLFormat bool) error {
 	m.log.WithFields(logrus.Fields{
@@ -34,6 +60,15 @@ func (m *Manager) GenerateContextFromRulesFile(rulesFilePath string, useXMLForma
 	rulesContent, err := os.ReadFile(absRulesFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read rules file: %w", err)
+	}
+
+	// Defense-in-depth for defect C: callers that bypass the CLI's
+	// ResolveRulesFileFlag (notably grove-flow, which passes job.rules_file
+	// straight through here) can hand us a job .md. Its YAML frontmatter '---'
+	// fences make the rules parser fail with a cryptic "multiple '---'
+	// separators" error, so detect it up front and return an actionable hint.
+	if IsJobFile(absRulesFilePath, rulesContent) {
+		return fmt.Errorf("%s looks like a job file with YAML frontmatter, not a rules file; set rules_file to a .rules file, or resolve the job's rules via 'cx generate --job <file>'", rulesFilePath)
 	}
 
 	// Log rules file info using structured logging (respects TUI mode)
