@@ -77,8 +77,11 @@ type Manager struct {
 	allowedRoots      []string
 	allowedRootsErr   error
 	rootsOnce         sync.Once
-	skippedRules      []SkippedRule // Rules that were skipped during parsing with reasons
-	skippedMutex      sync.Mutex    // Protects skippedRules
+	skippedRules      []SkippedRule   // Rules that were skipped during parsing with reasons
+	skippedMutex      sync.Mutex      // Protects skippedRules
+	aliasNotices      map[string]bool // Dedup set for cross-worktree @a: root notices (one per alias)
+	aliasNoticeMutex  sync.Mutex      // Protects aliasNotices
+	aliasWorkDir      string          // Optional override rooting alias resolution (job worktree: frontmatter)
 	log               *logrus.Entry
 	ulog              *grovelogging.UnifiedLogger
 	daemonClient      daemon.Client // Lazily initialized connect-only client; see getDaemonClient
@@ -421,28 +424,43 @@ func (m *Manager) GetRulesFileFromJob(jobFilePath string) (string, error) {
 	scanner := bufio.NewScanner(file)
 	inFrontmatter := false
 
+	// Scan the whole frontmatter once, collecting both the rules_file (required)
+	// and the worktree (optional). We cannot return early on rules_file because
+	// worktree: typically appears after it, and we need it to root @a: alias
+	// resolution into the job's declared worktree (see rerootAliasesToWorktree).
+	var rulesFileName, worktreeName string
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.TrimSpace(line) == "---" {
 			if !inFrontmatter {
 				inFrontmatter = true
 				continue
-			} else {
-				break
 			}
+			break
 		}
 
 		if inFrontmatter {
 			if strings.HasPrefix(line, "rules_file:") {
-				rulesFileName := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
-				if filepath.IsAbs(rulesFileName) {
-					return rulesFileName, nil
-				}
-				return filepath.Abs(filepath.Join(filepath.Dir(jobFilePath), rulesFileName))
+				rulesFileName = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+			} else if strings.HasPrefix(line, "worktree:") {
+				worktreeName = strings.Trim(strings.TrimSpace(strings.SplitN(line, ":", 2)[1]), `"'`)
 			}
 		}
 	}
-	return "", fmt.Errorf("rules_file key not found in frontmatter of %s", jobFilePath)
+
+	if rulesFileName == "" {
+		return "", fmt.Errorf("rules_file key not found in frontmatter of %s", jobFilePath)
+	}
+
+	// Root alias resolution into the job's declared worktree, so @a: aliases in
+	// the job's rules resolve into that worktree regardless of the invoking cwd.
+	// No-op when the worktree can't be located from the current ecosystem.
+	m.rerootAliasesToWorktree(worktreeName)
+
+	if filepath.IsAbs(rulesFileName) {
+		return rulesFileName, nil
+	}
+	return filepath.Abs(filepath.Join(filepath.Dir(jobFilePath), rulesFileName))
 }
 
 // ResolveContextPath returns the path to the generated context file.
@@ -661,21 +679,157 @@ func (m *Manager) ListPlanRules() ([]PlanRule, error) {
 }
 
 // getAliasResolver lazily initializes and returns the AliasResolver.
+//
+// Seeding consistency guard: the daemon's cached workspace graph is only used
+// when it actually knows the invoking worktree (FindByPath(m.workDir) != nil).
+// A stale daemon snapshot that lacks the current worktree would otherwise make
+// current-worktree-preference miss (currentNode nil) and fall back to an
+// arbitrary root — the exact "wrong rooting from inside the worktree" defect.
+// When the daemon graph can't locate m.workDir, we discard it and use the disk
+// scan, so daemon-reachable and daemon-absent runs resolve identically.
 func (m *Manager) getAliasResolver() *alias.AliasResolver {
+	rootDir := m.aliasResolutionDir()
 	if m.aliasResolver == nil {
-		m.aliasResolver = alias.NewAliasResolverWithWorkDir(m.workDir)
+		m.aliasResolver = alias.NewAliasResolverWithWorkDir(rootDir)
 		// Try daemon's cached workspace graph first to avoid expensive disk
 		// scan — but only when a daemon is actually running. When it isn't,
 		// fall through to InitProvider's own disk scan below.
 		if client := m.getDaemonClient(); client.IsRunning() {
 			if workspaces, err := client.GetWorkspaces(gocontext.Background()); err == nil {
-				m.aliasResolver.InitProviderFromNodes(workspaces)
-				return m.aliasResolver
+				candidate := alias.NewAliasResolverWithWorkDir(rootDir)
+				candidate.InitProviderFromNodes(workspaces)
+				// Only trust the daemon graph if it can locate the invoking
+				// worktree; otherwise discard it and use the disk scan.
+				if inGitRepo(rootDir) && candidate.Provider != nil &&
+					candidate.Provider.FindByPath(rootDir) == nil {
+					// Stale/incomplete snapshot — fall through to disk scan.
+				} else {
+					m.aliasResolver = candidate
+					return m.aliasResolver
+				}
 			}
 		}
 	}
 	m.aliasResolver.InitProvider() // Fallback to disk scan (idempotent via sync.Once)
 	return m.aliasResolver
+}
+
+// aliasResolutionDir is the directory used to root alias resolution. It is
+// m.workDir by default, but the job's `worktree:` frontmatter can override it
+// (see rerootAliasesToWorktree) so `cx <cmd> --job` resolves @a: aliases into
+// the job's declared worktree regardless of the invoking cwd.
+func (m *Manager) aliasResolutionDir() string {
+	if m.aliasWorkDir != "" {
+		return m.aliasWorkDir
+	}
+	return m.workDir
+}
+
+// rerootAliasesToWorktree points alias resolution at the named worktree within
+// the current ecosystem. It resolves the worktree via the current project node
+// (FindByWorktree), so the invoking cwd must sit somewhere in the same ecosystem
+// for the lookup to succeed; otherwise it is a no-op and the default rooting +
+// deterministic fallback still apply.
+func (m *Manager) rerootAliasesToWorktree(worktreeName string) {
+	if worktreeName == "" {
+		return
+	}
+	resolver := m.getAliasResolver()
+	if resolver == nil || resolver.Provider == nil {
+		return
+	}
+	baseNode := resolver.Provider.FindByPath(m.workDir)
+	if baseNode == nil {
+		return
+	}
+	wtNode := resolver.Provider.FindByWorktree(baseNode, worktreeName)
+	if wtNode == nil {
+		return
+	}
+	if wtNode.Path == m.aliasResolutionDir() {
+		return // already rooted there
+	}
+	m.aliasWorkDir = wtNode.Path
+	m.aliasResolver = nil // rebuild against the new root on next getAliasResolver()
+}
+
+// inGitRepo reports whether dir lives inside a git repository. Used by the
+// seeding guard: the daemon-snapshot validation only demands the current
+// worktree be locatable when the cwd is actually inside a repo (a bare notebooks
+// dir legitimately has no owning worktree, and demanding one there would force a
+// needless disk scan on every invocation).
+func inGitRepo(dir string) bool {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+// noticeAliasRoot emits at most one stderr notice per distinct project alias per
+// invocation when a resolved @a: root is NOT under the current worktree. This
+// makes cross-worktree rooting — deterministic or not — loud instead of silent.
+// nb: resource aliases (info.Node == nil) are ignored.
+func (m *Manager) noticeAliasRoot(aliasName string, info alias.ResolveInfo) {
+	if info.Node == nil {
+		return
+	}
+	container := currentWorktreeContainer(m.getAliasResolver().CurrentNode())
+	if container != "" && pathWithin(info.Path, container) {
+		return // rooted inside the current worktree — nothing to surface
+	}
+
+	m.aliasNoticeMutex.Lock()
+	defer m.aliasNoticeMutex.Unlock()
+	if m.aliasNotices == nil {
+		m.aliasNotices = make(map[string]bool)
+	}
+	if m.aliasNotices[aliasName] {
+		return
+	}
+	m.aliasNotices[aliasName] = true
+	fmt.Fprintf(os.Stderr, "notice: @a:%s → %s (not the current worktree)\n", aliasName, info.Path)
+}
+
+// resolveProjectAlias resolves a project/workspace alias and emits the
+// cross-worktree notice (see noticeAliasRoot). It is the wrapper the rule-import
+// call sites use instead of getAliasResolver().Resolve.
+func (m *Manager) resolveProjectAlias(aliasName string) (string, error) {
+	info, err := m.getAliasResolver().ResolveWithInfo(aliasName)
+	if err != nil {
+		return "", err
+	}
+	m.noticeAliasRoot(aliasName, info)
+	return info.Path, nil
+}
+
+// currentWorktreeContainer returns the ecosystem-context directory that owns the
+// current node — the worktree/ecosystem root under which sibling repos live.
+// Empty when there is no current node (cwd outside every workspace).
+func currentWorktreeContainer(n *workspace.WorkspaceNode) string {
+	if n == nil {
+		return ""
+	}
+	if n.IsEcosystem() {
+		return n.Path
+	}
+	if n.ParentEcosystemPath != "" {
+		return n.ParentEcosystemPath
+	}
+	return n.Path
+}
+
+// pathWithin reports whether path is container itself or nested under it.
+func pathWithin(path, container string) bool {
+	if path == container {
+		return true
+	}
+	return strings.HasPrefix(path, container+string(filepath.Separator))
 }
 
 // ConceptManifest represents the structure of a concept-manifest.yml file

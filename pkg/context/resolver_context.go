@@ -147,5 +147,14 @@ func (c *prodResolutionContext) ResolveAliasLine(line string) (string, error) {
 	if resolver == nil {
 		return "", os.ErrNotExist
 	}
-	return resolver.ResolveLine(line)
+	resolved, info, err := resolver.ResolveLineWithInfo(line)
+	if err != nil {
+		return "", err
+	}
+	// Surface a bare @a:<repo> rule line that rooted outside the current
+	// worktree. The repo name (info.Node.Name) is the alias label users typed.
+	if info.Node != nil {
+		c.m.noticeAliasRoot(info.Node.Name, info)
+	}
+	return resolved, nil
 }
