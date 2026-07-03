@@ -255,7 +255,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		}
 		projectAlias, rulesetName := parts[0], parts[1]
 
-		projectPath, resolveErr := m.getAliasResolver().Resolve(projectAlias)
+		projectPath, resolveErr := m.resolveProjectAlias(projectAlias)
 		if resolveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve project alias '%s' for rule import: %v\n", projectAlias, resolveErr)
 			continue
@@ -430,7 +430,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		}
 		projectAlias, rulesetName := parts[0], parts[1]
 
-		projectPath, resolveErr := m.getAliasResolver().Resolve(projectAlias)
+		projectPath, resolveErr := m.resolveProjectAlias(projectAlias)
 		if resolveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: could not resolve project alias '%s' for rule import: %v\n", projectAlias, resolveErr)
 			continue
