@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 
 	"github.com/grovetools/cx/pkg/context"
@@ -171,7 +172,7 @@ type statsPage struct {
 	width       int
 	height      int
 	keys        statsKeyMap
-	lastKey     string // Track last key for gg handling
+	sequence    *keymap.SequenceState // gg chord
 }
 
 func NewStatsPage(state *sharedState) Page {
@@ -193,6 +194,7 @@ func NewStatsPage(state *sharedState) Page {
 		fileList:    fileList,
 		focusIndex:  langListIndex,
 		keys:        statsKeys,
+		sequence:    keymap.NewSequenceState(),
 	}
 }
 
@@ -360,7 +362,7 @@ func (p *statsPage) Focus() tea.Cmd {
 
 func (p *statsPage) Blur() {
 	p.focusIndex = langListIndex
-	p.lastKey = ""
+	p.sequence.Clear()
 }
 
 // Footer returns help text for the pager's pinned footer slot.
@@ -407,33 +409,31 @@ func (p *statsPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			activeList = &p.fileList
 		}
 
+		// gg (go to top) via the shared sequence engine — the stats page has
+		// no folds, so only Base.Top is a chord here.
+		if result, _ := p.sequence.Process(msg, p.keys.Top); result == keymap.SequenceMatch {
+			activeList.Select(0)
+			p.sequence.Clear()
+			return p, nil
+		} else if result == keymap.SequencePending {
+			return p, nil
+		}
+		p.sequence.Clear()
+
 		switch {
 		case key.Matches(msg, p.keys.SwitchFocus):
 			p.focusIndex = (p.focusIndex + 1) % 2
-			p.lastKey = ""
 			return p, nil
 		case key.Matches(msg, p.keys.Exclude):
-			p.lastKey = ""
 			return p, p.excludeItemCmd()
-		case key.Matches(msg, p.keys.Refresh):
-			p.lastKey = ""
+		case key.Matches(msg, p.keys.Base.Refresh):
 			return p, func() tea.Msg { return refreshStateMsg{} }
-		case key.Matches(msg, p.keys.GotoTop):
-			// Handle 'gg' - go to top
-			if p.lastKey == "g" {
-				activeList.Select(0)
-				p.lastKey = ""
-				return p, nil
-			}
-			p.lastKey = "g"
-			return p, nil
-		case key.Matches(msg, p.keys.GotoBottom):
-			// Handle 'G' - go to bottom
+		case key.Matches(msg, p.keys.Bottom):
+			// G - go to bottom
 			activeList.Select(len(activeList.Items()) - 1)
-			p.lastKey = ""
 			return p, nil
-		case key.Matches(msg, p.keys.HalfPageUp):
-			// Handle Ctrl-u - half page up
+		case key.Matches(msg, p.keys.PageUp):
+			// ctrl+u - half page up
 			current := activeList.Index()
 			halfPage := activeList.Height() / 2
 			newIndex := current - halfPage
@@ -441,10 +441,9 @@ func (p *statsPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				newIndex = 0
 			}
 			activeList.Select(newIndex)
-			p.lastKey = ""
 			return p, nil
-		case key.Matches(msg, p.keys.HalfPageDown):
-			// Handle Ctrl-d - half page down
+		case key.Matches(msg, p.keys.PageDown):
+			// ctrl+d - half page down
 			current := activeList.Index()
 			halfPage := activeList.Height() / 2
 			newIndex := current + halfPage
@@ -453,11 +452,7 @@ func (p *statsPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				newIndex = maxIndex
 			}
 			activeList.Select(newIndex)
-			p.lastKey = ""
 			return p, nil
-		default:
-			// Reset lastKey on any other key
-			p.lastKey = ""
 		}
 	}
 

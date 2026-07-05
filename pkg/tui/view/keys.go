@@ -6,66 +6,45 @@ import (
 	"github.com/grovetools/core/tui/keymap"
 )
 
-// pagerKeyMap defines the key bindings for the main pager view.
+// disable turns off a set of bindings in place. A disabled binding is skipped
+// by the keymap audit, never rendered in help, and never matched by
+// key.Matches — so it drops cleanly out of a TUI's advertised interface.
+func disable(bindings ...*key.Binding) {
+	for _, b := range bindings {
+		b.SetEnabled(false)
+	}
+}
+
+// pagerKeyMap defines the key bindings for the main pager view (the list page)
+// and the container-level actions (Edit/SelectRules/Help/Quit). Navigation,
+// folding, refresh, and tab-cycling all come from the embedded Base so the keys
+// are truthful chords (gg, zo/zc/za/zR/zM) routed through keymap.SequenceState.
 type pagerKeyMap struct {
 	keymap.Base
-	NextPage     key.Binding
-	PrevPage     key.Binding
-	Edit         key.Binding
-	SelectRules  key.Binding
-	Exclude      key.Binding
-	ExcludeDir   key.Binding
-	ToggleSort   key.Binding
-	Refresh      key.Binding
-	GotoTop      key.Binding
-	GotoBottom   key.Binding
-	HalfPageUp   key.Binding
-	HalfPageDown key.Binding
-	FoldPrefix   key.Binding // 'z' prefix for fold commands
+	Edit        key.Binding
+	SelectRules key.Binding
+	Exclude     key.Binding
+	ExcludeDir  key.Binding
+	ToggleSort  key.Binding
 }
 
 // ShortHelp returns keybindings to be shown in the footer.
 func (k pagerKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.ToggleSort, k.NextPage, k.PrevPage, k.Edit, k.SelectRules, k.Quit}
+	return []key.Binding{k.Help, k.ToggleSort, k.NextTab, k.PrevTab, k.Edit, k.SelectRules, k.Quit}
 }
 
-// FullHelp returns keybindings for the expanded help view.
-func (k pagerKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{
-			key.NewBinding(key.WithHelp("", "Navigation:")),
-			k.NextPage,
-			k.PrevPage,
-			k.Edit,
-			k.SelectRules,
-			k.Quit,
-			k.Help,
-		},
-	}
-}
+// Compile-time guard: satisfies the sectioned help/audit contract (value receiver).
+var _ keymap.SectionedKeyMap = pagerKeyMap{}
 
-// Sections returns grouped sections of key bindings for the full help view.
-// Only includes sections that the pager actually implements.
+// Sections returns the grouped key bindings the pager/list page actually
+// implements. Nav/Fold/System/Pages come from Base; the pager component owns
+// tab-cycling via NextTab/PrevTab/Tab1..9 (see model.go pager.KeyMapFromBase).
 func (k pagerKeyMap) Sections() []keymap.Section {
-	// Start with base sections we actually use
-	nav := k.Base.NavigationSection()
-	// Customize navigation to only show bindings we implement
-	nav.Bindings = []key.Binding{k.Up, k.Down, k.GotoTop, k.GotoBottom, k.HalfPageUp, k.HalfPageDown}
-
 	return []keymap.Section{
-		nav,
-		{
-			Name:     "Pages",
-			Bindings: []key.Binding{k.NextPage, k.PrevPage},
-		},
-		{
-			Name:     "Rules",
-			Bindings: []key.Binding{k.Edit, k.SelectRules, k.Exclude, k.ExcludeDir, k.Refresh},
-		},
-		{
-			Name:     "Display",
-			Bindings: []key.Binding{k.ToggleSort},
-		},
+		keymap.NavigationSection(k.Up, k.Down, k.PageUp, k.PageDown, k.Top, k.Bottom),
+		keymap.NewSection("Pages", k.NextTab, k.PrevTab, k.Tab1, k.Tab2, k.Tab3, k.Tab4, k.Tab5, k.Tab6, k.Tab7, k.Tab8, k.Tab9),
+		keymap.NewSection(keymap.SectionRules, k.Edit, k.SelectRules, k.Exclude, k.ExcludeDir, k.Base.Refresh),
+		keymap.NewSection("Display", k.ToggleSort),
 		k.Base.FoldSection(),
 		k.Base.SystemSection(),
 	}
@@ -74,14 +53,6 @@ func (k pagerKeyMap) Sections() []keymap.Section {
 func newPagerKeyMap(cfg *config.Config) pagerKeyMap {
 	km := pagerKeyMap{
 		Base: keymap.Load(cfg, "cx.view"),
-		NextPage: key.NewBinding(
-			key.WithKeys("]"),
-			key.WithHelp("]", "next page"),
-		),
-		PrevPage: key.NewBinding(
-			key.WithKeys("["),
-			key.WithHelp("[", "prev page"),
-		),
 		Edit: key.NewBinding(
 			key.WithKeys("e"),
 			key.WithHelp("e", "edit rules"),
@@ -102,32 +73,23 @@ func newPagerKeyMap(cfg *config.Config) pagerKeyMap {
 			key.WithKeys("X"),
 			key.WithHelp("X", "exclude dir"),
 		),
-		Refresh: key.NewBinding(
-			key.WithKeys("ctrl+r"),
-			key.WithHelp("ctrl+r", "refresh"),
-		),
-		FoldPrefix: key.NewBinding(
-			key.WithKeys("z"),
-			key.WithHelp("za/zo/zc/zR/zM", "fold operations"),
-		),
-		GotoTop: key.NewBinding(
-			key.WithKeys("g"),
-			key.WithHelp("gg", "go to top"),
-		),
-		GotoBottom: key.NewBinding(
-			key.WithKeys("G"),
-			key.WithHelp("G", "go to bottom"),
-		),
-		HalfPageUp: key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("ctrl-u", "half page up"),
-		),
-		HalfPageDown: key.NewBinding(
-			key.WithKeys("ctrl+d"),
-			key.WithHelp("ctrl-d", "half page down"),
-		),
 	}
 	keymap.ApplyTUIOverrides(cfg, "cx", "view", &km)
+
+	// Disable every Base binding this view does not honor. Kept enabled:
+	// Up/Down/PageUp/PageDown/Top/Bottom (nav), Refresh (ctrl+r), Help, Quit,
+	// NextTab/PrevTab/Tab1..9 (pager tab nav, consumed via KeyMapFromBase),
+	// and the five Fold* chords (routed through the sequence engine).
+	disable(
+		&km.Base.Left, &km.Base.Right, &km.Base.Home, &km.Base.End,
+		&km.Base.Confirm, &km.Base.Cancel, &km.Base.Back, &km.Base.Edit,
+		&km.Base.Delete, &km.Base.Yank, &km.Base.Rename, &km.Base.CopyPath,
+		&km.Base.Search, &km.Base.SearchNext, &km.Base.SearchPrev,
+		&km.Base.ClearSearch, &km.Base.Grep,
+		&km.Base.SwitchView, &km.Base.FocusNext, &km.Base.FocusPrev,
+		&km.Base.TogglePreview,
+		&km.Base.Select, &km.Base.SelectAll, &km.Base.SelectNone,
+	)
 	return km
 }
 
@@ -139,44 +101,30 @@ var pagerKeys = func() pagerKeyMap {
 // statsKeyMap defines the key bindings for the interactive stats page.
 type statsKeyMap struct {
 	keymap.Base
-	SwitchFocus  key.Binding
-	Exclude      key.Binding
-	Refresh      key.Binding
-	GotoTop      key.Binding
-	GotoBottom   key.Binding
-	HalfPageUp   key.Binding
-	HalfPageDown key.Binding
+	SwitchFocus key.Binding
+	Exclude     key.Binding
 }
 
 // ShortHelp returns keybindings to be shown in the footer.
 func (k statsKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.SwitchFocus, k.Exclude, k.Refresh, k.Quit}
+	return []key.Binding{k.Help, k.SwitchFocus, k.Exclude, k.Base.Refresh, k.Quit}
 }
 
-// FullHelp is not used for this page but is required by the interface.
-func (k statsKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{}
-}
+// Compile-time guard: satisfies the sectioned help/audit contract (value receiver).
+var _ keymap.SectionedKeyMap = statsKeyMap{}
 
-// Sections returns grouped sections of key bindings for the full help view.
-// Only includes sections that the stats page actually implements.
+// Sections returns the grouped key bindings the stats page actually implements.
 func (k statsKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
-		{
-			Name:     "Navigation",
-			Bindings: []key.Binding{k.Up, k.Down, k.SwitchFocus, k.GotoTop, k.GotoBottom, k.HalfPageUp, k.HalfPageDown},
-		},
-		{
-			Name:     "Actions",
-			Bindings: []key.Binding{k.Exclude, k.Refresh},
-		},
+		keymap.NavigationSection(k.Up, k.Down, k.SwitchFocus, k.PageUp, k.PageDown, k.Top, k.Bottom),
+		keymap.ActionsSection(k.Exclude, k.Base.Refresh),
 		k.Base.SystemSection(),
 	}
 }
 
 func newStatsKeyMap(cfg *config.Config) statsKeyMap {
 	km := statsKeyMap{
-		Base: keymap.Load(cfg, "cx.stats"),
+		Base: keymap.Load(cfg, "cx.view"),
 		SwitchFocus: key.NewBinding(
 			key.WithKeys("s", "left", "right"),
 			key.WithHelp("s/←/→", "switch list"),
@@ -185,28 +133,25 @@ func newStatsKeyMap(cfg *config.Config) statsKeyMap {
 			key.WithKeys("x"),
 			key.WithHelp("x", "exclude"),
 		),
-		Refresh: key.NewBinding(
-			key.WithKeys("ctrl+r"),
-			key.WithHelp("ctrl+r", "refresh"),
-		),
-		GotoTop: key.NewBinding(
-			key.WithKeys("g"),
-			key.WithHelp("gg", "go to top"),
-		),
-		GotoBottom: key.NewBinding(
-			key.WithKeys("G"),
-			key.WithHelp("G", "go to bottom"),
-		),
-		HalfPageUp: key.NewBinding(
-			key.WithKeys("ctrl+u"),
-			key.WithHelp("ctrl-u", "half page up"),
-		),
-		HalfPageDown: key.NewBinding(
-			key.WithKeys("ctrl+d"),
-			key.WithHelp("ctrl-d", "half page down"),
-		),
 	}
-	keymap.ApplyTUIOverrides(cfg, "cx", "stats", &km)
+	keymap.ApplyTUIOverrides(cfg, "cx", "view", &km)
+
+	// Kept enabled: Up/Down/PageUp/PageDown/Top/Bottom (nav), Refresh, Help,
+	// Quit. The stats page has no folds, tabs, or search of its own.
+	disable(
+		&km.Base.Left, &km.Base.Right, &km.Base.Home, &km.Base.End,
+		&km.Base.Confirm, &km.Base.Cancel, &km.Base.Back, &km.Base.Edit,
+		&km.Base.Delete, &km.Base.Yank, &km.Base.Rename, &km.Base.CopyPath,
+		&km.Base.Search, &km.Base.SearchNext, &km.Base.SearchPrev,
+		&km.Base.ClearSearch, &km.Base.Grep,
+		&km.Base.SwitchView, &km.Base.NextTab, &km.Base.PrevTab,
+		&km.Base.FocusNext, &km.Base.FocusPrev, &km.Base.TogglePreview,
+		&km.Base.Tab1, &km.Base.Tab2, &km.Base.Tab3, &km.Base.Tab4, &km.Base.Tab5,
+		&km.Base.Tab6, &km.Base.Tab7, &km.Base.Tab8, &km.Base.Tab9,
+		&km.Base.Select, &km.Base.SelectAll, &km.Base.SelectNone,
+		&km.Base.FoldOpen, &km.Base.FoldClose, &km.Base.FoldToggle,
+		&km.Base.FoldOpenAll, &km.Base.FoldCloseAll,
+	)
 	return km
 }
 
@@ -215,8 +160,7 @@ var statsKeys = func() statsKeyMap {
 	return newStatsKeyMap(cfg)
 }()
 
-// --- Keymaps from old view.go (to be used in Job 2 & 3) ---
-
+// treeViewKeyMap defines the key bindings for the tree page.
 type treeViewKeyMap struct {
 	keymap.Base
 	ToggleExpand  key.Binding
@@ -231,68 +175,25 @@ func (k treeViewKeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{k.Help, k.Quit}
 }
 
-func (k treeViewKeyMap) FullHelp() [][]key.Binding {
-	// Replicates the content from the old renderHelp function in a structured format
-	return [][]key.Binding{
-		{
-			key.NewBinding(key.WithHelp("", "Navigation:")),
-			key.NewBinding(key.WithKeys("up", "down", "j", "k"), key.WithHelp("up/down, j/k", "Move up/down")),
-			key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter, space", "Toggle expand")),
-			key.NewBinding(key.WithKeys("g"), key.WithHelp("gg", "Go to top")),
-			key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "Go to bottom")),
-			key.NewBinding(key.WithKeys("ctrl+d", "ctrl+u"), key.WithHelp("ctrl-d/u", "Page down/up")),
-			key.NewBinding(key.WithHelp("", "Folding (vim-style):")),
-			key.NewBinding(key.WithKeys("z"), key.WithHelp("za", "Toggle fold")),
-			key.NewBinding(key.WithKeys("z"), key.WithHelp("zo/zc", "Open/close fold")),
-			key.NewBinding(key.WithKeys("z"), key.WithHelp("zR/zM", "Open/close all")),
-			key.NewBinding(key.WithHelp("", "Search:")),
-			key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "Search for files")),
-			key.NewBinding(key.WithKeys("n", "N"), key.WithHelp("n/N", "Next/prev result")),
-		},
-		{
-			key.NewBinding(key.WithHelp("", "Actions:")),
-			key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "Toggle hot context")),
-			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Toggle cold context")),
-			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "Toggle exclude")),
-			key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "Next Page")),
-			key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "Toggle gitignored")),
-			key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "Refresh view")),
-			key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "Quit")),
-			key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "Toggle this help")),
-		},
-	}
-}
+// Compile-time guard: satisfies the sectioned help/audit contract (value receiver).
+var _ keymap.SectionedKeyMap = treeViewKeyMap{}
 
-// Sections returns grouped sections of key bindings for the full help view.
-// Only includes sections that the tree view actually implements.
+// Sections returns the grouped key bindings the tree page actually implements.
 func (k treeViewKeyMap) Sections() []keymap.Section {
-	// Customize navigation for tree view
-	nav := k.Base.NavigationSection()
-	nav.Bindings = []key.Binding{k.Up, k.Down, k.Top, k.Bottom, k.PageUp, k.PageDown}
-
 	return []keymap.Section{
-		nav,
-		{
-			Name:     "Tree",
-			Bindings: []key.Binding{k.ToggleExpand},
-		},
-		{
-			Name:     "Context",
-			Bindings: []key.Binding{k.ToggleHot, k.ToggleCold, k.ToggleExclude, k.ToggleIgnored},
-		},
-		k.Base.SearchSection(),
+		keymap.NavigationSection(k.Up, k.Down, k.Top, k.Bottom, k.PageUp, k.PageDown),
+		keymap.NewSection("Tree", k.ToggleExpand),
+		keymap.NewSection(keymap.SectionContext, k.ToggleHot, k.ToggleCold, k.ToggleExclude, k.ToggleIgnored),
+		keymap.SearchSection(k.Search, k.SearchNext, k.SearchPrev),
 		k.Base.FoldSection(),
-		{
-			Name:     "Other",
-			Bindings: []key.Binding{k.Refresh, k.Base.SwitchView},
-		},
+		keymap.NewSection("Other", k.Refresh),
 		k.Base.SystemSection(),
 	}
 }
 
 func newTreeKeyMap(cfg *config.Config) treeViewKeyMap {
 	km := treeViewKeyMap{
-		Base: keymap.Load(cfg, "cx.tree"),
+		Base: keymap.Load(cfg, "cx.view"),
 		ToggleExpand: key.NewBinding(
 			key.WithKeys("enter", " "),
 			key.WithHelp("enter/space", "toggle expand"),
@@ -313,12 +214,30 @@ func newTreeKeyMap(cfg *config.Config) treeViewKeyMap {
 			key.WithKeys("H", "."),
 			key.WithHelp("H/.", "toggle gitignored"),
 		),
+		// r stays canonical for the tree page; ctrl+r added as the ecosystem
+		// alias (Decision 3). Adding ctrl+r lets Base.Refresh be disabled
+		// below without losing the key.
 		Refresh: key.NewBinding(
-			key.WithKeys("r"),
+			key.WithKeys("r", "ctrl+r"),
 			key.WithHelp("r", "refresh"),
 		),
 	}
-	keymap.ApplyTUIOverrides(cfg, "cx", "tree", &km)
+	keymap.ApplyTUIOverrides(cfg, "cx", "view", &km)
+
+	// Kept enabled: Up/Down/PageUp/PageDown/Top/Bottom (nav), Search/SearchNext/
+	// SearchPrev, Help, Quit, and the five Fold* chords. The tree's own Refresh
+	// carries ctrl+r, so the duplicate Base.Refresh is disabled.
+	disable(
+		&km.Base.Left, &km.Base.Right, &km.Base.Home, &km.Base.End,
+		&km.Base.Confirm, &km.Base.Cancel, &km.Base.Back, &km.Base.Edit,
+		&km.Base.Delete, &km.Base.Yank, &km.Base.Rename, &km.Base.Refresh,
+		&km.Base.CopyPath, &km.Base.ClearSearch, &km.Base.Grep,
+		&km.Base.SwitchView, &km.Base.NextTab, &km.Base.PrevTab,
+		&km.Base.FocusNext, &km.Base.FocusPrev, &km.Base.TogglePreview,
+		&km.Base.Tab1, &km.Base.Tab2, &km.Base.Tab3, &km.Base.Tab4, &km.Base.Tab5,
+		&km.Base.Tab6, &km.Base.Tab7, &km.Base.Tab8, &km.Base.Tab9,
+		&km.Base.Select, &km.Base.SelectAll, &km.Base.SelectNone,
+	)
 	return km
 }
 
@@ -327,6 +246,45 @@ var treeKeys = func() treeViewKeyMap {
 	return newTreeKeyMap(cfg)
 }()
 
+// viewKeyMap is the merged, page-grouped keymap for the whole cx view meta-panel.
+// It composes the three page keymaps so the container's single `?` overlay and
+// the keys registry advertise one truthful, page-labeled export under id
+// "cx-view". MakeTUIInfo/AuditCoverage recurse into the nested keymaps and
+// collapse duplicate Base signatures across them.
+type viewKeyMap struct {
+	Pager pagerKeyMap
+	Stats statsKeyMap
+	Tree  treeViewKeyMap
+}
+
+func newViewKeyMap(cfg *config.Config) viewKeyMap {
+	return viewKeyMap{
+		Pager: newPagerKeyMap(cfg),
+		Stats: newStatsKeyMap(cfg),
+		Tree:  newTreeKeyMap(cfg),
+	}
+}
+
+// Compile-time guard: satisfies the sectioned help/audit contract (value receiver).
+var _ keymap.SectionedKeyMap = viewKeyMap{}
+
+// Sections returns the page-grouped key bindings for the merged cx-view export.
+// Each enabled binding across the three page keymaps is covered exactly once by
+// signature; duplicate Base bindings (nav, folds, system) collapse to a single
+// appearance.
+func (k viewKeyMap) Sections() []keymap.Section {
+	return []keymap.Section{
+		keymap.NavigationSection(k.Pager.Up, k.Pager.Down, k.Pager.PageUp, k.Pager.PageDown, k.Pager.Top, k.Pager.Bottom),
+		keymap.NewSection("Pages", k.Pager.NextTab, k.Pager.PrevTab, k.Pager.Tab1, k.Pager.Tab2, k.Pager.Tab3, k.Pager.Tab4, k.Pager.Tab5, k.Pager.Tab6, k.Pager.Tab7, k.Pager.Tab8, k.Pager.Tab9),
+		keymap.NewSection(keymap.SectionRules, k.Pager.Edit, k.Pager.SelectRules, k.Pager.Exclude, k.Pager.ExcludeDir, k.Pager.Base.Refresh),
+		keymap.NewSection("List", k.Pager.ToggleSort),
+		keymap.NewSection("Tree", k.Tree.ToggleExpand, k.Tree.ToggleHot, k.Tree.ToggleCold, k.Tree.ToggleExclude, k.Tree.ToggleIgnored, k.Tree.Refresh, k.Tree.Search, k.Tree.SearchNext, k.Tree.SearchPrev),
+		keymap.NewSection("Stats", k.Stats.SwitchFocus, k.Stats.Exclude),
+		k.Pager.Base.FoldSection(),
+		k.Pager.Base.SystemSection(),
+	}
+}
+
 // KeymapInfo returns the keymap metadata for the cx view TUI.
 // Used by the grove keys registry generator to aggregate all TUI keybindings.
 func KeymapInfo() keymap.TUIInfo {
@@ -334,6 +292,6 @@ func KeymapInfo() keymap.TUIInfo {
 		"cx-view",
 		"cx",
 		"Context viewer with tree, stats, and list pages",
-		newPagerKeyMap(nil),
+		newViewKeyMap(nil),
 	)
 }
