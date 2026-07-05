@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 
 	"github.com/grovetools/cx/pkg/context"
@@ -38,7 +39,7 @@ type treePage struct {
 
 	// Other state
 	width, height int
-	lastKey       string
+	sequence      *keymap.SequenceState // gg / z-fold chords
 	statusMessage string
 	keys          treeViewKeyMap
 
@@ -94,6 +95,7 @@ func NewTreePage(state *sharedState) Page {
 		expandedPaths:  make(map[string]bool),
 		showGitIgnored: false,
 		keys:           treeKeys,
+		sequence:       keymap.NewSequenceState(),
 	}
 }
 
@@ -467,51 +469,33 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 		}
 
-		// Handle fold commands when lastKey is 'z'
-		if p.lastKey == "z" {
-			switch msg.String() {
-			case "a":
-				// za - toggle fold at cursor (vim-style)
-				p.toggleExpanded()
-				p.lastKey = ""
-				return p, nil
-			case "o":
-				// zo - open/expand current directory (vim-style)
-				p.expandCurrent()
-				p.lastKey = ""
-				return p, nil
-			case "c":
-				// zc - close/collapse current directory (vim-style)
-				p.collapseCurrent()
-				p.lastKey = ""
-				return p, nil
-			case "R":
-				// zR - expand all directories (vim-style)
-				p.expandAll()
-				p.lastKey = ""
-				return p, nil
-			case "M":
-				// zM - collapse all directories (vim-style)
-				p.collapseAll()
-				p.lastKey = ""
-				return p, nil
-			default:
-				p.lastKey = ""
-				return p, nil
-			}
-		}
-
-		// Handle 'g' prefix for gg (go to top)
-		if p.lastKey == "g" {
-			if msg.String() == "g" {
-				// gg - go to top
+		// Multi-key chords: gg (top) and the five z-fold operations, routed
+		// through the shared sequence engine. Handled ahead of the raw
+		// sub-modes above but after them, so a search/confirm/selector keeps
+		// first crack. A pending prefix (bare g/z) is swallowed.
+		if result, _ := p.sequence.Process(msg, p.keys.Top, p.keys.FoldToggle, p.keys.FoldOpen, p.keys.FoldClose, p.keys.FoldOpenAll, p.keys.FoldCloseAll); result == keymap.SequenceMatch {
+			buffer := p.sequence.Buffer()
+			switch {
+			case keymap.Matches(buffer, p.keys.Top):
 				p.cursor = 0
 				p.scrollOffset = 0
-				p.lastKey = ""
-				return p, nil
+			case keymap.Matches(buffer, p.keys.FoldToggle):
+				p.toggleExpanded()
+			case keymap.Matches(buffer, p.keys.FoldOpen):
+				p.expandCurrent()
+			case keymap.Matches(buffer, p.keys.FoldClose):
+				p.collapseCurrent()
+			case keymap.Matches(buffer, p.keys.FoldOpenAll):
+				p.expandAll()
+			case keymap.Matches(buffer, p.keys.FoldCloseAll):
+				p.collapseAll()
 			}
-			p.lastKey = ""
+			p.sequence.Clear()
+			return p, nil
+		} else if result == keymap.SequencePending {
+			return p, nil
 		}
+		p.sequence.Clear()
 
 		// Normal mode logic using key.Matches
 		switch {
@@ -655,11 +639,6 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			p.ensureCursorVisible()
 			return p, nil
 
-		// Navigation: go to top (first 'g' press)
-		case key.Matches(msg, p.keys.Top):
-			p.lastKey = "g"
-			return p, nil
-
 		// Navigation: go to bottom
 		case key.Matches(msg, p.keys.Bottom):
 			p.cursor = len(p.visibleNodes) - 1
@@ -695,15 +674,6 @@ func (p *treePage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			}
 			return p, nil
 		}
-
-		// Handle 'z' prefix for fold commands
-		if msg.String() == "z" {
-			p.lastKey = "z"
-			return p, nil
-		}
-
-		// Clear lastKey on any other key
-		p.lastKey = ""
 	}
 
 	return p, nil

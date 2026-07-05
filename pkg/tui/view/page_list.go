@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/grovetools/core/tui/keymap"
 	"github.com/grovetools/core/tui/theme"
 
 	"github.com/grovetools/cx/pkg/context"
@@ -142,7 +143,7 @@ type listPage struct {
 	width       int
 	height      int
 	keys        pagerKeyMap
-	lastKey     string // Track last key for gg handling
+	sequence    *keymap.SequenceState // gg / z-fold chords
 	sortMode    int
 	foldedDirs  map[string]bool // Track which directories are folded
 }
@@ -160,6 +161,7 @@ func NewListPage(state *sharedState) Page {
 		sharedState: state,
 		list:        l,
 		keys:        pagerKeys,
+		sequence:    keymap.NewSequenceState(),
 		sortMode:    SortAlphanumeric,
 		foldedDirs:  make(map[string]bool),
 	}
@@ -316,79 +318,53 @@ func (p *listPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 			break // Let the default list update handle it
 		}
 
-		// Handle fold commands when lastKey is 'z'
-		if p.lastKey == "z" {
-			switch msg.String() {
-			case "a":
-				// za - toggle fold on current item
-				p.toggleFold()
-				p.lastKey = ""
-				return p, nil
-			case "o":
-				// zo - open fold on current item
-				p.openFold()
-				p.lastKey = ""
-				return p, nil
-			case "c":
-				// zc - close fold on current item
-				p.closeFold()
-				p.lastKey = ""
-				return p, nil
-			case "R":
-				// zR - open all folds
-				p.openAllFolds()
-				p.lastKey = ""
-				return p, nil
-			case "M":
-				// zM - close all folds
-				p.closeAllFolds()
-				p.lastKey = ""
-				return p, nil
-			default:
-				p.lastKey = ""
-				return p, nil
-			}
-		}
-
-		switch {
-		case key.Matches(msg, p.keys.Exclude):
-			p.lastKey = ""
-			return p, p.excludeFileCmd()
-		case key.Matches(msg, p.keys.ExcludeDir):
-			p.lastKey = ""
-			return p, p.excludeDirCmd()
-		case key.Matches(msg, p.keys.Refresh):
-			p.lastKey = ""
-			return p, p.refreshCmd()
-		case key.Matches(msg, p.keys.ToggleSort):
-			p.lastKey = ""
-			p.sortMode = (p.sortMode + 1) % 2 // Cycle between 0 and 1
-			p.updateAndSortItems()
-			return p, nil
-		case key.Matches(msg, p.keys.FoldPrefix):
-			// Set lastKey to 'z' and wait for next key
-			p.lastKey = "z"
-			return p, nil
-		case key.Matches(msg, p.keys.GotoTop):
-			// Handle 'gg' - go to top
-			if p.lastKey == "g" {
+		// Multi-key chords: gg (top) and the five z-fold operations, routed
+		// through the shared sequence engine so help/registry advertise real
+		// chords. A pending prefix (bare g/z) is swallowed; a match dispatches.
+		if result, _ := p.sequence.Process(msg, p.keys.Top, p.keys.FoldToggle, p.keys.FoldOpen, p.keys.FoldClose, p.keys.FoldOpenAll, p.keys.FoldCloseAll); result == keymap.SequenceMatch {
+			buffer := p.sequence.Buffer()
+			switch {
+			case keymap.Matches(buffer, p.keys.Top):
 				if len(p.list.Items()) > 0 {
 					p.list.Select(0)
 				}
-				p.lastKey = ""
-				return p, nil
+			case keymap.Matches(buffer, p.keys.FoldToggle):
+				p.toggleFold()
+			case keymap.Matches(buffer, p.keys.FoldOpen):
+				p.openFold()
+			case keymap.Matches(buffer, p.keys.FoldClose):
+				p.closeFold()
+			case keymap.Matches(buffer, p.keys.FoldOpenAll):
+				p.openAllFolds()
+			case keymap.Matches(buffer, p.keys.FoldCloseAll):
+				p.closeAllFolds()
 			}
-			p.lastKey = "g"
+			p.sequence.Clear()
 			return p, nil
-		case key.Matches(msg, p.keys.GotoBottom):
-			// Handle 'G' - go to bottom
+		} else if result == keymap.SequencePending {
+			return p, nil
+		}
+		p.sequence.Clear()
+
+		switch {
+		case key.Matches(msg, p.keys.Exclude):
+			return p, p.excludeFileCmd()
+		case key.Matches(msg, p.keys.ExcludeDir):
+			return p, p.excludeDirCmd()
+		case key.Matches(msg, p.keys.Base.Refresh):
+			return p, p.refreshCmd()
+		case key.Matches(msg, p.keys.ToggleSort):
+			p.sortMode = (p.sortMode + 1) % 2 // Cycle between 0 and 1
+			p.updateAndSortItems()
+			return p, nil
+		case key.Matches(msg, p.keys.Bottom):
+			// G - go to bottom
 			if len(p.list.Items()) > 0 {
 				p.list.Select(len(p.list.Items()) - 1)
 			}
-			p.lastKey = ""
 			return p, nil
-		case key.Matches(msg, p.keys.HalfPageUp):
-			// Handle Ctrl-u - half page up
+		case key.Matches(msg, p.keys.PageUp):
+			// ctrl+u - half page up
 			if len(p.list.Items()) > 0 {
 				current := p.list.Index()
 				halfPage := p.list.Height() / 2
@@ -398,10 +374,9 @@ func (p *listPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				}
 				p.list.Select(newIndex)
 			}
-			p.lastKey = ""
 			return p, nil
-		case key.Matches(msg, p.keys.HalfPageDown):
-			// Handle Ctrl-d - half page down
+		case key.Matches(msg, p.keys.PageDown):
+			// ctrl+d - half page down
 			if len(p.list.Items()) > 0 {
 				current := p.list.Index()
 				halfPage := p.list.Height() / 2
@@ -415,11 +390,7 @@ func (p *listPage) Update(msg tea.Msg) (Page, tea.Cmd) {
 				}
 				p.list.Select(newIndex)
 			}
-			p.lastKey = ""
 			return p, nil
-		default:
-			// Reset lastKey on any other key
-			p.lastKey = ""
 		}
 	}
 

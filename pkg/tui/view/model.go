@@ -88,10 +88,13 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config, 
 	watcher, _ = NewRulesWatcher() // best-effort; nil watcher is handled gracefully
 
 	return &pagerModel{
-		pager:            p,
-		state:            state,
-		keys:             keys,
-		help:             help.New(keys),
+		pager: p,
+		state: state,
+		keys:  keys,
+		// The single container-level `?` overlay renders the merged,
+		// page-grouped cx-view keymap so it matches the registry export
+		// exactly (pages implement Keys() but the container owns help).
+		help:             help.New(newViewKeyMap(cfg)),
 		ExitForNvimEdit:  false,
 		NvimEditPath:     "",
 		nvimEmbedEnabled: nvimEmbedEnabled,
