@@ -234,7 +234,7 @@ func (m *rulesPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Quit):
 			m.quitting = true
 			return m, func() tea.Msg { return embed.CloseRequestMsg{} }
-		case key.Matches(msg, m.keys.Select):
+		case key.Matches(msg, m.keys.Confirm):
 			if len(m.items) > 0 && m.selectedIndex < len(m.items) {
 				m.settingIdx = m.selectedIndex
 				m.settingActive = true
