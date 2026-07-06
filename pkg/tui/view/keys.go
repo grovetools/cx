@@ -258,11 +258,18 @@ type viewKeyMap struct {
 }
 
 func newViewKeyMap(cfg *config.Config) viewKeyMap {
-	return viewKeyMap{
+	km := viewKeyMap{
 		Pager: newPagerKeyMap(cfg),
 		Stats: newStatsKeyMap(cfg),
 		Tree:  newTreeKeyMap(cfg),
 	}
+	// The merged export/help view carries a single `refresh` (Tree.Refresh,
+	// r+ctrl+r) and a single `exclude` (Pager.Exclude, x). Disable the shadowed
+	// duplicates so Sections() and AuditCoverage agree and the keys registry
+	// gets one ConfigKey each. This only affects the merged export/help; the
+	// per-page runtime keymaps keep their own refresh/exclude.
+	disable(&km.Pager.Base.Refresh, &km.Stats.Base.Refresh, &km.Stats.Exclude)
+	return km
 }
 
 // Compile-time guard: satisfies the sectioned help/audit contract (value receiver).
@@ -276,10 +283,17 @@ func (k viewKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
 		keymap.NavigationSection(k.Pager.Up, k.Pager.Down, k.Pager.PageUp, k.Pager.PageDown, k.Pager.Top, k.Pager.Bottom),
 		keymap.NewSection("Pages", k.Pager.NextTab, k.Pager.PrevTab, k.Pager.Tab1, k.Pager.Tab2, k.Pager.Tab3, k.Pager.Tab4, k.Pager.Tab5, k.Pager.Tab6, k.Pager.Tab7, k.Pager.Tab8, k.Pager.Tab9),
-		keymap.NewSection(keymap.SectionRules, k.Pager.Edit, k.Pager.SelectRules, k.Pager.Exclude, k.Pager.ExcludeDir, k.Pager.Base.Refresh),
+		keymap.NewSection(keymap.SectionRules, k.Pager.Edit, k.Pager.SelectRules, k.Pager.Exclude, k.Pager.ExcludeDir),
 		keymap.NewSection("List", k.Pager.ToggleSort),
+		// Tree.Refresh (r, ctrl+r) is the single merged refresh: its ctrl+r key
+		// also represents the pager/stats Base.Refresh, so those are omitted here
+		// to keep one `refresh` ConfigKey in the merged export (page keymaps still
+		// carry their own refresh at runtime).
 		keymap.NewSection("Tree", k.Tree.ToggleExpand, k.Tree.ToggleHot, k.Tree.ToggleCold, k.Tree.ToggleExclude, k.Tree.ToggleIgnored, k.Tree.Refresh, k.Tree.Search, k.Tree.SearchNext, k.Tree.SearchPrev),
-		keymap.NewSection("Stats", k.Stats.SwitchFocus, k.Stats.Exclude),
+		// k.Pager.Exclude already carries x=exclude for the merged export; the
+		// stats page's identical x=exclude is omitted to avoid a duplicate
+		// `exclude` ConfigKey.
+		keymap.NewSection("Stats", k.Stats.SwitchFocus),
 		k.Pager.Base.FoldSection(),
 		k.Pager.Base.SystemSection(),
 	}
