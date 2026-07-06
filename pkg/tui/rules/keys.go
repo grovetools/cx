@@ -10,11 +10,11 @@ import (
 
 type pickerKeyMap struct {
 	keymap.Base
-	Select key.Binding
-	Load   key.Binding
-	Edit   key.Binding
-	Save   key.Binding
-	Delete key.Binding
+	Confirm key.Binding
+	Load    key.Binding
+	Edit    key.Binding
+	Save    key.Binding
+	Delete  key.Binding
 }
 
 func (k pickerKeyMap) ShortHelp() []key.Binding {
@@ -23,7 +23,7 @@ func (k pickerKeyMap) ShortHelp() []key.Binding {
 
 func (k pickerKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Select, k.Load},
+		{k.Up, k.Down, k.Confirm, k.Load},
 		{k.Save, k.Edit, k.Delete, k.Help, k.Quit},
 	}
 }
@@ -38,7 +38,7 @@ func (k pickerKeyMap) Sections() []keymap.Section {
 		},
 		{
 			Name:     "Rules",
-			Bindings: []key.Binding{k.Select, k.Load, k.Save, k.Edit, k.Delete},
+			Bindings: []key.Binding{k.Confirm, k.Load, k.Save, k.Edit, k.Delete},
 		},
 		k.Base.SystemSection(),
 	}
@@ -47,9 +47,9 @@ func (k pickerKeyMap) Sections() []keymap.Section {
 func newPickerKeyMap(cfg *config.Config) pickerKeyMap {
 	km := pickerKeyMap{
 		Base: keymap.Load(cfg, "cx.rules"),
-		Select: key.NewBinding(
+		Confirm: key.NewBinding(
 			key.WithKeys("enter"),
-			key.WithHelp("enter", "select"),
+			key.WithHelp("enter", "confirm"),
 		),
 		Load: key.NewBinding(
 			key.WithKeys("l"),
