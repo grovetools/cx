@@ -1360,18 +1360,21 @@ func (m *Manager) UpdateFromRules() error {
 	if err != nil {
 		// Handle the special case where neither file exists
 		if strings.Contains(err.Error(), "no rules file found") {
-			// Prompt user to create .grovectx for backward compatibility
-			fmt.Printf(".grovectx not found. Would you like to create one with '*' (include all files)? [Y/n]: ")
+			// Prompt user to create .grovectx for backward compatibility.
+			// We seed a commented placeholder (no files included) rather than the
+			// old whole-repo "*" — an uncurated repo must not silently pull its
+			// entire tree into context.
+			fmt.Printf(".grovectx not found. Would you like to create a starter rules file (no files included until you curate it)? [Y/n]: ")
 			var response string
 			_, _ = fmt.Scanln(&response)
 
 			if response == "" || strings.ToLower(response) == "y" || strings.ToLower(response) == "yes" {
-				// Create .grovectx with "*"
+				// Create .grovectx with a commented, non-including template.
 				rulesPath := filepath.Join(m.workDir, RulesFile)
-				if err := m.WriteFilesList(rulesPath, []string{"*"}); err != nil {
+				if err := os.WriteFile(rulesPath, []byte(DefaultRulesTemplate), 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 					return fmt.Errorf("error creating %s: %w", RulesFile, err)
 				}
-				fmt.Printf("Created %s with '*' pattern\n", RulesFile)
+				fmt.Printf("Created %s starter template (edit it to include files)\n", RulesFile)
 
 				// Try again
 				filesToInclude, err = m.ResolveFilesFromRules()
@@ -1937,7 +1940,7 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 			if defaultContent != nil {
 				rulesContent = defaultContent
 			} else {
-				rulesContent = []byte("# Context rules file\n# Add patterns to include files, one per line\n# Use ! prefix to exclude\n# Examples:\n#   *.go\n#   !*_test.go\n#   src/**/*.js\n")
+				rulesContent = []byte(DefaultRulesTemplate)
 			}
 		}
 

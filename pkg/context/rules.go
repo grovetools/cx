@@ -20,6 +20,28 @@ import (
 
 var rulesLog = logging.NewLogger("cx.context.rules")
 
+// DefaultRulesTemplate is the placeholder body written when a repository has no
+// curated ruleset. Every line is commented, so the resolved fileset is EMPTY
+// until a human uncomments or adds a pattern below. This deliberately replaces
+// the old whole-repo "*" default: an uncurated repo must NOT silently pull its
+// entire tree into context (which fed docgen and `grove release gen` an
+// expensive, noisy shared-prefix). Keep this the single source of truth for the
+// seeded default across all seed sites.
+const DefaultRulesTemplate = `# Context rules file — no patterns are active yet.
+# This repo contributes NO files to context until you add an (uncommented) pattern below.
+# Add patterns to include files, one per line. Use ! prefix to exclude.
+# Examples:
+#   *.go
+#   !*_test.go
+#   src/**/*.js
+#
+# Filter with @find (substring, glob, or regex):
+#   pkg/**/*.go @find: "manager"
+#
+# Filter with @grep (file content):
+#   pkg/**/*.go @grep: "TODO"
+`
+
 // legacyRulesWarnOnce dedupes the stale-.grove/rules warning, which would
 // otherwise fire on every rules load (several times per command run).
 var legacyRulesWarnOnce sync.Once
