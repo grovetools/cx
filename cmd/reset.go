@@ -72,23 +72,8 @@ func NewResetCmd() *cobra.Command {
 					Pretty(fmt.Sprintf("Reset rules file to project defaults: %s", rulesPath)).
 					Log(ctx)
 			} else {
-				// No defaults configured, use basic boilerplate
-				boilerplate := []byte(`# Context rules file
-# Add patterns to include files, one per line
-# Use ! prefix to exclude
-# Examples:
-#   *.go
-#   !*_test.go
-#   src/**/*.js
-#
-# Filter with @find (substring, glob, or regex):
-#   pkg/**/*.go @find: "manager"
-#   src/**/*.ts @find: "*_test.ts"
-#   lib/**/*.go @find: "[0-9]+_handler\.go$"
-#
-# Filter with @grep (file content):
-#   pkg/**/*.go @grep: "TODO"
-`)
+				// No defaults configured, use the shared non-including template.
+				boilerplate := []byte(context.DefaultRulesTemplate)
 				if err := os.WriteFile(rulesPath, boilerplate, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
 					return fmt.Errorf("error writing rules file: %w", err)
 				}
