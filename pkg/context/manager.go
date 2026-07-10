@@ -1831,7 +1831,16 @@ func (m *Manager) FindRulesetFile(projectPath, rulesetName string) (string, erro
 		}
 	}
 
-	return "", fmt.Errorf("ruleset '%s' not found in notebook presets or %s/ or %s/", rulesetName, RulesWorkDir, RulesDir)
+	searched := []string{filepath.Join(projectPath, RulesWorkDir), filepath.Join(projectPath, RulesDir)}
+	if node, err := workspace.GetProjectByPath(projectPath); err == nil {
+		if dir, dirErr := m.locator.GetContextPresetsWorkDir(node); dirErr == nil {
+			searched = append([]string{dir}, searched...)
+		}
+		if dir, dirErr := m.locator.GetContextPresetsDir(node); dirErr == nil {
+			searched = append([]string{dir}, searched...)
+		}
+	}
+	return "", fmt.Errorf("ruleset %q not found; searched: %s", rulesetName, strings.Join(searched, ", "))
 }
 
 // FindRulesetFileStandalone searches for a ruleset file using only legacy .cx.work/ and .cx/ directories.
