@@ -811,6 +811,15 @@ func (m *Manager) resolveProjectAlias(aliasName string) (string, error) {
 	return info.Path, nil
 }
 
+// ResolveProjectAlias resolves a project/workspace alias (the `<name>` in
+// `@a:<name>/...` or `@a:<name>::<ruleset>`) to its filesystem path using the
+// manager's alias resolver. Exported for callers like `cx concept verify`
+// that need to distinguish an unresolvable alias from a resolvable alias
+// whose patterns match nothing.
+func (m *Manager) ResolveProjectAlias(aliasName string) (string, error) {
+	return m.resolveProjectAlias(aliasName)
+}
+
 // currentWorktreeContainer returns the ecosystem-context directory that owns the
 // current node — the worktree/ecosystem root under which sibling repos live.
 // Empty when there is no current node (cwd outside every workspace).
