@@ -50,11 +50,16 @@ func AnalyzeProjectTree(m *context.Manager, showGitIgnored bool) (*FileNode, err
 
 	statsProvider := context.GetStatsProvider()
 
-	// Get canonical workDir for consistent path comparisons
-	// This is critical on macOS where /var is a symlink to /private/var
+	// Get canonical workDir for consistent path comparisons.
+	// This is critical on macOS where /var is a symlink to /private/var.
+	// Must use the SAME normalization as the classification map keys and
+	// normalizePathKey (NormalizeForLookup lowercases on case-insensitive
+	// filesystems): the filepath.Rel calls below are case-sensitive string
+	// ops, so an EvalSymlinks-only /Users/... root vs normalized /users/...
+	// node paths marks every node external and empties the whole tree.
 	workDir := m.GetWorkDir()
 	workDirCanonical := workDir
-	if wd, err := filepath.EvalSymlinks(workDir); err == nil {
+	if wd, err := pathutil.NormalizeForLookup(workDir); err == nil {
 		workDirCanonical = wd
 	}
 

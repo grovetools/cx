@@ -58,6 +58,14 @@ func refreshSharedStateCmd(workDir, rulesFileOverride string, seq uint64) tea.Cm
 		}
 		newState.rulesContent = string(rulesBytes)
 		newState.rulesPath = rulesPath
+		if newState.rulesPath == "" {
+			// LoadRulesContent returns an empty path when the resolved
+			// rules file doesn't exist yet (fresh plan worktree, job-scoped
+			// override before first write). Resolve the would-be path so
+			// the UI shows where rules WILL live (plan/notebook location)
+			// instead of falling back to the deprecated .grove/rules label.
+			newState.rulesPath = mgr.ResolveRulesPath()
+		}
 
 		// Parse rules (pass the manager to resolve aliases)
 		parseRules(&newState, string(rulesBytes), mgr)

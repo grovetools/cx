@@ -4,6 +4,7 @@ import (
 	gocontext "context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -72,6 +73,12 @@ func (p *suggestionsPage) refreshSuggestionsCmd() tea.Cmd {
 	workDir := p.sharedState.workDir
 	rulesContent := p.sharedState.rulesContent
 	return func() tea.Msg {
+		// Bound the daemon round-trips so a hung/unavailable memory
+		// backend surfaces as an error instead of an eternal
+		// "Searching memory…" spinner.
+		ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 15*time.Second)
+		defer cancel()
+
 		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from host
 
 		// Use the rules content as the search query so results are
@@ -91,12 +98,12 @@ func (p *suggestionsPage) refreshSuggestionsCmd() tea.Cmd {
 			UseFTS:    true,
 			UseVector: true,
 		}
-		results, err := client.SearchMemory(gocontext.Background(), req)
+		results, err := client.SearchMemory(ctx, req)
 		if err != nil {
 			// Vector search may be unavailable (e.g. no embedder configured
 			// daemon-side); retry once with FTS-only before surfacing the error.
 			req.UseVector = false
-			results, err = client.SearchMemory(gocontext.Background(), req)
+			results, err = client.SearchMemory(ctx, req)
 			if err != nil {
 				return suggestionsRefreshedMsg{err: err}
 			}

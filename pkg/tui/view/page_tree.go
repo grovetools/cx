@@ -119,9 +119,14 @@ func (p *treePage) Focus() tea.Cmd {
 	// plans/groveterm-pt3/25-sluggish-terminal.md for the pprof capture).
 	// loadTreeCmd walks the entire project tree and calls
 	// pathutil.NormalizeForLookup per node — multiple seconds of CPU per
-	// rebuild. The tree is now only loaded explicitly: once at Init, on
-	// `r` (Refresh), on rule toggle/apply, and when toggling gitignored
-	// visibility. Focus is a no-op.
+	// rebuild. The tree is loaded explicitly: on `r` (Refresh), on rule
+	// toggle/apply, when toggling gitignored visibility — and lazily here
+	// on the FIRST focus. The pager only Init()s the start page, so when
+	// tree is not the start page this lazy load is the only initial load;
+	// without it the tab stays on "Loading tree..." forever.
+	if p.tree == nil {
+		return p.loadTreeCmd()
+	}
 	return nil
 }
 

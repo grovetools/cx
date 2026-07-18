@@ -59,7 +59,9 @@ func (p *rulesPage) Focus() tea.Cmd {
 	// host process's launch directory inside treemux.
 	rulesPath := p.sharedState.rulesPath
 	if rulesPath == "" {
-		rulesPath = ".grove/rules" // Fallback if path is not set
+		// State not refreshed yet — avoid advertising the deprecated
+		// .grove/rules location as if it were the active file.
+		rulesPath = "(resolving…)"
 	} else {
 		rulesPath = abbreviateRulesPath(rulesPath, p.sharedState.workDir)
 	}
