@@ -2215,9 +2215,14 @@ func (m *Manager) ClassifyAllProjectFiles(showGitIgnored bool) (map[string]NodeS
 	allPatterns = m.preProcessPatterns(allPatterns)
 	rootPaths := m.extractRootPaths(allPatterns)
 
-	// Ensure working directory is in result (canonicalized)
+	// Ensure working directory is in result. Use the same normalization
+	// as every other key in the map (NormalizeForLookup lowercases on
+	// case-insensitive filesystems) — mixing EvalSymlinks-only paths
+	// (/Users/...) with normalized keys (/users/...) breaks the
+	// case-sensitive filepath.Rel comparisons downstream in the tree
+	// builder, which then discards every node as "external".
 	workDirCanonical := m.workDir
-	if wd, err := filepath.EvalSymlinks(m.workDir); err == nil {
+	if wd, err := pathutil.NormalizeForLookup(m.workDir); err == nil {
 		workDirCanonical = wd
 	}
 	result[workDirCanonical] = StatusDirectory
