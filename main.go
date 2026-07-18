@@ -79,6 +79,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewMigrateRulesNbCmd())
 	rootCmd.AddCommand(cmd.NewLintCmd())
 	rootCmd.AddCommand(cmd.NewAliasCmd())
+	rootCmd.AddCommand(cmd.NewConceptCmd())
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGHUP, syscall.SIGTERM)
 	defer cancel()
