@@ -18,6 +18,11 @@ import (
 
 const StatsCacheDirName = "stats-cache"
 
+// statsCacheVersion invalidates persisted stats caches when the token
+// estimation changes. v2: content-class-aware divisors (EstimateTokens)
+// replaced the flat bytes/4 heuristic.
+const statsCacheVersion = 2
+
 // CachedFileStats holds statistics for a single file in the cache.
 type CachedFileStats struct {
 	Path   string `json:"path"`
@@ -28,6 +33,7 @@ type CachedFileStats struct {
 // RepoCache is the structure of the cache file stored in the stats cache directory.
 // It is now keyed by the worktree path, which implicitly includes the commit hash.
 type RepoCache struct {
+	Version      int                        `json:"version"`
 	WorktreePath string                     `json:"worktreePath"`
 	CreatedAt    time.Time                  `json:"createdAt"`
 	Files        map[string]CachedFileStats `json:"files"` // Use map for faster lookups
@@ -158,7 +164,7 @@ func (sp *StatsProvider) getFileStatsUncached(filePath string) (FileInfo, error)
 	return FileInfo{
 		Path:   filePath,
 		Size:   stat.Size(),
-		Tokens: int(stat.Size() / 4), // Simple token estimation
+		Tokens: EstimateTokens(filePath, stat.Size()),
 	}, nil
 }
 
@@ -238,7 +244,9 @@ func (sp *StatsProvider) getWorktreeCache(worktreePath string) (*RepoCache, erro
 
 	if data, err := os.ReadFile(cacheFilePath); err == nil {
 		var loadedCache RepoCache
-		if err := json.Unmarshal(data, &loadedCache); err == nil {
+		// Discard caches from older versions (e.g. pre-calibration bytes/4
+		// token estimates) so they get regenerated with current divisors.
+		if err := json.Unmarshal(data, &loadedCache); err == nil && loadedCache.Version == statsCacheVersion {
 			sp.repoCaches[worktreePath] = &loadedCache
 			return &loadedCache, nil
 		}
@@ -256,6 +264,7 @@ func (sp *StatsProvider) getWorktreeCache(worktreePath string) (*RepoCache, erro
 // generateCacheForWorktree walks a worktree directory, computes stats for all files, and saves the cache.
 func (sp *StatsProvider) generateCacheForWorktree(worktreePath string) (*RepoCache, error) {
 	cache := &RepoCache{
+		Version:      statsCacheVersion,
 		WorktreePath: worktreePath,
 		CreatedAt:    time.Now(),
 		Files:        make(map[string]CachedFileStats),
@@ -288,7 +297,7 @@ func (sp *StatsProvider) generateCacheForWorktree(worktreePath string) (*RepoCac
 		cache.Files[absPath] = CachedFileStats{
 			Path:   absPath,
 			Size:   stat.Size(),
-			Tokens: int(stat.Size() / 4),
+			Tokens: EstimateTokens(absPath, stat.Size()),
 		}
 		return nil
 	})
