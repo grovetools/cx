@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/grovetools/core/cli"
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/spf13/cobra"
 
 	"github.com/grovetools/cx/pkg/context"
@@ -21,19 +23,34 @@ func NewListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager(GetWorkDir())
 			mgr.SetContext(cmd.Context())
+			jsonOutput := cli.GetOptions(cmd).JSONOutput
+			if jsonOutput && relPaths {
+				return fmt.Errorf("--json cannot be combined with --rel; machine file identities are absolute")
+			}
 
 			targetRulesFile, err := ResolveRulesFileFlag(mgr, jobFile, rulesFile)
 			if err != nil {
 				return err
 			}
 
+			if jsonOutput {
+				hotFiles, coldFiles, rulesPath, resolveErr := resolveMachineFiles(mgr, targetRulesFile)
+				if resolveErr != nil {
+					return resolveErr
+				}
+				if len(hotFiles)+len(coldFiles) == 0 {
+					return fmt.Errorf("0 files resolved; check the rules file and workspace root")
+				}
+				workspaceName := ""
+				if node, wsErr := workspace.GetProjectByPath(mgr.GetWorkDir()); wsErr == nil && node.Kind != workspace.KindNonGroveRepo {
+					workspaceName = node.Identifier(":")
+				}
+				return writeJSON(cmd, buildMachineList(mgr, workspaceName, rulesPath, hotFiles, coldFiles))
+			}
+
 			var files []string
 			if targetRulesFile != "" {
-				// ResolveFilesFromCustomRulesFile returns rulesBaseDir-relative
-				// paths (flattenAttrResult's form, which internal consumers
-				// depend on); the command layer projects them to absolute so
-				// the output matches the documented help text and reveals which
-				// worktree each file rooted into.
+				// Preserve legacy newline output: hot files only.
 				hotFiles, _, resolveErr := mgr.ResolveFilesFromCustomRulesFile(targetRulesFile)
 				if resolveErr != nil {
 					return fmt.Errorf("failed to resolve files from rules file: %w", resolveErr)
@@ -56,7 +73,7 @@ func NewListCmd() *cobra.Command {
 
 			base := mgr.GetRulesBaseDir()
 			for _, file := range files {
-				fmt.Println(projectListPath(file, base, relPaths))
+				fmt.Fprintln(cmd.OutOrStdout(), projectListPath(file, base, relPaths))
 			}
 			return nil
 		},

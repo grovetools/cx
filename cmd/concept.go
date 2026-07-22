@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/grovetools/core/cli"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/spf13/cobra"
 
@@ -237,6 +238,77 @@ func detectDeadAliases(pm *context.Manager, presetContent []byte) []conceptFindi
 	return findings
 }
 
+type conceptLocation struct {
+	WorkDir       string
+	WorkspaceName string
+	PresetsDir    string
+	ConceptsDir   string
+	PresetPath    string
+	OverviewPath  string
+}
+
+func canonicalConceptPresetPath(presetsDir, id string) (string, error) {
+	if id == "" || id == "." || filepath.Base(id) != id || strings.ContainsAny(id, `/\\`) {
+		return "", fmt.Errorf("invalid concept id %q", id)
+	}
+	return filepath.Join(presetsDir, "concept-"+id+context.RulesExt), nil
+}
+
+// locateConcept resolves the workspace and canonical notebook paths used by
+// every concept command. This keeps preview and verify on the same
+// context/presets/concept-<id>.rules convention.
+func locateConcept(startWorkDir, workspaceName, id string) (conceptLocation, error) {
+	mgr := context.NewManager(startWorkDir)
+	workDir := mgr.GetWorkDir()
+	if workspaceName != "" {
+		resolved, err := mgr.ResolveProjectAlias(workspaceName)
+		if err != nil {
+			return conceptLocation{}, fmt.Errorf("cannot resolve workspace %q: %w", workspaceName, err)
+		}
+		workDir = resolved
+		mgr = context.NewManager(workDir)
+	}
+
+	node, err := workspace.GetProjectByPath(workDir)
+	if err != nil {
+		return conceptLocation{}, fmt.Errorf("cannot determine workspace for %s: %w", workDir, err)
+	}
+	presetsDir, err := mgr.Locator().GetContextPresetsDir(node)
+	if err != nil {
+		return conceptLocation{}, fmt.Errorf("cannot locate context presets dir: %w", err)
+	}
+	conceptsDir, err := mgr.Locator().GetNotesDir(node, "concepts")
+	if err != nil {
+		return conceptLocation{}, fmt.Errorf("cannot locate concepts dir: %w", err)
+	}
+	presetPath, err := canonicalConceptPresetPath(presetsDir, id)
+	if err != nil {
+		return conceptLocation{}, err
+	}
+	return conceptLocation{
+		WorkDir:       mgr.GetWorkDir(),
+		WorkspaceName: node.Name,
+		PresetsDir:    presetsDir,
+		ConceptsDir:   conceptsDir,
+		PresetPath:    presetPath,
+		OverviewPath:  filepath.Join(conceptsDir, id, "overview.md"),
+	}, nil
+}
+
+func splitConceptRef(ref, workspaceFlag string) (workspaceName, id string, err error) {
+	workspaceName, id = workspaceFlag, ref
+	if before, after, ok := strings.Cut(ref, ":"); ok {
+		if workspaceFlag != "" && workspaceFlag != before {
+			return "", "", fmt.Errorf("workspace %q conflicts with concept ref %q", workspaceFlag, ref)
+		}
+		workspaceName, id = before, after
+	}
+	if id == "" {
+		return "", "", fmt.Errorf("concept id is required")
+	}
+	return workspaceName, id, nil
+}
+
 // verifyConcept measures one concept preset the same way `cx stats` does and
 // compares it against the overview.md stamp.
 func verifyConcept(workDir, presetsDir, conceptsDir, id, workspaceName string, tolerance float64, fix bool) conceptReport {
@@ -349,6 +421,91 @@ func humanTokens(n int) string {
 	return fmt.Sprintf("~%d", n)
 }
 
+type conceptPreviewEnvelope struct {
+	SchemaVersion int              `json:"schema_version"`
+	Concept       string           `json:"concept"`
+	Workspace     string           `json:"workspace"`
+	PresetPath    string           `json:"preset_path"`
+	Contexts      []machineFileSet `json:"contexts"`
+	Totals        machineTotals    `json:"totals"`
+}
+
+func newConceptPreviewCmd() *cobra.Command {
+	var workspaceName string
+	var top, manifestLimit int
+
+	cmd := &cobra.Command{
+		Use:   "preview [workspace:]concept-id",
+		Short: "Preview a concept preset's resolved files and cost",
+		Long: `Resolve the canonical context/presets/concept-<id>.rules file inside cx.
+The --json form is a bounded, versioned machine envelope with separate hot and
+cold contexts, honest resolved/readable totals, and unreadable-file reporting.
+It reports composition and cost only; it does not rank files by relevance.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ws, id, err := splitConceptRef(args[0], workspaceName)
+			if err != nil {
+				return err
+			}
+			if top < 0 || top > 20 {
+				return fmt.Errorf("--top must be between 0 and 20")
+			}
+			if manifestLimit < 0 || manifestLimit > 200 {
+				return fmt.Errorf("--manifest-limit must be between 0 and 200")
+			}
+
+			location, err := locateConcept(GetWorkDir(), ws, id)
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(location.OverviewPath); err != nil {
+				return fmt.Errorf("concept %s:%s not found: %w", location.WorkspaceName, id, err)
+			}
+			if _, err := os.Stat(location.PresetPath); err != nil {
+				return fmt.Errorf("canonical preset not found for %s:%s at %s: %w", location.WorkspaceName, id, location.PresetPath, err)
+			}
+
+			mgr := context.NewManagerWithOverride(location.WorkDir, location.PresetPath)
+			hotFiles, coldFiles, err := mgr.ResolveFilesFromCustomRulesFile(location.PresetPath)
+			if err != nil {
+				return fmt.Errorf("failed to resolve concept preset: %w", err)
+			}
+			if len(hotFiles)+len(coldFiles) == 0 {
+				return fmt.Errorf("0 files resolved for %s:%s; preset may target another workspace", location.WorkspaceName, id)
+			}
+			stats, err := buildMachineStats(mgr, location.WorkspaceName, location.PresetPath, hotFiles, coldFiles, top, manifestLimit)
+			if err != nil {
+				return err
+			}
+			envelope := conceptPreviewEnvelope{
+				SchemaVersion: machineSchemaVersion,
+				Concept:       location.WorkspaceName + ":" + id,
+				Workspace:     location.WorkspaceName,
+				PresetPath:    location.PresetPath,
+				Contexts:      stats.Contexts,
+				Totals:        stats.Totals,
+			}
+			if cli.GetOptions(cmd).JSONOutput {
+				return writeJSON(cmd, envelope)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "%s — %d resolved, %d readable, ~%s tokens\n", envelope.Concept, envelope.Totals.ResolvedFiles, envelope.Totals.ReadableFiles, context.FormatTokenCount(envelope.Totals.TotalTokens))
+			for _, set := range envelope.Contexts {
+				fmt.Fprintf(cmd.OutOrStdout(), "  %s: %d files, ~%s tokens", set.ContextType, set.ReadableFiles, context.FormatTokenCount(set.TotalTokens))
+				if len(set.UnreadableFiles)+set.UnreadableFilesOmitted > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), " (%d unreadable)", len(set.UnreadableFiles)+set.UnreadableFilesOmitted)
+				}
+				fmt.Fprintln(cmd.OutOrStdout())
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&workspaceName, "workspace", "", "Resolve the concept in this workspace alias")
+	cmd.Flags().IntVar(&top, "top", 8, "Number of largest files per hot/cold context (max 20)")
+	cmd.Flags().IntVar(&manifestLimit, "manifest-limit", 50, "Maximum file and unreadable-file paths per context (max 200)")
+	return cmd
+}
+
 func newConceptVerifyCmd() *cobra.Command {
 	var (
 		all       bool
@@ -384,21 +541,13 @@ the tolerance or has dead/zero-match lines (unless --fix repaired the drift).`,
 				return fmt.Errorf("--all cannot be combined with a concept id")
 			}
 
-			mgr := context.NewManager(GetWorkDir())
-			workDir := mgr.GetWorkDir()
-
-			node, err := workspace.GetProjectByPath(workDir)
+			location, err := locateConcept(GetWorkDir(), "", "__locator__")
 			if err != nil {
-				return fmt.Errorf("cannot determine current workspace for %s: %w", workDir, err)
+				return err
 			}
-			presetsDir, err := mgr.Locator().GetContextPresetsDir(node)
-			if err != nil {
-				return fmt.Errorf("cannot locate context presets dir: %w", err)
-			}
-			conceptsDir, err := mgr.Locator().GetNotesDir(node, "concepts")
-			if err != nil {
-				return fmt.Errorf("cannot locate concepts dir: %w", err)
-			}
+			workDir := location.WorkDir
+			presetsDir := location.PresetsDir
+			conceptsDir := location.ConceptsDir
 
 			var ids []string
 			if all {
@@ -414,7 +563,7 @@ the tolerance or has dead/zero-match lines (unless --fix repaired the drift).`,
 				ids = []string{args[0]}
 			}
 
-			workspaceName := node.Name
+			workspaceName := location.WorkspaceName
 			reports := make([]conceptReport, 0, len(ids))
 			for _, id := range ids {
 				reports = append(reports, verifyConcept(workDir, presetsDir, conceptsDir, id, workspaceName, tolerance, fix))
@@ -463,5 +612,6 @@ func NewConceptCmd() *cobra.Command {
 		Long:  `Tools for keeping concept docs and their cx context presets aligned.`,
 	}
 	cmd.AddCommand(newConceptVerifyCmd())
+	cmd.AddCommand(newConceptPreviewCmd())
 	return cmd
 }

@@ -1,3 +1,9 @@
+## Unreleased
+
+### Features
+
+- Add versioned machine envelopes for compact stats, concept preset preview, and hot/cold file listing while preserving legacy output formats.
+
 ## v0.6.0 (2026-02-02)
 
 This release enforces adherence to XDG standards for configuration and state paths (921e894, c015693). It also introduces support for `grove.toml` configuration files (88fa736). Functionality for `tmux` integration has been improved to respect socket isolation (a9b53d9), resolving issues with `cx repo rules edit` in nested environments. The build process now correctly injects version information (6034527), replacing generic "dev" labels with commit hashes. 
