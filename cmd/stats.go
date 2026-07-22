@@ -33,7 +33,8 @@ func NewStatsCmd() *cobra.Command {
 		TotalTokens    int `json:"total_tokens"`
 	}
 
-	var jobFile, rulesFileFlag string
+	var jobFile, rulesFileFlag, outputFormat string
+	var manifestLimit int
 
 	cmd := &cobra.Command{
 		Use:   "stats [rules-file]",
@@ -50,6 +51,21 @@ Examples:
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := context.NewManager(GetWorkDir())
+			if outputFormat != "" && outputFormat != "compact" {
+				return fmt.Errorf("unsupported stats format %q (supported: compact)", outputFormat)
+			}
+			if outputFormat == "compact" && cli.GetOptions(cmd).JSONOutput {
+				return fmt.Errorf("--format compact cannot be combined with --json; compact is already a versioned JSON envelope")
+			}
+			if outputFormat == "compact" && (chatFile != "" || perLine) {
+				return fmt.Errorf("--format compact cannot be combined with --chat-file or --per-line")
+			}
+			if outputFormat == "compact" && (topN < 0 || topN > 20) {
+				return fmt.Errorf("--top must be between 0 and 20 for compact output")
+			}
+			if outputFormat == "compact" && (manifestLimit < 0 || manifestLimit > 1000) {
+				return fmt.Errorf("--manifest-limit must be between 0 and 1000 for compact output")
+			}
 
 			// Legacy --chat-file fallback
 			if chatFile != "" && jobFile == "" {
@@ -105,12 +121,7 @@ Examples:
 					ChatFileTokens: chatFileTokens,
 					TotalTokens:    contextTokens + chatFileTokens,
 				}
-				jsonData, err := json.MarshalIndent(stats, "", "  ")
-				if err != nil {
-					return fmt.Errorf("failed to marshal chat stats: %w", err)
-				}
-				fmt.Println(string(jsonData))
-				return nil
+				return writeJSON(cmd, stats)
 			}
 
 			// Handle --per-line flag
@@ -155,6 +166,30 @@ Examples:
 				}
 			}
 
+			// Populate workspace and rules identity for both legacy and machine output.
+			workspaceName := ""
+			if node, wsErr := workspace.GetProjectByPath(mgr.GetWorkDir()); wsErr == nil && node.Kind != workspace.KindNonGroveRepo {
+				workspaceName = node.Identifier(":")
+			}
+			rulesDisplay := targetRulesFile
+			if rulesDisplay == "" {
+				rulesDisplay = mgr.ResolveRulesPath()
+			}
+
+			// The compact form is an opt-in top-level machine envelope. Unlike
+			// legacy --json it always includes hot and cold records (including
+			// empty ones), honest resolved/readable counts, and unreadable paths.
+			if outputFormat == "compact" {
+				if len(hotFiles)+len(coldFiles) == 0 {
+					return fmt.Errorf("0 files resolved; check the rules file and workspace root")
+				}
+				envelope, err := buildMachineStats(mgr, workspaceName, rulesDisplay, hotFiles, coldFiles, topN, manifestLimit)
+				if err != nil {
+					return err
+				}
+				return writeJSON(cmd, envelope)
+			}
+
 			// Get stats for hot files
 			if len(hotFiles) > 0 {
 				hotStats, err := mgr.GetStats("hot", hotFiles, topN)
@@ -173,15 +208,7 @@ Examples:
 				allStats = append(allStats, coldStats)
 			}
 
-			// Populate workspace info on all stats
-			workspaceName := ""
-			if node, wsErr := workspace.GetProjectByPath(mgr.GetWorkDir()); wsErr == nil && node.Kind != workspace.KindNonGroveRepo {
-				workspaceName = node.Identifier(":")
-			}
-			rulesDisplay := targetRulesFile
-			if rulesDisplay == "" {
-				rulesDisplay = mgr.ResolveRulesPath()
-			}
+			// Populate workspace info on all legacy stats.
 			for _, stats := range allStats {
 				stats.WorkspaceName = workspaceName
 				stats.RulesPath = rulesDisplay
@@ -191,7 +218,7 @@ Examples:
 			if len(allStats) == 0 {
 				if opts.JSONOutput {
 					// Return empty array for JSON
-					fmt.Println("[]")
+					fmt.Fprintln(cmd.OutOrStdout(), "[]")
 				} else {
 					ctx := stdctx.Background()
 					ulog.Warn("No files in context").
@@ -204,11 +231,7 @@ Examples:
 			// Output results
 			if opts.JSONOutput {
 				// Output as JSON array with both stats objects
-				jsonData, err := json.MarshalIndent(allStats, "", "  ")
-				if err != nil {
-					return fmt.Errorf("failed to marshal stats: %w", err)
-				}
-				fmt.Println(string(jsonData))
+				return writeJSON(cmd, allStats)
 			} else {
 				// Print both hot and cold context stats
 				for i, stats := range allStats {
@@ -227,6 +250,8 @@ Examples:
 	}
 
 	cmd.Flags().IntVar(&topN, "top", 5, "Number of largest files to show")
+	cmd.Flags().StringVar(&outputFormat, "format", "", "Machine output format (compact)")
+	cmd.Flags().IntVar(&manifestLimit, "manifest-limit", 100, "Maximum file and unreadable-file paths per context in compact output")
 	cmd.Flags().BoolVar(&perLine, "per-line", false, "Provide stats for each line in the rules file")
 	cmd.Flags().StringVar(&chatFile, "chat-file", "", "Legacy alias for --job")
 	_ = cmd.Flags().MarkHidden("chat-file")
