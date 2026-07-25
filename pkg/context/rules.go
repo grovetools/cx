@@ -14,7 +14,6 @@ import (
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/repo"
-	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
 )
 
@@ -397,7 +396,7 @@ func (m *Manager) LoadRulesContent() (content []byte, path string, err error) {
 	// This must be checked BEFORE local .grove/rules so the notebook is the
 	// single source of truth — .grove/rules is legacy and should only be
 	// consulted as a fallback for projects that haven't migrated yet.
-	if node, wsErr := workspace.GetProjectByPath(m.workDir); wsErr == nil {
+	if node, ok := m.notebookNode(); ok {
 		if nbRulesFile, locErr := m.locator.GetContextRulesFile(node); locErr == nil {
 			if _, statErr := os.Stat(nbRulesFile); statErr == nil {
 				content, err := os.ReadFile(nbRulesFile)
@@ -1377,7 +1376,7 @@ func (m *Manager) findActiveRulesFile() string {
 	}
 
 	// Check notebook location
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if nbRulesFile, err := m.locator.GetContextRulesFile(node); err == nil {
 			if _, statErr := os.Stat(nbRulesFile); statErr == nil {
 				return nbRulesFile

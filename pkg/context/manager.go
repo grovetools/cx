@@ -21,6 +21,7 @@ import (
 	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/core/pkg/plan"
 	"github.com/grovetools/core/pkg/profiling"
+	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/state"
 	"github.com/grovetools/core/util/pathutil"
@@ -335,6 +336,30 @@ func (m *Manager) GetPlanRulesPath(planName string) string {
 	return plan.DefaultRulesPath(m.workDir, planName)
 }
 
+// notebookNode returns the workspace node whose notebook directories host this
+// manager's context artifacts (rules file, generated/cached context), or
+// (nil, false) when the artifacts must stay workDir-local.
+//
+// cx-managed external repositories — the bare clones and worktrees under
+// <data>/cx/repos that back `cx repo add` / `cx repo audit` — are deliberately
+// excluded. workspace.GetProjectByPath classifies any git checkout as a
+// workspace named after its directory, and those directories are commit-hash
+// prefixes, so routing their artifacts through the notebook created a junk
+// workspace per audited commit (e.g. <notebook>/workspaces/2671cf114428/
+// context/rules) in whichever notebook happened to be current — a rules file
+// no user could find, and generated context nobody could curate. Their
+// artifacts live under <worktree>/.grove instead, next to the audit reports.
+func (m *Manager) notebookNode() (*workspace.WorkspaceNode, bool) {
+	if repo.IsManagedPath(m.workDir) {
+		return nil, false
+	}
+	node, err := workspace.GetProjectByPath(m.workDir)
+	if err != nil {
+		return nil, false
+	}
+	return node, true
+}
+
 // ResolveRulesPath returns the path to the active rules file.
 // It checks for an existing file in order: plan-scoped rules, notebook location, .grove/rules, .grovectx.
 // If no file exists, returns the notebook path (preferred location for new files).
@@ -355,7 +380,7 @@ func (m *Manager) ResolveRulesPath() string {
 	}
 
 	// Check notebook location
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if nbRulesFile, err := m.locator.GetContextRulesFile(node); err == nil {
 			if _, statErr := os.Stat(nbRulesFile); statErr == nil {
 				return nbRulesFile
@@ -373,7 +398,7 @@ func (m *Manager) ResolveRulesPath() string {
 		return legacyPath
 	}
 	// Nothing exists — return notebook path as preferred for creation
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if nbRulesFile, err := m.locator.GetContextRulesFile(node); err == nil {
 			return nbRulesFile
 		}
@@ -482,7 +507,7 @@ func (m *Manager) ResolveContextPath() string {
 		}
 	}
 
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if genDir, err := m.locator.GetContextGeneratedDir(node); err == nil {
 			return filepath.Join(genDir, "context")
 		}
@@ -504,7 +529,7 @@ func (m *Manager) ResolveContextWritePath() string {
 		}
 	}
 
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if genDir, err := m.locator.GetContextGeneratedDir(node); err == nil {
 			_ = os.MkdirAll(genDir, 0o755)
 			return filepath.Join(genDir, "context")
@@ -528,7 +553,7 @@ func (m *Manager) ResolveCachedContextPath() string {
 		}
 	}
 
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
 			return filepath.Join(cacheDir, "cached-context")
 		}
@@ -550,7 +575,7 @@ func (m *Manager) ResolveCachedContextWritePath() string {
 		}
 	}
 
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
 			_ = os.MkdirAll(cacheDir, 0o755)
 			return filepath.Join(cacheDir, "cached-context")
@@ -574,7 +599,7 @@ func (m *Manager) ResolveCachedContextFilesListPath() string {
 		}
 	}
 
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
 			return filepath.Join(cacheDir, "cached-context-files")
 		}
@@ -596,7 +621,7 @@ func (m *Manager) ResolveCachedContextFilesListWritePath() string {
 		}
 	}
 
-	if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+	if node, ok := m.notebookNode(); ok {
 		if cacheDir, err := m.locator.GetContextCacheDir(node); err == nil {
 			_ = os.MkdirAll(cacheDir, 0o755)
 			return filepath.Join(cacheDir, "cached-context-files")
@@ -1923,7 +1948,7 @@ func (m *Manager) EnsureAndGetRulesPath() (string, error) {
 
 			if rulesPath == "" {
 				// Default to notebook if centralized, else local
-				if node, err := workspace.GetProjectByPath(m.workDir); err == nil {
+				if node, ok := m.notebookNode(); ok {
 					if nbRulesFile, locErr := m.locator.GetContextRulesFile(node); locErr == nil {
 						rulesPath = nbRulesFile
 					}

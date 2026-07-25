@@ -164,22 +164,30 @@ func newRepoAuditCmd() *cobra.Command {
 	var statusFlag string
 
 	cmd := &cobra.Command{
-		Use:   "audit <url>[@version]",
+		Use:   "audit <url>[@version][::ruleset]",
 		Short: "Perform an interactive LLM-based security audit for a repository",
-		Long:  `Initiates an interactive workflow to audit a repository at a specific version. This creates a worktree, allows context refinement via 'cx view', runs an LLM analysis for security vulnerabilities, and prompts for approval to update the manifest.`,
-		Args:  cobra.ExactArgs(1),
+		Long: `Initiates an interactive workflow to audit a repository at a specific version. This creates a worktree, allows context refinement via 'cx view', runs an LLM analysis for security vulnerabilities, and prompts for approval to update the manifest.
+
+The audit uses the repository's own ruleset — the one 'cx repo rules edit' writes to the bare clone — so refinements survive across versions. Append ::<name> to pick a named ruleset (default: 'default').`,
+		Example: `  cx repo audit my-org/my-repo
+  cx repo audit https://github.com/my-org/my-repo@v1.2.3
+  cx repo audit my-org/my-repo::api-only`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repoStr := args[0]
 
 			// Use context manager to parse the git rule
 			mgr := context.NewManager(GetWorkDir())
-			isGitURL, repoURL, version, _ := mgr.ParseGitRule(repoStr) // Ignore ruleset part here
+			isGitURL, repoURL, version, ruleset := mgr.ParseGitRule(repoStr)
 
 			// If parsing fails, try adding github.com prefix for shorthands like 'owner/repo'
 			if !isGitURL {
 				if !strings.HasPrefix(repoStr, "https://") && !strings.HasPrefix(repoStr, "git@") && strings.Count(repoStr, "/") == 1 {
-					isGitURL, repoURL, version, _ = mgr.ParseGitRule("https://github.com/" + repoStr)
+					isGitURL, repoURL, version, ruleset = mgr.ParseGitRule("https://github.com/" + repoStr)
 				}
+			}
+			if ruleset == "" {
+				ruleset = defaultAuditRuleset
 			}
 
 			if !isGitURL {
@@ -215,9 +223,15 @@ func newRepoAuditCmd() *cobra.Command {
 			}
 			defer func() { _ = os.Chdir(originalDir) }()
 
-			if err := setupDefaultAuditRules(localPath); err != nil {
-				return fmt.Errorf("failed to set up default audit rules: %w", err)
+			rulesPath, err := setupAuditRules(manager, repoURL, localPath, ruleset)
+			if err != nil {
+				return fmt.Errorf("failed to set up audit rules: %w", err)
 			}
+			ulog.Info("Using audit rules").
+				Field("ruleset", ruleset).
+				Field("path", rulesPath).
+				Pretty(fmt.Sprintf("Audit rules: %s (ruleset '%s')", rulesPath, ruleset)).
+				Log(ctx)
 
 			ulog.Info("Launching interactive context viewer").
 				Pretty("Launching interactive context viewer (`cx view`)...").
@@ -229,8 +243,24 @@ func newRepoAuditCmd() *cobra.Command {
 				return fmt.Errorf("error during interactive context view: %w", err)
 			}
 
-			ulog.Progress("Generating context and running LLM security analysis").Log(ctx)
-			reportContent, err := runLLMAnalysis()
+			// Persist any refinements made in the viewer back to the repo's
+			// ruleset, so the next audit — including one of a different
+			// version, which gets a fresh worktree — starts from them.
+			if err := saveAuditRuleset(manager, repoURL, localPath, ruleset); err != nil {
+				ulog.Warn("Could not save refined ruleset").Err(err).Log(ctx)
+			}
+
+			// Generate the context here rather than leaving it to the LLM
+			// provider: only grove-gemini regenerates implicitly, so an
+			// Anthropic-backed audit used to submit the prompt with no
+			// repository content at all.
+			ulog.Progress("Generating context from audit rules").Log(ctx)
+			if err := generateAuditContext(ctx, localPath); err != nil {
+				return err
+			}
+
+			ulog.Progress("Running LLM security analysis").Log(ctx)
+			reportContent, err := runLLMAnalysis(localPath)
 			if err != nil {
 				return fmt.Errorf("LLM analysis failed: %w", err)
 			}
@@ -364,32 +394,120 @@ GitHub repositories can be specified using the shorthand 'owner/repo'.`,
 	return cmd
 }
 
-// setupDefaultAuditRules creates a default .grove/rules file for auditing.
-func setupDefaultAuditRules(repoPath string) error {
+// defaultAuditRuleset is the ruleset name used when the audit target carries no
+// ::<name> suffix — the same name 'cx repo rules edit' defaults to.
+const defaultAuditRuleset = "default"
+
+// defaultAuditRulesContent is the starting ruleset for a repository that has
+// none: the whole tree. An audit looks for prompt injections and suspicious
+// code anywhere in the repo, so a broad default is the right one here (unlike
+// context curation for development, which starts empty).
+const defaultAuditRulesContent = "*\n"
+
+// auditRulesetPath returns the persistent location of a repository's named
+// ruleset: <bare-clone>/.cx.work/<name>.rules, which is where
+// 'cx repo rules edit' writes and which outlives any single worktree.
+func auditRulesetPath(manager *repo.Manager, repoURL, ruleset string) (string, error) {
+	manifest, err := manager.LoadManifest()
+	if err != nil {
+		return "", fmt.Errorf("failed to load repo manifest: %w", err)
+	}
+	repoInfo, ok := manifest.Repositories[repoURL]
+	if !ok {
+		return "", fmt.Errorf("repository %s not found in manifest", repoURL)
+	}
+	return filepath.Join(repoInfo.BarePath, context.RulesWorkDir, ruleset+context.RulesExt), nil
+}
+
+// setupAuditRules seeds the worktree's active rules file (<worktree>/.grove/rules,
+// which is what `cx view` and the LLM providers resolve for a repo-store
+// checkout) from the repository's persistent ruleset, and returns its path.
+//
+// Precedence: the repo's own ruleset, then a rules file already present in the
+// worktree, then the built-in default. The rules deliberately do NOT come from
+// the invoking workspace's cascade — an audit must curate the audited repo, not
+// inherit whatever preset happened to be active in the caller's ecosystem.
+func setupAuditRules(manager *repo.Manager, repoURL, repoPath, ruleset string) (string, error) {
 	// Check for zombie worktree - refuse to create rules in deleted worktrees
 	if context.IsZombieWorktree(repoPath) {
-		return fmt.Errorf("cannot create rules file: worktree has been deleted")
+		return "", fmt.Errorf("cannot create rules file: worktree has been deleted")
 	}
 
-	mgr := context.NewManager(repoPath)
-	rulesPath := mgr.ResolveRulesWritePath()
+	rulesPath := filepath.Join(repoPath, context.ActiveRulesFile)
 
-	rulesContent, _, err := mgr.LoadRulesContent()
-	if err != nil {
-		// Non-fatal, just use a basic default
-		rulesContent = []byte("*\n")
-		fmt.Fprintf(os.Stderr, "Warning: could not load default rules for audit: %v\n", err)
+	var rulesContent []byte
+	if presetPath, err := auditRulesetPath(manager, repoURL, ruleset); err == nil {
+		if content, readErr := os.ReadFile(presetPath); readErr == nil {
+			rulesContent = content
+		}
 	}
 	if rulesContent == nil {
-		rulesContent = []byte("*\n")
+		if content, err := os.ReadFile(rulesPath); err == nil {
+			rulesContent = content
+		}
+	}
+	if len(rulesContent) == 0 {
+		rulesContent = []byte(defaultAuditRulesContent)
 	}
 
-	groveDir := filepath.Dir(rulesPath)
-	if err := os.MkdirAll(groveDir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(rulesPath), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(rulesPath, rulesContent, 0o644); err != nil { //nolint:gosec // rules file, not sensitive
+		return "", err
+	}
+	return rulesPath, nil
+}
+
+// saveAuditRuleset copies the worktree's (possibly viewer-refined) rules back to
+// the repository's persistent ruleset in the bare clone.
+func saveAuditRuleset(manager *repo.Manager, repoURL, repoPath, ruleset string) error {
+	presetPath, err := auditRulesetPath(manager, repoURL, ruleset)
+	if err != nil {
 		return err
 	}
+	content, err := os.ReadFile(filepath.Join(repoPath, context.ActiveRulesFile))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(presetPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(presetPath, content, 0o644) //nolint:gosec // rules file, not sensitive
+}
 
-	return os.WriteFile(rulesPath, rulesContent, 0o644) //nolint:gosec // rules file, not sensitive
+// generateAuditContext resolves the audit rules and writes the hot and cold
+// context files the LLM request uploads. It fails when the rules match nothing,
+// which is otherwise invisible: the request still succeeds and the model
+// answers from the prompt alone.
+func generateAuditContext(ctx stdctx.Context, repoPath string) error {
+	mgr := context.NewManager(repoPath)
+	mgr.SetContext(ctx)
+
+	if err := mgr.UpdateFromRules(); err != nil {
+		return fmt.Errorf("resolving files from audit rules: %w", err)
+	}
+	if err := mgr.GenerateContext(true); err != nil {
+		return fmt.Errorf("generating context: %w", err)
+	}
+	if err := mgr.GenerateCachedContext(); err != nil {
+		return fmt.Errorf("generating cached context: %w", err)
+	}
+
+	files, err := mgr.ReadFilesList(context.FilesListFile)
+	if err != nil || len(files) == 0 {
+		return fmt.Errorf("audit rules matched no files in %s — refine them with 'cx repo rules edit' and retry", repoPath)
+	}
+
+	stats, err := mgr.GetStats("audit", files, 0)
+	if err == nil {
+		ulog.Info("Audit context generated").
+			Field("files", stats.TotalFiles).
+			Field("tokens", stats.TotalTokens).
+			Pretty(fmt.Sprintf("Context: %d files, ~%s tokens", stats.TotalFiles, context.FormatTokenCount(stats.TotalTokens))).
+			Log(ctx)
+	}
+	return nil
 }
 
 // runInteractiveView executes the 'grove cx view' command as a subprocess.
@@ -406,13 +524,14 @@ type LLMConfig struct {
 	DefaultModel string `yaml:"default_model"`
 }
 
-// runLLMAnalysis generates the context and uses grove-gemini for analysis.
-func runLLMAnalysis() (string, error) {
+// runLLMAnalysis submits the audit prompt, with the generated context, to the
+// configured LLM and returns the analysis.
+func runLLMAnalysis(repoPath string) (string, error) {
 	// Load the model from grove.yml configuration
 	model := "gemini-2.5-flash" // default model
 
 	ctx := stdctx.Background()
-	coreCfg, err := config.LoadFrom(".")
+	coreCfg, err := config.LoadFrom(repoPath)
 	if err == nil {
 		var llmCfg LLMConfig
 		if err := coreCfg.UnmarshalExtension("llm", &llmCfg); err == nil && llmCfg.DefaultModel != "" {
@@ -440,22 +559,42 @@ func runLLMAnalysis() (string, error) {
 		return "", fmt.Errorf("failed to close temporary prompt file: %w", err)
 	}
 
-	// Construct the grove-gemini command
-	// We are already in the correct directory, so grove-gemini will pick up the context automatically.
+	// Collect the response through --output rather than stdout: the providers
+	// print their progress banners (working directory, rules file, token usage)
+	// on stdout, and capturing those put them at the top of every saved report.
+	outFile, err := os.CreateTemp("", "grove-audit-response-*.md")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary response file: %w", err)
+	}
+	outPath := outFile.Name()
+	_ = outFile.Close()
+	defer os.Remove(outPath)
+
+	// --workdir pins context resolution to the audited worktree, so the request
+	// uploads the context generated from the audit rules.
 	args := []string{
 		"--model", model,
 		"--file", tmpFile.Name(),
-		"--yes", // Skip any confirmations
+		"--workdir", repoPath,
+		"--output", outPath,
+		"--yes", // Skip any confirmations (dropped for providers that lack it)
 	}
-	// Use 'grove llm request' to ensure workspace-aware context is used
+	// Use 'grove llm request' so the model routes to the right provider
 	cmdArgs := append([]string{"llm", "request"}, args...)
 	llmCmd := delegation.Command(cmdArgs[0], cmdArgs[1:]...)
-	llmCmd.Stderr = os.Stderr // Pipe stderr to see progress from llm
+	llmCmd.Stdout = os.Stderr // Provider progress output is not part of the report
+	llmCmd.Stderr = os.Stderr
 
-	// Execute the command and capture stdout
-	output, err := llmCmd.Output()
+	if err := llmCmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to execute 'grove llm request': %w", err)
+	}
+
+	output, err := os.ReadFile(outPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute 'grove-gemini request': %w", err)
+		return "", fmt.Errorf("failed to read LLM response: %w", err)
+	}
+	if len(strings.TrimSpace(string(output))) == 0 {
+		return "", fmt.Errorf("LLM returned an empty response")
 	}
 
 	return string(output), nil

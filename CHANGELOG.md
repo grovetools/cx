@@ -3,6 +3,12 @@
 ### Features
 
 - Add versioned machine envelopes for compact stats, concept preset preview, and hot/cold file listing while preserving legacy output formats.
+- `cx repo audit` accepts a `::<ruleset>` suffix and persists viewer refinements back to the repository's ruleset in the bare clone, so curation survives across audited versions.
+
+### Bug Fixes
+
+- Keep context artifacts for cx-managed external repositories inside the repo store instead of routing them into a notebook workspace named after the worktree's commit-hash directory.
+- `cx repo audit` now generates the context itself and fails when the rules match no files; Anthropic-backed audits previously submitted the prompt with no repository content.
 
 ## v0.6.0 (2026-02-02)
 
