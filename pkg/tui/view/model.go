@@ -13,6 +13,8 @@ import (
 	"github.com/grovetools/core/tui/components/nvim"
 	"github.com/grovetools/core/tui/components/pager"
 	"github.com/grovetools/core/tui/embed"
+	"github.com/grovetools/core/tui/keymap"
+	coretheme "github.com/grovetools/core/tui/theme"
 
 	"github.com/grovetools/cx/pkg/context"
 	rulestui "github.com/grovetools/cx/pkg/tui/rules"
@@ -79,6 +81,7 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config, 
 	}
 
 	keys := pagerKeys
+	mergedKeys := newViewKeyMap(cfg)
 	p := pager.NewAt(pages, pager.KeyMapFromBase(keys.Base), activePage)
 	p.SetConfig(pager.Config{
 		OuterPadding: [4]int{1, 2, 1, 2},
@@ -94,7 +97,13 @@ func NewWithStartPage(startPage, workDir, rulesFile string, cfg *config.Config, 
 		// The single container-level `?` overlay renders the merged,
 		// page-grouped cx-view keymap so it matches the registry export
 		// exactly (pages implement Keys() but the container owns help).
-		help:             help.New(newViewKeyMap(cfg)),
+		help: help.New(mergedKeys),
+		// The which-key chord host is container-level: the pages are separate
+		// Bubble Tea models behind the pager, so a single seam in this Update
+		// is the only place every keystroke passes through before dispatch.
+		// It is seeded with the MERGED t… namespace and narrowed per keypress
+		// to the active page's members (see activeNamespaces).
+		whichKey:         keymap.NewWhichKeyHost(cfg, mergedKeys.Namespaces()...),
 		ExitForNvimEdit:  false,
 		NvimEditPath:     "",
 		nvimEmbedEnabled: nvimEmbedEnabled,
@@ -112,6 +121,11 @@ type pagerModel struct {
 	height     int
 	keys       pagerKeyMap
 	help       help.Model
+	// whichKey is the shared chord/which-key mixin (core/tui/keymap). It owns
+	// the t… namespace arming, the popup show-delay, and the bottom-anchored
+	// overlay. Its Namespaces slice is re-pointed at the active page's members
+	// on every key event.
+	whichKey keymap.WhichKeyHost
 
 	// Exported Neovim IPC state so standalone CLI wrappers can detect
 	// a "quit to let nvim edit this file" exit and print the
@@ -160,6 +174,46 @@ func (m *pagerModel) activePageName() string {
 		return p.Name()
 	}
 	return ""
+}
+
+// inputCapturingPage is implemented by a cx page that can hold the keyboard in
+// a text field or a raw sub-mode (the tree's incremental search, its confirm
+// prompt and ruleset picker; the list's filter). While one of those is open the
+// page owns every rune, so a namespace prefix must not arm (sign-off E3).
+type inputCapturingPage interface {
+	capturingInput() bool
+}
+
+// activeNamespaces returns the which-key namespaces the CURRENTLY FOCUSED page
+// can actually dispatch. cx-view is multi-page and its t… members are split
+// across two distinct keymaps — the list page owns `ts`, the tree page owns
+// th/tc/ti — so a single union would advertise chords the focused page silently
+// drops. Pages with no members (rules, set-rules, stats, suggestions) return
+// nil, which also means no prefix ever arms on them; that is what keeps the
+// rules page's flat `s`=select rule set reachable.
+func (m *pagerModel) activeNamespaces() []keymap.Namespace {
+	switch m.activePageName() {
+	case "list":
+		return m.keys.Namespaces()
+	case "tree":
+		return treeKeys.Namespaces()
+	}
+	return nil
+}
+
+// namespaceArmable is the page/pane guard that runs BEFORE ProcessChord (E3,
+// "namespaces arm top-level only"). A prefix may arm only when the focused page
+// owns chord members and is not currently capturing raw input. Callers OR this
+// with whichKey.Armed() so that once a prefix IS armed the continuation key
+// still reaches the chord engine instead of being stolen back by the page.
+func (m *pagerModel) namespaceArmable() bool {
+	if len(m.activeNamespaces()) == 0 {
+		return false
+	}
+	if p, ok := m.pager.Active().(inputCapturingPage); ok && p.capturingInput() {
+		return false
+	}
+	return true
 }
 
 func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -281,6 +335,12 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// dispatchMsg is what the pager (and through it the active page) finally
+	// sees. The chord seam below rewrites it into the completed chord's literal
+	// key ("ts", "tc", …) so the page's own flat key.Matches resolves it; every
+	// other message passes through untouched.
+	dispatchMsg := msg
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -302,6 +362,37 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.help, cmd = m.help.Update(msg)
 			return m, cmd
+		}
+
+		// Chord seam. Point the host at the focused page's members first, then
+		// run the E3 page guard, then hand the key to ProcessChord. A completed
+		// chord is re-synthesized as its literal key ("ts", "tc", …) and falls
+		// through — the chord-only invariant (E4) makes Keys()[0] the chord, so
+		// the flat key.Matches switches below and inside the pages resolve it.
+		m.whichKey.Namespaces = m.activeNamespaces()
+		if m.namespaceArmable() || m.whichKey.Armed() {
+			res, matched, chordCmd := m.whichKey.ProcessChord(msg)
+			switch res {
+			case keymap.ChordPending:
+				// A t… prefix is armed; chordCmd is the show-delay tick that
+				// re-renders with the popup.
+				return m, chordCmd
+			case keymap.ChordConsumed:
+				// esc dismissed the popup, or a stray key closed an armed menu.
+				return m, nil
+			case keymap.ChordMatched:
+				// Re-synthesize the completed chord's canonical key. The
+				// !key.Matches guard matters only if a binding ever retains a
+				// flat key alongside its chord: Keys()[0] would then be the
+				// chord and blind rewriting would destroy the flat press.
+				// Every member here is chord-only (E4), so it is belt-and-braces.
+				if len(matched.Keys()) > 0 && !key.Matches(msg, matched) {
+					msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(matched.Keys()[0])}
+					dispatchMsg = msg
+				}
+			case keymap.ChordNone:
+				// Not a chord — fall through to the flat dispatch below.
+			}
 		}
 
 		switch {
@@ -444,7 +535,7 @@ func (m *pagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var pagerCmd tea.Cmd
-	m.pager, pagerCmd = m.pager.Update(msg)
+	m.pager, pagerCmd = m.pager.Update(dispatchMsg)
 	cmds = append(cmds, pagerCmd)
 
 	return m, tea.Batch(cmds...)
@@ -479,7 +570,12 @@ func (m *pagerModel) View() string {
 	// horizontal indent so no extra padding is needed here.
 	m.pager.SetFooter(m.help.View())
 
-	return m.pager.View()
+	// Composite the bottom-anchored which-key popup onto the assembled frame
+	// while a t… prefix is armed past the show-delay; returns the frame
+	// unchanged otherwise. Bottom-anchored, never centered — the delayed
+	// keymap.WhichKeyShowMsg tick forces the re-render that reveals it.
+	frame := m.pager.View()
+	return m.whichKey.RenderOverlayAvail(frame, lipgloss.Width(frame), m.height, *coretheme.DefaultTheme)
 }
 
 // Close releases resources held by the model. Callers should invoke this

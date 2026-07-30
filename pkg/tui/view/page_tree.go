@@ -108,6 +108,14 @@ func (p *treePage) Keys() interface{} {
 	return p.keys
 }
 
+// capturingInput reports that the tree page currently owns every rune, so the
+// container's which-key namespaces must not arm (sign-off E3, top-level only).
+// The three raw sub-modes handled at the head of Update are the incremental
+// search buffer, the y/n confirm prompt, and the ruleset selector.
+func (p *treePage) capturingInput() bool {
+	return p.isSearching || p.pendingConfirm != nil || p.rulesetSelector != nil
+}
+
 func (p *treePage) Init() tea.Cmd {
 	return p.loadTreeCmd()
 }

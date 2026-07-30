@@ -174,6 +174,13 @@ func (p *listPage) Keys() interface{} {
 	return p.keys
 }
 
+// capturingInput reports that the bubbles list filter has the keyboard, so the
+// container's which-key namespaces must not arm (sign-off E3, top-level only).
+// Mirrors the FilterState check at the head of Update.
+func (p *listPage) capturingInput() bool {
+	return p.list.FilterState() == list.Filtering
+}
+
 func (p *listPage) Init() tea.Cmd { return nil }
 
 func (p *listPage) Focus() tea.Cmd {

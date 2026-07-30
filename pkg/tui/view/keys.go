@@ -36,15 +36,28 @@ func (k pagerKeyMap) ShortHelp() []key.Binding {
 // Compile-time guard: satisfies the sectioned help/audit contract (value receiver).
 var _ keymap.SectionedKeyMap = pagerKeyMap{}
 
+// Namespaces returns the which-key chord namespaces owned by the pager/list
+// page. Members are built from the NAMED struct fields (never inline) so
+// MakeTUIInfo resolves them back to stable snake_case ConfigKeys and any
+// ApplyTUIOverrides rebinding flows through — see core/tui/keymap/namespace.go.
+// The list page owns a single Toggle member, `ts` (canon 60 §4.2 RULE T).
+func (k pagerKeyMap) Namespaces() []keymap.Namespace {
+	return []keymap.Namespace{
+		{Prefix: "t", Label: "Toggle", Bindings: []key.Binding{k.ToggleSort}},
+	}
+}
+
 // Sections returns the grouped key bindings the pager/list page actually
 // implements. Nav/Fold/System/Pages come from Base; the pager component owns
 // tab-cycling via NextTab/PrevTab/Tab1..9 (see model.go pager.KeyMapFromBase).
 func (k pagerKeyMap) Sections() []keymap.Section {
+	ns := k.Namespaces()
 	return []keymap.Section{
 		keymap.NavigationSection(k.Up, k.Down, k.PageUp, k.PageDown, k.Top, k.Bottom),
 		keymap.NewSection("Pages", k.NextTab, k.PrevTab, k.Tab1, k.Tab2, k.Tab3, k.Tab4, k.Tab5, k.Tab6, k.Tab7, k.Tab8, k.Tab9),
 		keymap.NewSection(keymap.SectionRules, k.Edit, k.SelectRules, k.Exclude, k.ExcludeDir, k.Base.Refresh),
-		keymap.NewSection("Display", k.ToggleSort),
+		// Toggle (t…) namespace section (ts), rendered via Namespace.Section().
+		ns[0].Section(),
 		k.Base.FoldSection(),
 		k.Base.SystemSection(),
 	}
@@ -61,9 +74,12 @@ func newPagerKeyMap(cfg *config.Config) pagerKeyMap {
 			key.WithKeys("s"),
 			key.WithHelp("s", "select rule set"),
 		),
+		// canon 60 §4.2 RULE T + §10: flat `t` was a reserved-prefix squatter;
+		// the sort toggle moves into the t… namespace as `ts`. Chord-only (E4) —
+		// no flat alias is retained.
 		ToggleSort: key.NewBinding(
-			key.WithKeys("t"),
-			key.WithHelp("t", "toggle sort"),
+			key.WithKeys("ts"),
+			key.WithHelp("ts", "toggle sort"),
 		),
 		Exclude: key.NewBinding(
 			key.WithKeys("x"),
@@ -125,9 +141,14 @@ func (k statsKeyMap) Sections() []keymap.Section {
 func newStatsKeyMap(cfg *config.Config) statsKeyMap {
 	km := statsKeyMap{
 		Base: keymap.Load(cfg, "cx.view"),
+		// canon 60 §10: the stats page's flat `s` collided intra-TUI with the
+		// rules page's `s`=select rule set (the container-level binding in
+		// model.go). Focus-switching moves to `tab`, matching core-logs and
+		// flow-status; the rules page keeps flat `s`. Base.SwitchView (also
+		// `tab`) stays disabled on this page, so there is no double claim.
 		SwitchFocus: key.NewBinding(
-			key.WithKeys("s", "left", "right"),
-			key.WithHelp("s/←/→", "switch list"),
+			key.WithKeys("tab", "left", "right"),
+			key.WithHelp("tab/←/→", "switch list"),
 		),
 		Exclude: key.NewBinding(
 			key.WithKeys("x"),
@@ -178,12 +199,28 @@ func (k treeViewKeyMap) ShortHelp() []key.Binding {
 // Compile-time guard: satisfies the sectioned help/audit contract (value receiver).
 var _ keymap.SectionedKeyMap = treeViewKeyMap{}
 
+// Namespaces returns the which-key chord namespaces owned by the tree page,
+// built from the NAMED struct fields (never inline — ConfigKey stability, see
+// core/tui/keymap/namespace.go). Members: th/tc/ti (canon 60 §4.2 RULE T).
+func (k treeViewKeyMap) Namespaces() []keymap.Namespace {
+	return []keymap.Namespace{
+		{Prefix: "t", Label: "Toggle", Bindings: []key.Binding{
+			k.ToggleHot, k.ToggleCold, k.ToggleIgnored,
+		}},
+	}
+}
+
 // Sections returns the grouped key bindings the tree page actually implements.
 func (k treeViewKeyMap) Sections() []keymap.Section {
+	ns := k.Namespaces()
 	return []keymap.Section{
 		keymap.NavigationSection(k.Up, k.Down, k.Top, k.Bottom, k.PageUp, k.PageDown),
 		keymap.NewSection("Tree", k.ToggleExpand),
-		keymap.NewSection(keymap.SectionContext, k.ToggleHot, k.ToggleCold, k.ToggleExclude, k.ToggleIgnored),
+		// ToggleHot/Cold/Ignored moved into the t… namespace section below;
+		// only the flat x=exclude remains in Context.
+		keymap.NewSection(keymap.SectionContext, k.ToggleExclude),
+		// Toggle (t…) namespace section (th/tc/ti).
+		ns[0].Section(),
 		keymap.SearchSection(k.Search, k.SearchNext, k.SearchPrev),
 		k.Base.FoldSection(),
 		keymap.NewSection("Other", k.Refresh),
@@ -198,28 +235,35 @@ func newTreeKeyMap(cfg *config.Config) treeViewKeyMap {
 			key.WithKeys("enter", " "),
 			key.WithHelp("enter/space", "toggle expand"),
 		),
+		// canon 60 §4.2 RULE T + §10: the three display toggles move into the
+		// t… namespace. Chord-only (E4) — the old flat keys are dropped, which
+		// also frees `h` (a 9-way cross-TUI conflict) and vacates the reserved
+		// `c` prefix. `th` also collapses the two old gitignored keys (`H` and
+		// `.`) onto one chord, retiring the cx-view `.` deviation.
 		ToggleHot: key.NewBinding(
-			key.WithKeys("h"),
-			key.WithHelp("h", "toggle hot"),
+			key.WithKeys("th"),
+			key.WithHelp("th", "toggle hot"),
 		),
 		ToggleCold: key.NewBinding(
-			key.WithKeys("c"),
-			key.WithHelp("c", "toggle cold"),
+			key.WithKeys("tc"),
+			key.WithHelp("tc", "toggle cold"),
 		),
+		// x stays flat (canon 60 §10 "cx-view keeps flat: … x …").
 		ToggleExclude: key.NewBinding(
 			key.WithKeys("x"),
 			key.WithHelp("x", "toggle exclude"),
 		),
 		ToggleIgnored: key.NewBinding(
-			key.WithKeys("H", "."),
-			key.WithHelp("H/.", "toggle gitignored"),
+			key.WithKeys("ti"),
+			key.WithHelp("ti", "toggle gitignored"),
 		),
-		// r stays canonical for the tree page; ctrl+r added as the ecosystem
-		// alias (Decision 3). Adding ctrl+r lets Base.Refresh be disabled
-		// below without losing the key.
+		// canon 60 §5.5: flat `r`=refresh is retired fleet-wide; ctrl+r is the
+		// StandardAction. The tree page keeps its own Refresh field (rather than
+		// re-enabling Base.Refresh) so the merged export still carries exactly
+		// one `refresh` ConfigKey.
 		Refresh: key.NewBinding(
-			key.WithKeys("r", "ctrl+r"),
-			key.WithHelp("r", "refresh"),
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("ctrl+r", "refresh"),
 		),
 	}
 	keymap.ApplyTUIOverrides(cfg, "cx", "view", &km)
@@ -275,21 +319,39 @@ func newViewKeyMap(cfg *config.Config) viewKeyMap {
 // Compile-time guard: satisfies the sectioned help/audit contract (value receiver).
 var _ keymap.SectionedKeyMap = viewKeyMap{}
 
+// Namespaces returns the MERGED t… namespace for the whole cx-view export: the
+// union of the list page's `ts` and the tree page's th/tc/ti. This is what the
+// registry and the single container-level `?` overlay advertise. At runtime the
+// container narrows the live WhichKeyHost to just the active page's members
+// (see pagerModel.activeNamespaces in model.go) so the popup never offers a
+// chord the focused page cannot dispatch.
+func (k viewKeyMap) Namespaces() []keymap.Namespace {
+	return []keymap.Namespace{
+		{Prefix: "t", Label: "Toggle", Bindings: []key.Binding{
+			k.Pager.ToggleSort,
+			k.Tree.ToggleHot, k.Tree.ToggleCold, k.Tree.ToggleIgnored,
+		}},
+	}
+}
+
 // Sections returns the page-grouped key bindings for the merged cx-view export.
 // Each enabled binding across the three page keymaps is covered exactly once by
 // signature; duplicate Base bindings (nav, folds, system) collapse to a single
 // appearance.
 func (k viewKeyMap) Sections() []keymap.Section {
+	ns := k.Namespaces()
 	return []keymap.Section{
 		keymap.NavigationSection(k.Pager.Up, k.Pager.Down, k.Pager.PageUp, k.Pager.PageDown, k.Pager.Top, k.Pager.Bottom),
 		keymap.NewSection("Pages", k.Pager.NextTab, k.Pager.PrevTab, k.Pager.Tab1, k.Pager.Tab2, k.Pager.Tab3, k.Pager.Tab4, k.Pager.Tab5, k.Pager.Tab6, k.Pager.Tab7, k.Pager.Tab8, k.Pager.Tab9),
 		keymap.NewSection(keymap.SectionRules, k.Pager.Edit, k.Pager.SelectRules, k.Pager.Exclude, k.Pager.ExcludeDir),
-		keymap.NewSection("List", k.Pager.ToggleSort),
-		// Tree.Refresh (r, ctrl+r) is the single merged refresh: its ctrl+r key
-		// also represents the pager/stats Base.Refresh, so those are omitted here
-		// to keep one `refresh` ConfigKey in the merged export (page keymaps still
-		// carry their own refresh at runtime).
-		keymap.NewSection("Tree", k.Tree.ToggleExpand, k.Tree.ToggleHot, k.Tree.ToggleCold, k.Tree.ToggleExclude, k.Tree.ToggleIgnored, k.Tree.Refresh, k.Tree.Search, k.Tree.SearchNext, k.Tree.SearchPrev),
+		// Merged Toggle (t…) namespace: ts (list) + th/tc/ti (tree). The old
+		// flat "List"/Context homes of these bindings are gone (canon 60 RULE T).
+		ns[0].Section(),
+		// Tree.Refresh (ctrl+r) is the single merged refresh: it also represents
+		// the pager/stats Base.Refresh, so those are omitted here to keep one
+		// `refresh` ConfigKey in the merged export (page keymaps still carry
+		// their own refresh at runtime).
+		keymap.NewSection("Tree", k.Tree.ToggleExpand, k.Tree.ToggleExclude, k.Tree.Refresh, k.Tree.Search, k.Tree.SearchNext, k.Tree.SearchPrev),
 		// k.Pager.Exclude already carries x=exclude for the merged export; the
 		// stats page's identical x=exclude is omitted to avoid a duplicate
 		// `exclude` ConfigKey.
