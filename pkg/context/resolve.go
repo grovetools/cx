@@ -925,8 +925,18 @@ func (m *Manager) Intersects(rulesPath string, changedFiles []string) (bool, err
 		return false, fmt.Errorf("failed to resolve files: %w", err)
 	}
 
+	// resolveFilesViaAST yields paths RELATIVE to rulesBaseDir whenever the
+	// file lives under it (see flattenAttrResult), so the set has to be
+	// re-absolutized before it can be compared with a caller's paths — the
+	// same normalization ListFiles does. Without it every key was relative,
+	// every lookup below was absolute, and Intersects could only ever return
+	// false: `grove internal test-smart` therefore never matched a scope and
+	// silently ran the entire tend suite on every agent turn.
 	fileSet := make(map[string]bool, len(resolved))
 	for _, f := range resolved {
+		if !filepath.IsAbs(f) {
+			f = filepath.Join(m.workDir, f)
+		}
 		fileSet[f] = true
 	}
 
