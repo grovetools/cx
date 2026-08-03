@@ -2,6 +2,7 @@
 
 ### Features
 
+- Add `cx slice`, which resolves ad-hoc rules lines (globs, `@a:` aliases, directives, exclusions) exactly as a workspace-root rules file would and prints the assembled `<file path=…>` blocks to stdout, writing no state. Diagnostics go strictly to stderr so the bundle can be piped verbatim; `--strip-comments` applies the shared strip machinery, `--stats` swaps the content for the compact stats envelope to preflight size, and an empty resolution exits non-zero.
 - Add versioned machine envelopes for compact stats, concept preset preview, and hot/cold file listing while preserving legacy output formats.
 - `cx repo audit` accepts a `::<ruleset>` suffix and persists viewer refinements back to the repository's ruleset in the bare clone, so curation survives across audited versions.
 

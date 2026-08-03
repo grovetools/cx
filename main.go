@@ -64,6 +64,7 @@ func main() {
 	rootCmd.AddCommand(cmd.NewWriteRulesCmd())
 	rootCmd.AddCommand(cmd.NewGenerateCmd())
 	rootCmd.AddCommand(cmd.NewShowCmd())
+	rootCmd.AddCommand(cmd.NewSliceCmd())
 	rootCmd.AddCommand(cmd.NewListCmd())
 	rootCmd.AddCommand(cmd.NewListCacheCmd())
 	rootCmd.AddCommand(cmd.NewDiffCmd())

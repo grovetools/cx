@@ -54,6 +54,21 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 		return nil, nil, nil, nil, fmt.Errorf("reading rules file %s: %w", absRulesPath, err)
 	}
 
+	return m.expandRulesContent(absRulesPath, rulesContent, visited, importLineNum, false)
+}
+
+// expandRulesContent expands already-loaded rules content. absRulesPath is the
+// location the content came from: it supplies the directory that @include: and
+// @default: paths resolve against, and the file identity used to detect preset
+// re-rooting. Callers must have marked absRulesPath in visited already (the
+// circularity guard lives with the read in expandAllRules).
+//
+// virtual marks synthesized content with no backing file — the ad-hoc lines
+// `cx slice` resolves. Those skip preset home-repo re-rooting: a slice line is
+// authored against the workspace root the caller is standing in, never against
+// some preset's home repo, so inferring one from the synthetic path would
+// silently re-root patterns the caller typed.
+func (m *Manager) expandRulesContent(absRulesPath string, rulesContent []byte, visited map[string]bool, importLineNum int, virtual bool) (hotRules, coldRules []RuleInfo, viewPaths, treePaths []string, err error) {
 	parsed, err := m.parseRulesFileContent(rulesContent)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("parsing rules file %s: %w", absRulesPath, err)
@@ -75,7 +90,7 @@ func (m *Manager) expandAllRules(rulesPath string, visited map[string]bool, impo
 	// This mirrors the re-rooting that @a:proj::preset ruleset imports
 	// already perform, closing the asymmetry where --rules-file / cx rules
 	// load would silently resolve bare paths against the caller's cwd.
-	if importLineNum == 0 {
+	if importLineNum == 0 && !virtual {
 		homeRepo := inferPresetHomeRepo(absRulesPath)
 		if homeRepo != "" && homeRepo != m.rulesBaseDir {
 			reRootRules(localHot, homeRepo)

@@ -15,6 +15,7 @@ After a high-quality plan is developed, it can be passed to a coding agent for i
 *   **Cross-Repository Context**: Includes files from other local projects via aliases or from remote Git repositories by URL, tag, branch, or commit.
 *   **Context Analysis**: Provides detailed statistics (`cx stats`), comparisons between rule sets (`cx diff`), and validation (`cx validate`).
 *   **Reusable Rulesets**: Saves and manages named rule sets (`cx rules`) that can be shared, version-controlled, and imported across projects.
+*   **Stateless Slices**: Resolves rules lines given on the command line and streams the assembled context to stdout (`cx slice`) without writing a rules file or any generated artifact — for agents and scripts that want a bundle in a pipe rather than a file on disk.
 *   **Junk-Directory Guard**: Directory globs never implicitly ingest well-known build/dependency caches (`.terraform`, `node_modules`, `.zig-cache`, `zig-out`, `.venv`, `__pycache__`, `target`, `dist`) — a rule that names one explicitly still re-includes it. A single rule that expands past 500 files or 10 MB warns loudly to stderr so accidental context bombs are impossible.
 *   **Editor Integration**: Supports editor plugins like `grove.nvim` with features for alias completion and per-rule token analysis.
 
